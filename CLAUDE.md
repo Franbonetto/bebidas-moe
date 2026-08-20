@@ -184,3 +184,44 @@ Si no, no va.
 - Si una decisión de negocio no está documentada, **preguntá**.
 - Migraciones SQL versionadas en `supabase/migrations/`.
 - No instalar dependencias sin avisar.
+---
+
+## NOTAS DEL ENTORNO
+
+**Turbopack no funciona en esta máquina.** Falla al lanzar el proceso de
+PostCSS (exit code 0xc0000142 en Windows). El script `dev` de package.json
+usa `next dev --webpack`. No lo cambies a Turbopack.
+
+**Toda tabla nueva necesita permisos explícitos.** El proyecto de Supabase
+se creó con "Automatically expose new tables" desactivado, así que las
+tablas nuevas no reciben ningún privilegio para el rol `authenticated` y
+devuelven 403 aunque las políticas RLS estén bien.
+
+Después de cada migración que cree tablas, correr:
+
+    grant select on all tables in schema public to authenticated;
+
+para SELECT en todas las tablas (RLS decide qué filas ve cada usuario), y
+además, tabla por tabla, el grant de `insert`/`update`/`delete` que
+corresponda **solo si la tabla se escribe directo desde la app**:
+
+    grant insert, update, delete on <tabla> to authenticated;
+
+El criterio es cómo escribe cada tabla, no si es "de negocio" o no:
+
+- **La app escribe la tabla directo** (vía políticas RLS de insert/update/
+  delete, ej. `proveedores`, `compras`, `compra_items`): necesita el grant
+  de esa operación. Sin él, la política de RLS nunca llega a evaluarse — el
+  grant es un prerrequisito de Postgres, no un reemplazo de RLS.
+- **Solo una función `SECURITY DEFINER` la escribe** (ej. `stock_sucursal`,
+  `movimientos_stock`, `historial_costos`, o `recepciones_compra` para su
+  UPDATE de estado): NO lleva grant de esa operación. La función corre como
+  dueña de la tabla y no lo necesita; dar el grant igual solo agrega
+  superficie sin habilitar nada (RLS la sigue bloqueando si no hay política),
+  así que no vale la pena.
+
+Antes de dar un bloque por cerrado, repasar cada tabla nueva contra sus
+propias políticas de RLS: si tiene política de insert/update/delete para
+`authenticated`, tiene que tener el grant correspondiente. Esto NO
+debilita la seguridad: RLS sigue decidiendo qué filas puede tocar cada
+usuario. El grant solo habilita el acceso base a la tabla.
