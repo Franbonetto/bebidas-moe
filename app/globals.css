@@ -1,26 +1,55 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #ffffff;
+  --bg-2: #f7f7f8;
+  --border: #e5e5e7;
+  --border-strong: #d4d4d8;
+  --text: #18181b;
+  --text-2: #71717a;
+  --text-3: #a1a1aa;
+  --moe: #c8201a;
+  --moe-soft: #fdf2f2;
+  --ok: #15803d;
+  --ok-bg: #f0fdf4;
+  --warn: #a16207;
+  --warn-bg: #fefce8;
+  --orange: #c2410c;
+  --orange-bg: #fff7ed;
+  --err: #b91c1c;
+  --err-bg: #fef2f2;
+  --info: #1d4ed8;
+  --info-bg: #eff6ff;
+  --radius-card: 8px;
 }
+
+/* Sistema de trabajo: sin dark mode (ver docs/identidad-visual.md, sección 30). */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-moe: var(--moe);
+  --color-moe-soft: var(--moe-soft);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-orange: var(--orange);
+  --color-orange-bg: var(--orange-bg);
+  --color-err: var(--err);
+  --color-err-bg: var(--err-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --font-sans: var(--font-inter);
+  --radius-card: var(--radius-card);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-2);
+  color: var(--text);
 }

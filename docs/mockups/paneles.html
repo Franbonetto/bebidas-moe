@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bebidas Moe — Sistema interno</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#FFFFFF;
+  --bg-2:#F7F7F8;
+  --border:#E5E5E7;
+  --border-strong:#D4D4D8;
+  --text:#18181B;
+  --text-2:#71717A;
+  --text-3:#A1A1AA;
+  --moe:#C8201A;
+  --moe-soft:#FDF2F2;
+  --ok:#15803D;      --ok-bg:#F0FDF4;
+  --warn:#A16207;    --warn-bg:#FEFCE8;
+  --orange:#C2410C;  --orange-bg:#FFF7ED;
+  --err:#B91C1C;     --err-bg:#FEF2F2;
+  --info:#1D4ED8;    --info-bg:#EFF6FF;
+  --r:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'Inter',-apple-system,system-ui,sans-serif;
+  background:var(--bg-2); color:var(--text);
+  font-size:14px; line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+/* ---------- selector de demo (no es parte del sistema) ---------- */
+.demo-bar{
+  background:#18181B; color:#fff; padding:10px 16px;
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  font-size:12px;
+}
+.demo-bar span{color:#A1A1AA; margin-right:4px}
+.demo-bar button{
+  font:inherit; font-weight:500; cursor:pointer;
+  background:#27272A; color:#D4D4D8; border:1px solid #3F3F46;
+  padding:5px 11px; border-radius:6px;
+}
+.demo-bar button.on{background:#fff; color:#18181B; border-color:#fff}
+
+/* ---------- layout ---------- */
+.app{display:flex; min-height:calc(100vh - 39px); background:var(--bg)}
+.sidebar{
+  width:216px; flex-shrink:0; background:var(--bg-2);
+  border-right:1px solid var(--border); padding:16px 12px;
+  display:flex; flex-direction:column;
+}
+.brand{
+  display:flex; align-items:center; gap:8px;
+  padding:4px 8px 16px; font-weight:700; font-size:15px; letter-spacing:-.01em;
+}
+.brand i{
+  width:20px;height:20px;border-radius:4px;background:var(--moe);
+  display:inline-block; flex-shrink:0;
+}
+.nav{display:flex;flex-direction:column;gap:1px}
+.nav a{
+  display:flex; align-items:center; gap:9px;
+  padding:7px 8px; border-radius:6px;
+  color:var(--text-2); text-decoration:none; font-size:13.5px; font-weight:500;
+  border-left:2px solid transparent;
+}
+.nav a:hover{background:#EFEFF1; color:var(--text)}
+.nav a.on{background:var(--moe-soft); color:var(--moe); border-left-color:var(--moe)}
+.nav a svg{width:16px;height:16px;stroke-width:1.75;flex-shrink:0}
+.nav-sep{height:1px;background:var(--border);margin:12px 8px}
+.side-foot{margin-top:auto; padding:8px; border-top:1px solid var(--border)}
+.user{display:flex;align-items:center;gap:9px;font-size:13px}
+.avatar{
+  width:26px;height:26px;border-radius:50%;background:#E4E4E7;
+  display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--text-2);
+}
+.user small{display:block;color:var(--text-3);font-size:11.5px}
+
+.main{flex:1; min-width:0; display:flex; flex-direction:column}
+.header{
+  height:52px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:16px; padding:0 20px; background:#fff;
+}
+.header h1{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.search{
+  flex:1; max-width:380px; margin-left:auto;
+  display:flex;align-items:center;gap:7px;
+  background:var(--bg-2); border:1px solid var(--border);
+  border-radius:6px; padding:5px 10px; color:var(--text-3); font-size:13px;
+}
+.suc-pill{
+  font-size:12px;font-weight:500;color:var(--text-2);
+  border:1px solid var(--border); border-radius:6px; padding:4px 9px;
+}
+.content{padding:20px; flex:1}
+
+/* ---------- tipografía de sección ---------- */
+.sec{margin-bottom:22px}
+.sec-h{
+  display:flex;align-items:baseline;gap:10px;
+  margin-bottom:10px;
+}
+.sec-h h2{font-size:13px;font-weight:600;letter-spacing:.01em}
+.sec-h span{font-size:12px;color:var(--text-3)}
+
+/* ---------- cards KPI ---------- */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.kpi{
+  background:#fff;border:1px solid var(--border);border-radius:var(--r);
+  padding:14px 15px;
+}
+.kpi .lbl{font-size:12px;color:var(--text-2);font-weight:500;margin-bottom:5px}
+.kpi .val{font-size:23px;font-weight:600;letter-spacing:-.025em;line-height:1.15}
+.kpi .sub{font-size:12px;color:var(--text-3);margin-top:5px}
+.kpi .sub b{color:var(--text-2);font-weight:500}
+.up{color:var(--ok);font-weight:500}
+.down{color:var(--err);font-weight:500}
+
+/* ---------- tablas ---------- */
+.card{background:#fff;border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.card-h{
+  padding:11px 14px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.card-h h3{font-size:13px;font-weight:600}
+.card-h a{font-size:12.5px;color:var(--moe);text-decoration:none;font-weight:500}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{
+  background:var(--bg-2); text-align:left; font-weight:500; font-size:11.5px;
+  color:var(--text-2); padding:7px 14px; border-bottom:1px solid var(--border);
+  letter-spacing:.02em; white-space:nowrap;
+}
+td{padding:9px 14px;border-bottom:1px solid #F1F1F3;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#FAFAFB}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.prod{font-weight:500}
+.prod small{display:block;color:var(--text-3);font-size:11.5px;font-weight:400}
+
+/* ---------- badges ---------- */
+.b{
+  display:inline-block;padding:2px 7px;border-radius:5px;
+  font-size:11.5px;font-weight:500;white-space:nowrap;
+}
+.b-ok{background:var(--ok-bg);color:var(--ok)}
+.b-warn{background:var(--warn-bg);color:var(--warn)}
+.b-or{background:var(--orange-bg);color:var(--orange)}
+.b-err{background:var(--err-bg);color:var(--err)}
+.b-info{background:var(--info-bg);color:var(--info)}
+.b-mute{background:var(--bg-2);color:var(--text-2)}
+
+/* ---------- botones ---------- */
+.btn{
+  font:inherit;font-size:13px;font-weight:500;cursor:pointer;
+  padding:7px 13px;border-radius:6px;border:1px solid var(--border-strong);
+  background:#fff;color:var(--text);
+}
+.btn:hover{background:var(--bg-2)}
+.btn-1{background:var(--moe);border-color:var(--moe);color:#fff}
+.btn-1:hover{background:#A81A15}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ---------- lista de atención ---------- */
+.alerts{display:flex;flex-direction:column;gap:1px}
+.alert{
+  display:flex;align-items:center;gap:11px;
+  padding:11px 14px;background:#fff;border:1px solid var(--border);
+  border-radius:var(--r);text-decoration:none;color:inherit;
+}
+.alert:hover{background:#FAFAFB}
+.alert .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.alert .t{flex:1;font-size:13.5px;font-weight:500}
+.alert .t small{display:block;font-weight:400;color:var(--text-3);font-size:12px}
+.alert .c{font-size:13px;color:var(--text-3)}
+.stack{display:flex;flex-direction:column;gap:8px}
+
+/* ---------- distribución de capital ---------- */
+.bars{display:flex;flex-direction:column;gap:9px;padding:14px}
+.bar-row{display:grid;grid-template-columns:76px 1fr 88px;align-items:center;gap:11px;font-size:12.5px}
+.bar{height:7px;background:var(--bg-2);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--moe);opacity:.82;border-radius:4px}
+.bar-row .num{color:var(--text-2)}
+
+/* ---------- acciones rápidas ---------- */
+.quick{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.qa{
+  background:#fff;border:1px solid var(--border);border-radius:var(--r);
+  padding:14px;text-align:left;cursor:pointer;font:inherit;
+  display:flex;flex-direction:column;gap:7px;
+}
+.qa:hover{border-color:var(--border-strong);background:#FAFAFB}
+.qa svg{width:18px;height:18px;stroke:var(--moe);stroke-width:1.75}
+.qa b{font-size:13px;font-weight:500}
+.qa small{color:var(--text-3);font-size:12px}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid32{display:grid;grid-template-columns:1.55fr 1fr;gap:14px}
+
+.hint{
+  font-size:12px;color:var(--text-2);background:var(--bg-2);
+  border:1px solid var(--border);border-radius:6px;padding:9px 12px;
+}
+.empty{padding:26px 14px;text-align:center}
+.empty b{display:block;font-size:13.5px;margin-bottom:3px}
+.empty span{font-size:12.5px;color:var(--text-3)}
+
+.panel{display:none}
+.panel.on{display:block}
+
+@media(max-width:900px){
+  .sidebar{display:none}
+  .kpis,.quick{grid-template-columns:repeat(2,1fr)}
+  .grid2,.grid32{grid-template-columns:1fr}
+  .content{padding:14px}
+  .hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+  <span>Vista previa —</span>
+  <button class="on" data-p="dueno">Panel del dueño</button>
+  <button data-p="olav">Encargado Olavarría</button>
+  <button data-p="lap">Encargado Laprida</button>
+</div>
+
+<!-- ============================= DUEÑO ============================= -->
+<div class="app panel on" id="dueno">
+  <aside class="sidebar">
+    <div class="brand"><i></i> Bebidas Moe</div>
+    <nav class="nav">
+      <a href="#" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Inicio</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>Productos</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>Stock</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Ventas</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5M4 20L20.5 3.5M21 16v5h-5M15 15l5.5 5.5M4 4l5 5"/></svg>Transferencias</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0"/></svg>Compras</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Proveedores</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11H3v10h6zM15 3H9v18h6zM21 7h-6v14h6z"/></svg>Reportes</a>
+      <div class="nav-sep"></div>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Configuración</a>
+    </nav>
+    <div class="side-foot">
+      <div class="user"><div class="avatar">M</div><div><b>Marcelo</b><small>Dueño</small></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="header">
+      <h1>Inicio</h1>
+      <div class="search">Buscar producto, proveedor, pedido…</div>
+      <div class="suc-pill hide-sm">Las dos sucursales</div>
+    </div>
+    <div class="content">
+
+      <div class="sec">
+        <div class="sec-h"><h2>Hoy</h2><span>Lunes 17 de agosto</span></div>
+        <div class="kpis">
+          <div class="kpi">
+            <div class="lbl">Stock valorizado</div>
+            <div class="val">$18,43 M</div>
+            <div class="sub">Olavarría <b>$12,10 M</b> · Laprida <b>$6,33 M</b></div>
+          </div>
+          <div class="kpi">
+            <div class="lbl">Ventas del día</div>
+            <div class="val">$1.284.500</div>
+            <div class="sub"><span class="up">↑ 12%</span> vs. lunes pasado</div>
+          </div>
+          <div class="kpi">
+            <div class="lbl">Margen del día</div>
+            <div class="val">$384.000</div>
+            <div class="sub">29,9% sobre ventas</div>
+          </div>
+          <div class="kpi">
+            <div class="lbl">Mercadería inmovilizada</div>
+            <div class="val">$1,24 M</div>
+            <div class="sub">37 productos sin movimiento hace +90 días</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec grid32">
+        <div class="card">
+          <div class="card-h"><h3>Dónde está la plata</h3><a href="#">Ver stock completo</a></div>
+          <div class="bars">
+            <div class="bar-row"><span>Whisky</span><div class="bar"><i style="width:100%"></i></div><span class="num">$4.800.000</span></div>
+            <div class="bar-row"><span>Vinos</span><div class="bar"><i style="width:81%"></i></div><span class="num">$3.900.000</span></div>
+            <div class="bar-row"><span>Gin</span><div class="bar"><i style="width:44%"></i></div><span class="num">$2.100.000</span></div>
+            <div class="bar-row"><span>Cervezas</span><div class="bar"><i style="width:39%"></i></div><span class="num">$1.850.000</span></div>
+            <div class="bar-row"><span>Fernet</span><div class="bar"><i style="width:27%"></i></div><span class="num">$1.300.000</span></div>
+            <div class="bar-row"><span>Otros</span><div class="bar"><i style="width:20%"></i></div><span class="num">$950.000</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h3>Necesita atención</h3></div>
+          <div class="stack" style="padding:10px">
+            <a class="alert" href="#"><span class="dot" style="background:var(--err)"></span><span class="t">4 productos sin stock<small>Olavarría 1 · Laprida 3</small></span></a>
+            <a class="alert" href="#"><span class="dot" style="background:var(--warn)"></span><span class="t">14 productos bajo el mínimo<small>Revisar antes del pedido semanal</small></span></a>
+            <a class="alert" href="#"><span class="dot" style="background:var(--info)"></span><span class="t">2 transferencias en tránsito<small>Despachadas hace 2 días</small></span></a>
+            <a class="alert" href="#"><span class="dot" style="background:var(--orange)"></span><span class="t">6 costos aumentaron este mes<small>Promedio +14,2%</small></span></a>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec grid2">
+        <div class="card">
+          <div class="card-h"><h3>Más vendidos · últimos 30 días</h3><a href="#">Ver rotación</a></div>
+          <table>
+            <thead><tr><th>Producto</th><th class="num">Unid.</th><th class="num">Facturado</th><th class="num">Margen</th></tr></thead>
+            <tbody>
+              <tr><td class="prod">Fernet Branca 750 ml<small>Fernet · Branca</small></td><td class="num">184</td><td class="num">$3.477.600</td><td class="num">34,4%</td></tr>
+              <tr><td class="prod">Quilmes 1 L retornable<small>Cerveza · Quilmes</small></td><td class="num">402</td><td class="num">$1.809.000</td><td class="num">21,8%</td></tr>
+              <tr><td class="prod">Coca-Cola 2,25 L<small>Gaseosa · Coca-Cola</small></td><td class="num">311</td><td class="num">$1.244.000</td><td class="num">18,5%</td></tr>
+              <tr><td class="prod">Gordon's London Dry<small>Gin · Gordon's</small></td><td class="num">96</td><td class="num">$1.152.000</td><td class="num">31,2%</td></tr>
+              <tr><td class="prod">Johnnie Walker Red 750<small>Whisky · Johnnie Walker</small></td><td class="num">41</td><td class="num">$1.066.000</td><td class="num">27,9%</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h3>Últimos movimientos del sistema</h3><a href="#">Ver auditoría</a></div>
+          <table>
+            <thead><tr><th>Acción</th><th>Usuario</th><th class="num">Hora</th></tr></thead>
+            <tbody>
+              <tr><td class="prod">Precio modificado<small>Tanqueray 750 · $27.850 → $30.500</small></td><td>Marcelo</td><td class="num">10:42</td></tr>
+              <tr><td class="prod">Ajuste de inventario<small>Heineken retornable · −4 · Rotura</small></td><td>Pedro</td><td class="num">09:58</td></tr>
+              <tr><td class="prod">Compra confirmada<small>Distribuidora Sur · $1.840.000</small></td><td>Pedro</td><td class="num">09:31</td></tr>
+              <tr><td class="prod">Pedido enviado<small>#LP-0041 · 52 productos</small></td><td>Sofía</td><td class="num">08:47</td></tr>
+              <tr><td class="prod">Venta sin stock<small>Bombay Sapphire · marcado para conteo</small></td><td>Sofía</td><td class="num">08:12</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================= OLAVARRÍA ============================= -->
+<div class="app panel" id="olav">
+  <aside class="sidebar">
+    <div class="brand"><i></i> Bebidas Moe</div>
+    <nav class="nav">
+      <a href="#" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Inicio</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>Productos</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>Stock</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Vender</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5M4 20L20.5 3.5M21 16v5h-5M15 15l5.5 5.5"/></svg>Pedidos Laprida</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0"/></svg>Compras</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z"/></svg>Proveedores</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5"/></svg>Inventarios</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 21h8M12 17v4M4 4h16v10a4 4 0 01-4 4H8a4 4 0 01-4-4z"/></svg>Envases</a>
+    </nav>
+    <div class="side-foot">
+      <div class="user"><div class="avatar">P</div><div><b>Pedro</b><small>Encargado Olavarría</small></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="header">
+      <h1>Inicio</h1>
+      <div class="search">Buscar producto, proveedor, pedido…</div>
+      <div class="suc-pill hide-sm">Olavarría</div>
+    </div>
+    <div class="content">
+
+      <div class="sec">
+        <div class="sec-h"><h2>Necesita atención</h2><span>Lunes 17 de agosto</span></div>
+        <div class="stack">
+          <a class="alert" href="#"><span class="dot" style="background:var(--err)"></span><span class="t">Pedido #LP-0041 sin atender<small>Llegó hoy 08:47 · 52 productos · 186 unidades</small></span><span class="b b-err">Nuevo</span></a>
+          <a class="alert" href="#"><span class="dot" style="background:var(--warn)"></span><span class="t">23 productos bajo el mínimo<small>9 sin proveedor asignado</small></span><span class="c">Ver →</span></a>
+          <a class="alert" href="#"><span class="dot" style="background:var(--orange)"></span><span class="t">6 costos aumentaron este mes<small>Revisar precios de venta</small></span><span class="c">Ver →</span></a>
+          <a class="alert" href="#"><span class="dot" style="background:var(--info)"></span><span class="t">318 envases vacíos acumulados<small>Última devolución al proveedor hace 23 días</small></span><span class="c">Ver →</span></a>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-h"><h2>Acciones rápidas</h2></div>
+        <div class="quick">
+          <button class="qa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg><b>Recibir mercadería</b><small>Compra o devolución</small></button>
+          <button class="qa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5M4 20L20.5 3.5"/></svg><b>Preparar pedido</b><small>#LP-0041 pendiente</small></button>
+          <button class="qa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18"/></svg><b>Cargar compra</b><small>Nueva factura de proveedor</small></button>
+          <button class="qa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5"/></svg><b>Hacer inventario</b><small>General, por categoría o puntual</small></button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="card">
+          <div class="card-h">
+            <h3>Pedido #LP-0041 — Laprida</h3>
+            <div class="btn-row"><button class="btn">Guardar borrador</button><button class="btn btn-1">Confirmar preparación</button></div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th class="num">Solicitado</th>
+                <th class="num">Stock Olavarría</th>
+                <th class="num">Disponible</th>
+                <th class="num">Enviar</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="prod">Fernet Branca 750 ml<small>Fernet · Branca</small></td>
+                <td class="num">12</td><td class="num">14</td><td class="num">6</td><td class="num">6</td>
+                <td><span class="b b-warn">Stock insuficiente</span></td>
+              </tr>
+              <tr>
+                <td class="prod">Heineken 473 cc lata<small>Cerveza · Heineken</small></td>
+                <td class="num">24</td><td class="num">96</td><td class="num">78</td><td class="num">24</td>
+                <td><span class="b b-ok">Completo</span></td>
+              </tr>
+              <tr>
+                <td class="prod">Coca-Cola 2,25 L<small>Gaseosa · Coca-Cola</small></td>
+                <td class="num">24</td><td class="num">140</td><td class="num">110</td><td class="num">24</td>
+                <td><span class="b b-ok">Completo</span></td>
+              </tr>
+              <tr>
+                <td class="prod">Tanqueray 750 ml<small>Gin · Tanqueray</small></td>
+                <td class="num">6</td><td class="num">5</td><td class="num">0</td><td class="num">0</td>
+                <td><span class="b b-err">Sin stock transferible</span></td>
+              </tr>
+              <tr>
+                <td class="prod">Gordon's London Dry 700<small>Gin · Gordon's</small></td>
+                <td class="num">6</td><td class="num">28</td><td class="num">20</td><td class="num">6</td>
+                <td><span class="b b-ok">Completo</span></td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="padding:11px 14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:12.5px;color:var(--text-2)">52 productos · 186 solicitadas · <b style="color:var(--text)">168 a enviar</b> · cumplimiento 90,3%</span>
+            <span class="b b-mute">18 unidades quedan pendientes para la próxima semana</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================= LAPRIDA ============================= -->
+<div class="app panel" id="lap">
+  <aside class="sidebar">
+    <div class="brand"><i></i> Bebidas Moe</div>
+    <nav class="nav">
+      <a href="#" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>Inicio</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/></svg>Productos</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>Stock</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Vender</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 3h5v5M4 20L20.5 3.5"/></svg>Mis pedidos</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 5v14M5 12h14"/></svg>Recibir mercadería</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5"/></svg>Inventarios</a>
+      <a href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 21h8M12 17v4M4 4h16v10a4 4 0 01-4 4H8a4 4 0 01-4-4z"/></svg>Envases</a>
+    </nav>
+    <div class="side-foot">
+      <div class="user"><div class="avatar">S</div><div><b>Sofía</b><small>Encargada Laprida</small></div></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="header">
+      <h1>Pedido semanal</h1>
+      <div class="search">Buscar producto…</div>
+      <div class="suc-pill hide-sm">Laprida</div>
+    </div>
+    <div class="content">
+
+      <div class="sec">
+        <div class="sec-h"><h2>Necesita atención</h2><span>Lunes 17 de agosto</span></div>
+        <div class="stack">
+          <a class="alert" href="#"><span class="dot" style="background:var(--err)"></span><span class="t">8 productos sin stock<small>3 se vendieron igual la semana pasada</small></span><span class="c">Ver →</span></a>
+          <a class="alert" href="#"><span class="dot" style="background:var(--warn)"></span><span class="t">23 productos bajo el mínimo<small>Incluidos en la sugerencia de hoy</small></span><span class="c">Ver →</span></a>
+          <a class="alert" href="#"><span class="dot" style="background:var(--info)"></span><span class="t">1 transferencia en camino<small>#TR-0088 · despachada el viernes · 62 unidades</small></span><span class="b b-info">En tránsito</span></a>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="card">
+          <div class="card-h">
+            <h3>Pedido semanal sugerido</h3>
+            <div class="btn-row"><button class="btn">Guardar borrador</button><button class="btn btn-1">Confirmar pedido</button></div>
+          </div>
+          <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+            <div class="hint">Encontramos 38 productos que podrían necesitar reposición. La sugerencia descuenta lo que ya está en camino y suma lo que quedó pendiente del pedido anterior. Podés cambiar cualquier cantidad antes de confirmar.</div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th class="num">Stock</th>
+                <th class="num">Venta semanal</th>
+                <th class="num">Objetivo</th>
+                <th class="num">En camino</th>
+                <th class="num">Sugerido</th>
+                <th class="num">Pedir</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="prod">Fernet Branca 750 ml<small>Fernet · Branca</small></td>
+                <td class="num"><span class="b b-err">3</span></td><td class="num">11</td><td class="num">15</td><td class="num">0</td><td class="num">12</td>
+                <td class="num"><b>12</b></td>
+              </tr>
+              <tr>
+                <td class="prod">Heineken 473 cc lata<small>Cerveza · Heineken</small></td>
+                <td class="num"><span class="b b-warn">7</span></td><td class="num">25</td><td class="num">36</td><td class="num">6</td><td class="num">24</td>
+                <td class="num"><b>24</b></td>
+              </tr>
+              <tr>
+                <td class="prod">Coca-Cola 2,25 L<small>Gaseosa · Coca-Cola</small></td>
+                <td class="num">18</td><td class="num">30</td><td class="num">42</td><td class="num">0</td><td class="num">24</td>
+                <td class="num"><b>24</b></td>
+              </tr>
+              <tr>
+                <td class="prod">Tanqueray 750 ml<small>Gin · Tanqueray</small></td>
+                <td class="num">4</td><td class="num">3</td><td class="num">4</td><td class="num">0</td><td class="num">0</td>
+                <td class="num"><b>6</b></td>
+              </tr>
+              <tr>
+                <td class="prod">Quilmes 1 L retornable<small>Cerveza · Quilmes</small></td>
+                <td class="num"><span class="b b-warn">11</span></td><td class="num">48</td><td class="num">60</td><td class="num">24</td><td class="num">25</td>
+                <td class="num"><b>25</b></td>
+              </tr>
+              <tr>
+                <td class="prod">Gordon's London Dry 700<small>Gin · Gordon's</small></td>
+                <td class="num"><span class="b b-err">0</span></td><td class="num">5</td><td class="num">8</td><td class="num">0</td><td class="num">8</td>
+                <td class="num"><b>8</b></td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="padding:11px 14px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+            <span style="font-size:12.5px;color:var(--text-2)">38 productos · <b style="color:var(--text)">146 unidades</b></span>
+            <span class="b b-mute">Tanqueray: 6 vienen del pedido anterior</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec grid2">
+        <div class="card">
+          <div class="card-h"><h3>Transferencia #TR-0088</h3><a href="#">Controlar recepción</a></div>
+          <table>
+            <thead><tr><th>Producto</th><th class="num">Despachado</th><th class="num">Recibido</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="prod">Fernet Branca 750 ml</td><td class="num">10</td><td class="num">10</td><td><span class="b b-ok">OK</span></td></tr>
+              <tr><td class="prod">Heineken 473 cc lata</td><td class="num">24</td><td class="num">23</td><td><span class="b b-warn">−1</span></td></tr>
+              <tr><td class="prod">Coca-Cola 2,25 L</td><td class="num">24</td><td class="num">24</td><td><span class="b b-ok">OK</span></td></tr>
+              <tr><td class="prod">Sernova 700 ml</td><td class="num">4</td><td class="num">4</td><td><span class="b b-ok">OK</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h3>Envases</h3></div>
+          <div class="empty">
+            <b>No hay envases pendientes de devolver</b>
+            <span>Los vacíos de Laprida se envían a Olavarría con la próxima transferencia.</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.demo-bar button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.demo-bar button').forEach(x=>x.classList.remove('on'));
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    document.getElementById(b.dataset.p).classList.add('on');
+    window.scrollTo(0,0);
+  });
+});
+</script>
+</body>
+</html>
