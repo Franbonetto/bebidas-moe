@@ -4,12 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogoutButton } from "./logout-button";
 
-type NavItem = { label: string; href?: string; icon: string };
+type NavItem = { label: string; href?: string; icon: string; restringido?: boolean };
 
-// Mismo set de íconos/orden que docs/mockups/paneles.html. Solo "Productos"
-// es un link real: el resto de las pantallas todavía no existen (se van
-// sumando bloque a bloque), así que quedan visibles pero no navegables en
-// vez de llevar a un 404.
+// Mismo set de íconos/orden que docs/mockups/paneles.html. El resto de las
+// pantallas sin href todavía no existen (se van sumando bloque a bloque),
+// así que quedan visibles pero no navegables en vez de llevar a un 404.
+// Compras y Proveedores están marcados "restringido": solo entran al menú
+// si puedeVerCostos es true (dueño + encargado Olavarría, CLAUDE.md), y ni
+// siquiera se muestran inertes para el resto -- no deben saber que existen.
 const NAV: NavItem[] = [
   { label: "Inicio", icon: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" },
   {
@@ -28,10 +30,14 @@ const NAV: NavItem[] = [
   },
   {
     label: "Compras",
+    href: "/compras",
+    restringido: true,
     icon: "M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0",
   },
   {
     label: "Proveedores",
+    href: "/proveedores",
+    restringido: true,
     icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75",
   },
   { label: "Reportes", icon: "M9 11H3v10h6zM15 3H9v18h6zM21 7h-6v14h6z" },
@@ -42,8 +48,17 @@ const ROL_LABEL: Record<string, string> = {
   encargado: "Encargado",
 };
 
-export function Sidebar({ nombre, rol }: { nombre: string; rol: string }) {
+export function Sidebar({
+  nombre,
+  rol,
+  puedeVerCostos,
+}: {
+  nombre: string;
+  rol: string;
+  puedeVerCostos: boolean;
+}) {
   const pathname = usePathname();
+  const nav = NAV.filter((item) => !item.restringido || puedeVerCostos);
 
   return (
     <aside className="flex w-[216px] shrink-0 flex-col border-r border-border bg-bg-2 p-3">
@@ -53,7 +68,7 @@ export function Sidebar({ nombre, rol }: { nombre: string; rol: string }) {
       </div>
 
       <nav className="flex flex-col gap-px">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const active = Boolean(item.href) && pathname.startsWith(item.href!);
           const content = (
             <>

@@ -24,7 +24,12 @@ export type SkuRow = {
   stockPorSucursal: Record<string, number>;
 };
 
-function presentacionLabel(sku: SkuRow) {
+export type SkuPresentacion = Pick<
+  SkuRow,
+  "tipo_presentacion" | "volumen" | "unidad_volumen" | "unidades_contenidas"
+>;
+
+export function presentacionLabel(sku: SkuPresentacion) {
   const volumen = `${sku.volumen} ${sku.unidad_volumen}`;
   switch (sku.tipo_presentacion) {
     case "pack":

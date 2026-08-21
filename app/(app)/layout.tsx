@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { veCostos } from "@/lib/permisos";
 import { Sidebar } from "./_components/sidebar";
 import { Header } from "./_components/header";
 
@@ -29,9 +30,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect("/login");
   }
 
+  const puedeVerCostos = await veCostos(supabase);
+
   return (
     <div className="flex min-h-screen bg-bg">
-      <Sidebar nombre={usuario.nombre} rol={usuario.rol} />
+      <Sidebar nombre={usuario.nombre} rol={usuario.rol} puedeVerCostos={puedeVerCostos} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Header />
         <main className="flex-1 p-5">{children}</main>

@@ -4,11 +4,20 @@ import { usePathname } from "next/navigation";
 
 const TITLES: Record<string, string> = {
   "/productos": "Productos",
+  "/proveedores": "Proveedores",
+  "/compras": "Compras",
+  "/compras/nueva": "Nueva compra",
 };
+
+function tituloPara(pathname: string) {
+  if (TITLES[pathname]) return TITLES[pathname];
+  if (pathname.startsWith("/compras/")) return "Compra";
+  return "Bebidas Moe";
+}
 
 export function Header() {
   const pathname = usePathname();
-  const title = TITLES[pathname] ?? "Bebidas Moe";
+  const title = tituloPara(pathname);
 
   return (
     <div className="flex h-[52px] items-center gap-4 border-b border-border bg-bg px-5">
