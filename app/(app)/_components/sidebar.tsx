@@ -25,7 +25,8 @@ const NAV: NavItem[] = [
     icon: "M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11",
   },
   {
-    label: "Transferencias",
+    label: "Pedidos",
+    href: "/pedidos",
     icon: "M16 3h5v5M4 20L20.5 3.5M21 16v5h-5M15 15l5.5 5.5M4 4l5 5",
   },
   {

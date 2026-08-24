@@ -7,11 +7,14 @@ const TITLES: Record<string, string> = {
   "/proveedores": "Proveedores",
   "/compras": "Compras",
   "/compras/nueva": "Nueva compra",
+  "/pedidos": "Pedidos",
+  "/pedidos/nuevo": "Nuevo pedido",
 };
 
 function tituloPara(pathname: string) {
   if (TITLES[pathname]) return TITLES[pathname];
   if (pathname.startsWith("/compras/")) return "Compra";
+  if (pathname.startsWith("/pedidos/")) return "Pedido";
   return "Bebidas Moe";
 }
 
