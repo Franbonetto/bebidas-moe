@@ -41,6 +41,11 @@ const NAV: NavItem[] = [
     restringido: true,
     icon: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75",
   },
+  {
+    label: "Inventarios",
+    href: "/inventarios",
+    icon: "M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5",
+  },
   { label: "Reportes", icon: "M9 11H3v10h6zM15 3H9v18h6zM21 7h-6v14h6z" },
 ];
 
