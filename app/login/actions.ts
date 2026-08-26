@@ -35,5 +35,5 @@ export async function login(_prevState: string | null, formData: FormData): Prom
     return "Tu usuario no tiene acceso al sistema. Consultá con el dueño.";
   }
 
-  redirect("/productos");
+  redirect("/");
 }

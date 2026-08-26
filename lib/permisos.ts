@@ -19,3 +19,11 @@ export async function operaSucursal(
   const { data } = await supabase.rpc("opera_sucursal", { p_sucursal_id: sucursalId });
   return data === true;
 }
+
+// Espejo de opera_central() (bloque 1): dueño, o encargado asignado a la
+// sucursal central (Olavarría). Se usa para decidir qué panel de Inicio
+// mostrarle a un encargado sin tener que hardcodear "Olavarría".
+export async function operaCentral(supabase: SupabaseClient): Promise<boolean> {
+  const { data } = await supabase.rpc("opera_central");
+  return data === true;
+}

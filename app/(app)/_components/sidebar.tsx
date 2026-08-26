@@ -13,7 +13,7 @@ type NavItem = { label: string; href?: string; icon: string; restringido?: boole
 // si puedeVerCostos es true (dueño + encargado Olavarría, CLAUDE.md), y ni
 // siquiera se muestran inertes para el resto -- no deben saber que existen.
 const NAV: NavItem[] = [
-  { label: "Inicio", icon: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" },
+  { label: "Inicio", href: "/", icon: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" },
   {
     label: "Productos",
     href: "/productos",
@@ -75,7 +75,11 @@ export function Sidebar({
 
       <nav className="flex flex-col gap-px">
         {nav.map((item) => {
-          const active = Boolean(item.href) && pathname.startsWith(item.href!);
+          const active = item.href
+            ? item.href === "/"
+              ? pathname === "/"
+              : pathname.startsWith(item.href)
+            : false;
           const content = (
             <>
               <svg

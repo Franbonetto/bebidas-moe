@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { presentacionLabel } from "../_lib/presentacion";
 
 export type Sucursal = {
   id: string;
@@ -24,24 +25,11 @@ export type SkuRow = {
   stockPorSucursal: Record<string, number>;
 };
 
-export type SkuPresentacion = Pick<
-  SkuRow,
-  "tipo_presentacion" | "volumen" | "unidad_volumen" | "unidades_contenidas"
->;
-
-export function presentacionLabel(sku: SkuPresentacion) {
-  const volumen = `${sku.volumen} ${sku.unidad_volumen}`;
-  switch (sku.tipo_presentacion) {
-    case "pack":
-      return `Pack x${sku.unidades_contenidas} · ${volumen}`;
-    case "cajon":
-      return `Cajón x${sku.unidades_contenidas} · ${volumen}`;
-    case "estuche":
-      return `Estuche x${sku.unidades_contenidas} · ${volumen}`;
-    default:
-      return volumen;
-  }
-}
+// Reexportadas desde un módulo sin "use client" (ver _lib/presentacion.ts):
+// este archivo es cliente, y los server components (dashboards) necesitan
+// poder llamar a presentacionLabel() sin cruzar ese límite.
+export { presentacionLabel } from "../_lib/presentacion";
+export type { SkuPresentacion } from "../_lib/presentacion";
 
 // Cero es el estado inicial de un catálogo sin movimientos todavía, no una
 // alerta: se muestra en gris neutro. El rojo queda reservado para stock
