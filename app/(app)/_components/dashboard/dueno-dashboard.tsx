@@ -4,6 +4,7 @@ import {
   type MotivoInventario,
 } from "@/app/(app)/inventarios/_components/estado-inventario-badge";
 import { formatoFechaHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
+import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { calcularCostosQueSubieron } from "./lib";
 import {
   AlertRow,
@@ -24,7 +25,37 @@ type SkuInfo = {
   nombre: string;
   stock_minimo: number;
   costo_actual: number | null;
+  tipo_presentacion: SkuPresentacion["tipo_presentacion"];
+  volumen: number;
+  unidad_volumen: string;
+  unidades_contenidas: number;
   producto: { nombre: string; categoria: { nombre: string } | null } | null;
+};
+
+type PrecioBaseFila = {
+  sku_id: string;
+  precio_base: number;
+  actualizado_en: string;
+  usuario: { nombre: string } | null;
+};
+
+type PrecioSucursalFila = {
+  sku_id: string;
+  sucursal_id: string;
+  precio_override: number;
+  actualizado_en: string;
+  usuario: { nombre: string } | null;
+};
+
+type PrecioCargado = {
+  key: string;
+  skuId: string;
+  sucursalNombre: string;
+  tipo: "base" | "excepción";
+  precio: number;
+  margenPct: number | null;
+  actualizadoEn: string;
+  usuarioNombre: string;
 };
 
 type MovimientoReciente = {
@@ -70,6 +101,7 @@ export async function DuenoDashboard() {
   inicioMes.setHours(0, 0, 0, 0);
   const ahora = new Date().getTime();
   const cutoff30 = new Date(ahora - 30 * 86_400_000).toISOString();
+  const cutoff7 = new Date(ahora - 7 * 86_400_000).toISOString();
   const cutoffInmovilizado = ahora - 90 * 86_400_000;
 
   const [
@@ -83,12 +115,14 @@ export async function DuenoDashboard() {
     { data: transferenciasEnTransito },
     { data: pedidosAbiertos },
     { data: inventariosCerrados30d },
+    { data: preciosRecientes },
+    { data: preciosSucursalRecientes },
   ] = await Promise.all([
     supabase.from("sucursales").select("id, nombre, es_central").eq("activo", true).order("es_central", { ascending: false }),
     supabase
       .from("skus")
       .select(
-        `id, nombre, stock_minimo, costo_actual,
+        `id, nombre, stock_minimo, costo_actual, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
          producto:productos ( nombre, categoria:categorias ( nombre ) )`,
       )
       .eq("activo", true),
@@ -111,11 +145,61 @@ export async function DuenoDashboard() {
     supabase.from("transferencias").select("id").eq("estado", "en_transito"),
     supabase.from("pedidos").select("id").not("estado", "in", "(borrador,cerrado)"),
     supabase.from("inventarios").select("id").eq("estado", "cerrado").gte("fecha_fin", cutoff30),
+    supabase
+      .from("precios")
+      .select("sku_id, precio_base, actualizado_en, usuario:usuarios ( nombre )")
+      .gte("actualizado_en", cutoff7)
+      .order("actualizado_en", { ascending: false }),
+    supabase
+      .from("precios_sucursal")
+      .select("sku_id, sucursal_id, precio_override, actualizado_en, usuario:usuarios ( nombre )")
+      .gte("actualizado_en", cutoff7)
+      .order("actualizado_en", { ascending: false }),
   ]);
 
   const sucursalesList = (sucursales ?? []) as Sucursal[];
   const skusList = (skus ?? []) as unknown as SkuInfo[];
   const movimientosList = (movimientos ?? []) as unknown as (MovimientoReciente & { sku_id: string })[];
+
+  const skuPorId = new Map(skusList.map((s) => [s.id, s]));
+  const sucursalNombrePorId = new Map(sucursalesList.map((s) => [s.id, s.nombre]));
+  const sucursalCentral = sucursalesList.find((s) => s.es_central);
+
+  // Precios cargados en los últimos 7 días: base (Olavarría) + excepciones
+  // por sucursal, en una sola lista ordenada por fecha. Control detectivo
+  // (CLAUDE.md, arquitectura.md 1.11): el encargado de Olavarría carga
+  // precios sin aprobación previa, esto es lo que reemplaza esa aprobación.
+  const margenPct = (precio: number, costo: number | null) =>
+    costo == null || precio <= 0 ? null : ((precio - costo) / precio) * 100;
+
+  const preciosCargados: PrecioCargado[] = [
+    ...((preciosRecientes ?? []) as unknown as PrecioBaseFila[]).map((p) => {
+      const sku = skuPorId.get(p.sku_id);
+      return {
+        key: `base:${p.sku_id}:${p.actualizado_en}`,
+        skuId: p.sku_id,
+        sucursalNombre: sucursalCentral?.nombre ?? "Olavarría",
+        tipo: "base" as const,
+        precio: p.precio_base,
+        margenPct: sku ? margenPct(p.precio_base, sku.costo_actual) : null,
+        actualizadoEn: p.actualizado_en,
+        usuarioNombre: p.usuario?.nombre ?? "—",
+      };
+    }),
+    ...((preciosSucursalRecientes ?? []) as unknown as PrecioSucursalFila[]).map((p) => {
+      const sku = skuPorId.get(p.sku_id);
+      return {
+        key: `excepcion:${p.sucursal_id}:${p.sku_id}:${p.actualizado_en}`,
+        skuId: p.sku_id,
+        sucursalNombre: sucursalNombrePorId.get(p.sucursal_id) ?? "—",
+        tipo: "excepción" as const,
+        precio: p.precio_override,
+        margenPct: sku ? margenPct(p.precio_override, sku.costo_actual) : null,
+        actualizadoEn: p.actualizado_en,
+        usuarioNombre: p.usuario?.nombre ?? "—",
+      };
+    }),
+  ].sort((a, b) => (a.actualizadoEn < b.actualizadoEn ? 1 : -1));
 
   const stockPorSku = new Map<string, Record<string, number>>();
   for (const fila of (stock ?? []) as { sku_id: string; sucursal_id: string; cantidad: number }[]) {
@@ -384,6 +468,69 @@ export async function DuenoDashboard() {
           </div>
         </Card>
       </div>
+
+      <Card title="Precios cargados · últimos 7 días">
+        {preciosCargados.length === 0 ? (
+          <EmptyState
+            title="Sin precios cargados en los últimos 7 días"
+            sub="Control detectivo: acá aparece quién cargó cada precio, para revisar sin tener que aprobar antes."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr>
+                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
+                    Producto
+                  </th>
+                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
+                    Sucursal
+                  </th>
+                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                    Precio
+                  </th>
+                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                    Margen
+                  </th>
+                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
+                    Cargado por
+                  </th>
+                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                    Cuándo
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {preciosCargados.map((p) => {
+                  const sku = skuPorId.get(p.skuId);
+                  return (
+                    <tr key={p.key} className="border-b border-[#F1F1F3] last:border-b-0">
+                      <td className="px-[14px] py-[9px] align-middle">
+                        <p className="font-medium text-text">{sku?.producto?.nombre ?? sku?.nombre ?? "—"}</p>
+                        <p className="text-[11.5px] text-text-3">
+                          {sku ? presentacionLabel(sku) : ""}
+                          {p.tipo === "excepción" ? " · excepción manual" : ""}
+                        </p>
+                      </td>
+                      <td className="px-[14px] py-[9px] align-middle text-text-2">{p.sucursalNombre}</td>
+                      <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text">
+                        {formatoMoneda.format(p.precio)}
+                      </td>
+                      <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
+                        {p.margenPct == null ? "—" : `${p.margenPct.toFixed(0)}%`}
+                      </td>
+                      <td className="px-[14px] py-[9px] align-middle text-text-2">{p.usuarioNombre}</td>
+                      <td className="px-[14px] py-[9px] text-right align-middle text-text-3">
+                        {formatoFechaHora.format(new Date(p.actualizadoEn))}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       <Card title="Últimos movimientos del sistema">
         {movimientosRecientes.length === 0 ? (

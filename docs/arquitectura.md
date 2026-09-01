@@ -292,7 +292,7 @@ Tres roles. Los dos encargados **no son simétricos**: Olavarría maneja abastec
 |---|:---:|:---:|:---:|
 | Stock propio | ✅ | ✅ | ✅ |
 | Stock otra sucursal | ✅ | lectura | lectura |
-| Precios de venta | edita | lectura | lectura |
+| Precios de venta | edita | edita | lectura |
 | Costos | ✅ | ✅ | ❌ |
 | Proveedores | ✅ | ✅ | ❌ |
 | Margen por producto | ✅ | ✅ | ❌ |
@@ -307,6 +307,13 @@ Tres roles. Los dos encargados **no son simétricos**: Olavarría maneja abastec
 - Los permisos se cruzan en **dos ejes**: qué acción × en qué sucursal.
 - El enc. de Olavarría **carga costos** en las compras (lo necesita para su tarea) pero no accede al análisis de rentabilidad global.
 - **Ajustes de inventario sin aprobación previa.** El control es detectivo, vía auditoría.
+- **Precios de venta sin aprobación previa en Olavarría.** Mismo criterio que los ajustes
+  de inventario: la mercadería llega, el encargado la controla y define el precio en el
+  momento — esperar al dueño termina en precios anotados en papel que el sistema no
+  refleja. El control es detectivo: `precios`/`precios_sucursal` guardan quién cargó cada
+  precio y cuándo (`actualizado_por`/`actualizado_en`, fijados por trigger con
+  `auth.uid()`, no por la app), y el dashboard del dueño lista los precios cargados en los
+  últimos 7 días con su margen. Laprida sigue en solo lectura.
 
 ## 1.12 Alertas
 

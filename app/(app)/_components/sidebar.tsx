@@ -19,6 +19,11 @@ const NAV: NavItem[] = [
     href: "/productos",
     icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
   },
+  {
+    label: "Precios",
+    href: "/precios",
+    icon: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
+  },
   { label: "Stock", icon: "M21 8v13H3V8M1 3h22v5H1zM10 12h4" },
   {
     label: "Ventas",

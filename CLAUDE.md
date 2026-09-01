@@ -68,10 +68,16 @@ Flujo de pedidos **unidireccional**: Laprida pide, Olavarría despacha.
 | Margen por producto | sí | sí | **no** |
 | Rentabilidad global | sí | **no** | **no** |
 | Compras a proveedor | sí | sí | **no** |
+| Cargar precios de venta | sí | sí | **no** (solo lectura) |
 | Auditoría y usuarios | sí | **no** | **no** |
 
 Los encargados **no son simétricos**: Olavarría maneja el abastecimiento de toda la
 empresa, por eso ve costos. Laprida no.
+
+**Precios de venta: control detectivo, no preventivo.** El encargado de Olavarría carga
+precios sin aprobación previa del dueño (mismo criterio que los ajustes de inventario) —
+la mercadería llega, se controla y se define el precio en el momento. La trazabilidad
+(quién cargó cada precio y cuándo) reemplaza la aprobación previa.
 
 ---
 
@@ -184,6 +190,9 @@ Si no, no va.
 - Si una decisión de negocio no está documentada, **preguntá**.
 - Migraciones SQL versionadas en `supabase/migrations/`.
 - No instalar dependencias sin avisar.
+Nunca apliques migraciones contra Supabase. Pasame el SQL y lo corro yo
+desde el SQL Editor. Es mi único punto de control sobre lo que le pasa
+a la base.
 ---
 
 ## NOTAS DEL ENTORNO

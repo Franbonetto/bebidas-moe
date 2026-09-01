@@ -8,6 +8,14 @@ export async function veCostos(supabase: SupabaseClient): Promise<boolean> {
   return data === true;
 }
 
+// Espejo de es_dueno() (bloque 1): unico rol que puede editar precios,
+// recargos y descuentos por efectivo (arquitectura.md 1.11: "Precios de
+// venta: edita" es exclusivo del dueño, los encargados solo leen).
+export async function esDueno(supabase: SupabaseClient): Promise<boolean> {
+  const { data } = await supabase.rpc("es_dueno");
+  return data === true;
+}
+
 // Espejo de opera_sucursal(sucursal_id) (bloque 1): dueño, o encargado
 // asignado a esa sucursal. Se usa para decidir, por ejemplo, si el usuario
 // puede armar/enviar un pedido de Laprida o preparar/despachar uno como
