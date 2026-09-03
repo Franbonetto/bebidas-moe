@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { presentacionLabel } from "../_lib/presentacion";
 
 export type Sucursal = {
@@ -43,9 +44,11 @@ function stockClassName(cantidad: number) {
 export function ProductosTable({
   sucursales,
   skus,
+  puedeCrear,
 }: {
   sucursales: Sucursal[];
   skus: SkuRow[];
+  puedeCrear: boolean;
 }) {
   const [query, setQuery] = useState("");
 
@@ -75,6 +78,14 @@ export function ProductosTable({
           <span className="whitespace-nowrap text-[12px] text-text-3">
             {filtrados.length} de {skus.length} SKU
           </span>
+          {puedeCrear && (
+            <Link
+              href="/productos/nuevo"
+              className="whitespace-nowrap rounded-[6px] bg-moe px-[11px] py-[6px] text-[12.5px] font-medium text-white hover:bg-moe/90"
+            >
+              Nuevo producto
+            </Link>
+          )}
         </div>
       </div>
 

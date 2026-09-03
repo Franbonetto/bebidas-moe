@@ -199,11 +199,11 @@ la fecha de última actualización de cada recargo** para que sea evidente cuán
 ### Flujo del mostrador
 
 ```
-Medio de pago (al INICIO) → buscar/agregar productos → ticket con precio final correcto
-→ confirmar → descuenta stock + registra venta
+Buscar/agregar productos → ticket con los dos totales posibles (si aplica)
+→ Medio de pago AL FINAL, antes de cobrar → confirmar → descuenta stock + registra venta
 ```
 
-- Medio de pago al inicio: el precio efectivo se aplica desde el primer producto, sin sorpresas al final. Modificable si el cliente cambia de idea.
+- Medio de pago al final: mientras se escanean productos no se sabe qué medio va a usar el cliente, así que el ticket muestra los dos totales (efectivo / otro medio) cuando hay promociones o descuentos que solo aplican en efectivo. Si no hay ninguno, un solo total. El medio se elige recién antes de cobrar y es modificable hasta ese momento.
 - **Búsqueda** por fragmentos (`jw dou` encuentra Johnnie Walker Double Black), más vendidos primero, grilla de accesos rápidos configurable. Compatible con lector de código de barras cuando lo compren.
 - **Sin stock:** permite vender, advierte, y marca el producto para revisión de inventario.
 - **Caja diaria por sucursal:** total, desglose por medio de pago, cantidad de tickets, diferencia entre sistema y efectivo real.
@@ -707,6 +707,47 @@ Se registran especialmente: cambios de precio, ajustes de inventario, anulación
 - Alerta al dueño por ajustes de inventario de monto elevado.
 - Caja por turno o por empleado (hoy es diaria y compartida).
 - Sugerencia de pedido con rotación histórica, estacionalidad y días de cobertura.
+### Promociones: casos complejos postergados
+
+El motor de promociones cubre dos tipos, que representan el 95% de las
+promos reales del cliente:
+
+- **Combo fijo**: dos SKU específicos a precio conjunto
+  (ej. Branca 750 + Coca 2.25 = $21.400)
+- **2x del mismo SKU**: precio fijo por dos unidades
+  (ej. Heraclito 2x$20.000)
+
+Todas las promociones son **solo en efectivo** (billete en mano).
+
+Quedan pendientes tres casos que no encajan en esos dos tipos:
+
+**1. Combo con opciones a elección.**
+The Mula 3 botellas $16.800: "1 Doble IPA + 1 IPA o APA + 1 clásica a
+elección". El cliente elige entre varios SKU dentro de cada posición del
+combo. Requiere modelar grupos de opciones, no una lista fija de SKU.
+
+**2. 2x que exige SKU distintos.**
+Jack Daniel's litro 2x$93.000, "tienen que ser dos botellas diferentes".
+Es un 2x que valida que los dos productos NO sean el mismo SKU, dentro de
+un conjunto acotado (Apple, Fire, etc.).
+
+**3. Descuento por efectivo fuera de vinos.**
+Whisky en botellas de 3 litros: "abonando en efectivo 10% de descuento".
+El modelo actual tiene el descuento por efectivo solo para vinos en
+Olavarría. Este caso requiere que el descuento se pueda definir por SKU
+además de por categoría.
+
+Mientras tanto, estos casos se cargan a mano en el ticket ajustando el
+precio de las líneas.
+
+**Pantalla de administración de promociones — pendiente de implementar.**
+Decisión de diseño ya tomada: va como pestaña separada dentro de
+`/precios`, no mezclada en la misma tabla que precios/recargos. Motivo: la
+pantalla de precios ya tiene varias piezas (base, recargo por categoría,
+descuento efectivo, cascada de cerveza) y agregar promociones ahí la
+vuelve confusa para la encargada. El motor (`lib/promociones.ts`) y las
+tablas (`promociones`/`promocion_items`, bloque 6) ya existen; falta la
+pantalla para cargarlas -- hoy solo se pueden insertar por SQL directo.
 
 ---
 

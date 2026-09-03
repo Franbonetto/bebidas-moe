@@ -110,6 +110,10 @@ export type PrecioVenta = {
   precioOtroMedio: number | null;
   bajoCostoEfectivo: boolean;
   bajoCostoOtroMedio: boolean;
+  // Expuesto para el motor de promociones (bloque 6): un combo o un 2x
+  // puede dejar el precio por debajo de costo aunque el precio base no lo
+  // estuviera, y necesita el mismo costo de referencia para advertirlo.
+  costoReferencia: number | null;
 };
 
 export function calcularPrecioVenta(
@@ -171,5 +175,6 @@ export function calcularPrecioVenta(
     precioOtroMedio,
     bajoCostoEfectivo,
     bajoCostoOtroMedio,
+    costoReferencia,
   };
 }

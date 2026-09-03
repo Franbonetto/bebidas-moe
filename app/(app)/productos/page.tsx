@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { veCostos } from "@/lib/permisos";
 import { ProductosTable, type SkuRow, type Sucursal } from "./_components/productos-table";
 
 type StockRow = {
@@ -9,6 +10,7 @@ type StockRow = {
 
 export default async function ProductosPage() {
   const supabase = await createClient();
+  const puedeCrear = await veCostos(supabase);
 
   const [{ data: sucursales }, { data: skus }, { data: stock }] = await Promise.all([
     supabase
@@ -62,5 +64,5 @@ export default async function ProductosPage() {
     return a.unidades_contenidas - b.unidades_contenidas;
   });
 
-  return <ProductosTable sucursales={sucursalesList} skus={skusConStock} />;
+  return <ProductosTable sucursales={sucursalesList} skus={skusConStock} puedeCrear={puedeCrear} />;
 }

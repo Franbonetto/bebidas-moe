@@ -27,6 +27,7 @@ const NAV: NavItem[] = [
   { label: "Stock", icon: "M21 8v13H3V8M1 3h22v5H1zM10 12h4" },
   {
     label: "Ventas",
+    href: "/vender",
     icon: "M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11",
   },
   {
