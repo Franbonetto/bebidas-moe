@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { formatoFecha } from "../../compras/_lib/formato";
 import { EstadoPedidoBadge, type EstadoPedido } from "./estado-pedido-badge";
 
@@ -14,12 +14,31 @@ export type PedidoRow = {
   pedido_items: { cantidad_solicitada: number }[];
 };
 
+type Grupo = "en_curso" | "enviados" | "recibidos";
+
+const GRUPO_LABEL: Record<Grupo, string> = {
+  en_curso: "En curso",
+  enviados: "Enviados (en tránsito)",
+  recibidos: "Recibidos",
+};
+
+function grupoDe(estado: EstadoPedido): Grupo {
+  if (estado === "cerrado") return "recibidos";
+  if (estado === "despachado") return "enviados";
+  return "en_curso";
+}
+
 export function PedidosTable({
   pedidos,
   puedeCrear,
+  agruparPorRecepcion = false,
 }: {
   pedidos: PedidoRow[];
   puedeCrear: boolean;
+  // Solo tiene sentido del lado de Laprida: distinguir lo que ya le llegó
+  // (recibidos) de lo que salió de Olavarría y todavía está en camino
+  // (enviados), además de lo que sigue en preparación.
+  agruparPorRecepcion?: boolean;
 }) {
   const [query, setQuery] = useState("");
 
@@ -28,6 +47,38 @@ export function PedidosTable({
     if (!q) return pedidos;
     return pedidos.filter((p) => p.numero.toLowerCase().includes(q));
   }, [pedidos, query]);
+
+  const grupos = useMemo(() => {
+    if (!agruparPorRecepcion) return null;
+    const mapa: Record<Grupo, PedidoRow[]> = { en_curso: [], enviados: [], recibidos: [] };
+    for (const p of filtrados) mapa[grupoDe(p.estado)].push(p);
+    return mapa;
+  }, [filtrados, agruparPorRecepcion]);
+
+  function filaPedido(p: PedidoRow) {
+    const unidades = p.pedido_items.reduce((acc, i) => acc + i.cantidad_solicitada, 0);
+    return (
+      <tr key={p.id} className="border-b border-[#F1F1F3] last:border-b-0 hover:bg-[#FAFAFB]">
+        <td className="px-0 py-0">
+          <Link href={`/pedidos/${p.id}`} className="block px-[14px] py-[9px] font-medium text-text">
+            {p.numero}
+          </Link>
+        </td>
+        <td className="px-[14px] py-[9px] align-middle">
+          <EstadoPedidoBadge estado={p.estado} />
+        </td>
+        <td className="px-[14px] py-[9px] align-middle text-text-2">
+          {formatoFecha.format(new Date(p.fecha_creacion))}
+        </td>
+        <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
+          {p.pedido_items.length}
+        </td>
+        <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
+          {unidades}
+        </td>
+      </tr>
+    );
+  }
 
   return (
     <div className="overflow-hidden rounded-card border border-border bg-bg">
@@ -94,33 +145,23 @@ export function PedidosTable({
               </tr>
             </thead>
             <tbody>
-              {filtrados.map((p) => {
-                const unidades = p.pedido_items.reduce((acc, i) => acc + i.cantidad_solicitada, 0);
-                return (
-                  <tr key={p.id} className="border-b border-[#F1F1F3] last:border-b-0 hover:bg-[#FAFAFB]">
-                    <td className="px-0 py-0">
-                      <Link
-                        href={`/pedidos/${p.id}`}
-                        className="block px-[14px] py-[9px] font-medium text-text"
-                      >
-                        {p.numero}
-                      </Link>
-                    </td>
-                    <td className="px-[14px] py-[9px] align-middle">
-                      <EstadoPedidoBadge estado={p.estado} />
-                    </td>
-                    <td className="px-[14px] py-[9px] align-middle text-text-2">
-                      {formatoFecha.format(new Date(p.fecha_creacion))}
-                    </td>
-                    <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
-                      {p.pedido_items.length}
-                    </td>
-                    <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
-                      {unidades}
-                    </td>
-                  </tr>
-                );
-              })}
+              {grupos
+                ? (["en_curso", "enviados", "recibidos"] as Grupo[]).map((g) =>
+                    grupos[g].length === 0 ? null : (
+                      <Fragment key={g}>
+                        <tr>
+                          <td
+                            colSpan={5}
+                            className="border-b border-border bg-bg-2 px-[14px] py-[6px] text-[11.5px] font-medium text-text-2"
+                          >
+                            {GRUPO_LABEL[g]} ({grupos[g].length})
+                          </td>
+                        </tr>
+                        {grupos[g].map((p) => filaPedido(p))}
+                      </Fragment>
+                    ),
+                  )
+                : filtrados.map((p) => filaPedido(p))}
             </tbody>
           </table>
         </div>

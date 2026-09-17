@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { operaSucursal } from "@/lib/permisos";
+import { operaSucursal, veCostos } from "@/lib/permisos";
 import { PedidoDetalle, type PedidoDetalleData } from "../_components/pedido-detalle";
 
 export default async function PedidoDetallePage({ params }: { params: Promise<{ id: string }> }) {
@@ -32,15 +32,17 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
     sucursal_destino_id: string;
   };
 
-  const [puedeOrigen, puedeDestino] = await Promise.all([
+  const [puedeOrigen, puedeDestino, puedeVerCostos] = await Promise.all([
     operaSucursal(supabase, pedidoData.sucursal_origen_id),
     operaSucursal(supabase, pedidoData.sucursal_destino_id),
+    veCostos(supabase),
   ]);
 
   const skuIds = pedidoData.pedido_items.map((i) => i.sku_id);
 
   const stockOrigen: Record<string, number> = {};
   const disponibleOrigen: Record<string, number> = {};
+  let valorTotal = 0;
 
   if (skuIds.length > 0) {
     const [{ data: stockRows }, { data: skuRows }] = await Promise.all([
@@ -49,7 +51,7 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
         .select("sku_id, cantidad")
         .eq("sucursal_id", pedidoData.sucursal_origen_id)
         .in("sku_id", skuIds),
-      supabase.from("skus").select("id, stock_minimo").in("id", skuIds),
+      supabase.from("skus").select("id, stock_minimo, costo_actual").in("id", skuIds),
     ]);
 
     const minimoPorSku = new Map((skuRows ?? []).map((s) => [s.id, s.stock_minimo]));
@@ -57,6 +59,17 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
       stockOrigen[fila.sku_id] = fila.cantidad;
       const minimo = minimoPorSku.get(fila.sku_id) ?? 0;
       disponibleOrigen[fila.sku_id] = Math.max(fila.cantidad - minimo, 0);
+    }
+
+    // Valor a costo del pedido (cantidad solicitada × costo_actual) — solo
+    // para quien ve costos (CLAUDE.md: Laprida no). Es una transferencia
+    // interna, no una venta, por eso se valoriza a costo y no a precio.
+    if (puedeVerCostos) {
+      const costoPorSku = new Map((skuRows ?? []).map((s) => [s.id, s.costo_actual]));
+      for (const item of pedidoData.pedido_items) {
+        const costo = costoPorSku.get(item.sku_id);
+        if (costo != null) valorTotal += item.cantidad_solicitada * costo;
+      }
     }
   }
 
@@ -67,6 +80,7 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
       puedeDestino={puedeDestino}
       stockOrigen={stockOrigen}
       disponibleOrigen={disponibleOrigen}
+      valorTotal={puedeVerCostos ? valorTotal : null}
     />
   );
 }

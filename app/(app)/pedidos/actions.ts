@@ -193,3 +193,95 @@ export async function cerrarPedidoManual(
   revalidatePath("/pedidos");
   return { ok: true };
 }
+
+// =========================================================
+// Pedidos de compra (Olavarría -> dueño): lo que la encargada arma
+// semanalmente para que el dueño sepa qué comprarle a los proveedores.
+// No mueve stock -- eso entra normal cuando el dueño compre y se cargue
+// la recepción en Compras. Ver supabase/migrations/20260909090000.
+// =========================================================
+
+export type LineaPedidoCompra = {
+  sku_id: string;
+  cantidad_sugerida: number;
+  cantidad_solicitada: number;
+};
+
+export async function crearPedidoCompra(
+  lineas: LineaPedidoCompra[],
+): Promise<{ error: string } | { id: string }> {
+  const supabase = await createClient();
+
+  if (lineas.length === 0) return { error: "Agregá al menos un producto." };
+  for (const l of lineas) {
+    if (!Number.isInteger(l.cantidad_solicitada) || l.cantidad_solicitada <= 0) {
+      return { error: "Las cantidades a pedir tienen que ser enteros mayores a cero." };
+    }
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "No hay sesión activa." };
+
+  const { data: central } = await supabase.from("sucursales").select("id").eq("es_central", true).single();
+  if (!central) return { error: "No se encontró la sucursal central." };
+
+  const { data: pedidoCompra, error: pedidoError } = await supabase
+    .from("pedidos_compra")
+    .insert({ sucursal_id: central.id, usuario_creador_id: user.id })
+    .select("id")
+    .single();
+
+  if (pedidoError || !pedidoCompra) {
+    return { error: pedidoError?.message ?? "No se pudo crear el pedido de compra." };
+  }
+
+  const { error: itemsError } = await supabase.from("pedidos_compra_items").insert(
+    lineas.map((l) => ({
+      pedido_compra_id: pedidoCompra.id,
+      sku_id: l.sku_id,
+      cantidad_sugerida: l.cantidad_sugerida,
+      cantidad_solicitada: l.cantidad_solicitada,
+    })),
+  );
+
+  if (itemsError) return { error: itemsError.message };
+
+  revalidatePath("/pedidos");
+  return { id: pedidoCompra.id };
+}
+
+export async function resolverPedidoCompra(
+  pedidoCompraId: string,
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "No hay sesión activa." };
+
+  const { error } = await supabase
+    .from("pedidos_compra")
+    .update({ estado: "resuelto", fecha_resolucion: new Date().toISOString(), usuario_resolucion_id: user.id })
+    .eq("id", pedidoCompraId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/pedidos/compra/${pedidoCompraId}`);
+  revalidatePath("/pedidos");
+  return { ok: true };
+}
+
+export async function eliminarPedidoCompra(
+  pedidoCompraId: string,
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("pedidos_compra").delete().eq("id", pedidoCompraId);
+  if (error) return { error: error.message };
+
+  revalidatePath("/pedidos");
+  return { ok: true };
+}

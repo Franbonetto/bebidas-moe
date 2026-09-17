@@ -6,7 +6,7 @@ import {
   presentacionLabel,
   type SkuPresentacion,
 } from "@/app/(app)/productos/_components/productos-table";
-import { formatoFechaHora } from "../../compras/_lib/formato";
+import { formatoFechaHora, formatoMoneda } from "../../compras/_lib/formato";
 import {
   confirmarPreparacion,
   eliminarPedido,
@@ -84,12 +84,14 @@ export function PedidoDetalle({
   puedeDestino,
   stockOrigen,
   disponibleOrigen,
+  valorTotal,
 }: {
   pedido: PedidoDetalleData;
   puedeOrigen: boolean;
   puedeDestino: boolean;
   stockOrigen: Record<string, number>;
   disponibleOrigen: Record<string, number>;
+  valorTotal: number | null;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -166,6 +168,12 @@ export function PedidoDetalle({
               {pedido.fecha_envio ? ` · Enviado ${formatoFechaHora.format(new Date(pedido.fecha_envio))}` : ""}
               {pedido.fecha_cierre ? ` · Cerrado ${formatoFechaHora.format(new Date(pedido.fecha_cierre))}` : ""}
             </p>
+            {valorTotal != null && (
+              <p className="mt-[4px] text-[13px] text-text-2">
+                Valor a costo:{" "}
+                <span className="font-semibold tabular-nums text-text">{formatoMoneda.format(valorTotal)}</span>
+              </p>
+            )}
           </div>
           <EstadoPedidoBadge estado={pedido.estado} />
         </div>
