@@ -50,7 +50,21 @@ inconsistencias de inventario.
 Si algo no está definido en `docs/arquitectura.md`, **preguntá**. No asumas, no improvises,
 no completes con lo que "suele hacerse". Las decisiones de negocio ya fueron tomadas y
 están documentadas.
+## Regla: integración ARCA (WSAA/WSFEv1)
 
+- La clave privada del certificado fiscal (cert/key del cliente) NUNCA sale de
+  nuestra infraestructura. Prohibido usar SDKs o servicios de terceros que
+  requieran subir la clave privada o el certificado a un backend externo
+  (ej. AfipSDK en modo cert/key), aunque digan no persistirla.
+- La autenticación WSAA (armado del TRA + firma CMS/PKCS#7 + login contra
+  ARCA) se implementa localmente, en nuestro propio servidor, usando
+  `node-forge` (u openssl si se justifica). El Token+Sign resultante se
+  cachea (válido 12hs) en una tabla propia; no se re-firma en cada venta.
+- La solicitud de CAE (WSFEv1 / FECAESolicitar) se llama directo contra los
+  servidores de ARCA (homologación: wswhomo.afip.gov.ar / producción:
+  servicios1.afip.gov.ar), nunca a través de un proxy de terceros.
+- Cert, key y CUIT del cliente viven solo en variables de entorno del
+  servidor. Nunca en el repo, nunca en el cliente (browser), nunca en logs.
 ---
 
 ## CONTEXTO DEL NEGOCIO
@@ -152,11 +166,27 @@ inventario queda cerrado e inmutable.
 
 ---
 
+## ETAPA 2 EN CURSO: FACTURACIÓN ARCA
+
+**Ya no está fuera de alcance.** A partir de 2026-09-05 se decidió arrancar la
+integración con ARCA (ex AFIP) descripta en `docs/bloque_arca_facturacion.md` —
+leer ese documento completo antes de tocar este bloque. Resumen de las decisiones
+ya cerradas ahí (no volver a preguntarlas):
+
+- Ambiente de homologación primero; certificado personal de Francisco ya generado
+  y vinculado al servicio WSFE.
+- Factura A y B únicamente (no C). Disparo manual desde un botón "Facturar" en el
+  detalle de la venta — nunca bloquea el cierre de la venta en sí.
+- Solo Olavarría factura por ahora (un único punto de venta ARCA).
+- `venta` queda desacoplada de `comprobante`: el comprobante es un registro aparte
+  que referencia a la venta, nunca la modifica.
+- `CondicionIVAReceptorId` obligatorio en todo comprobante (RG 5616), CAE en línea
+  obligatorio (RG 5782/5785) — CAEA fuera de alcance de este bloque.
+
 ## FUERA DE ALCANCE (por ahora)
 
-- **Facturación ARCA.** El cliente ya factura con otro sistema. El objeto `venta` debe
-  quedar desacoplado de un futuro objeto `comprobante`, pero no implementar nada fiscal.
-- CRM de clientes (etapa posterior).
+- CRM de clientes (etapa posterior) — con la excepción mínima del formulario de
+  CUIT/razón social para Factura A que pide `bloque_arca_facturacion.md`.
 - Costeo FIFO (el historial por lote ya se guarda, para migrar después).
 
 ---

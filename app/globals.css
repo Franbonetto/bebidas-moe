@@ -53,3 +53,11 @@ body {
   background: var(--bg-2);
   color: var(--text);
 }
+
+/* Ticket imprimible (app/ticket/[ventaId]): oculta todo lo que no debe
+   salir en el papel (el botón "Imprimir" en sí). */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
