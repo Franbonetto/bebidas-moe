@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { facturarVentaAutomatico } from "./facturar/actions";
 
 export type LineaVenta = {
   sku_id: string;
@@ -12,11 +13,18 @@ export type LineaVenta = {
   con_envase: boolean;
 };
 
+export type ComprobanteResumen = {
+  tipoCbte: "A" | "B";
+  numeroComprobante: number;
+  cae: string;
+  vencimientoCae: string;
+};
+
 export async function confirmarVenta(
   sucursalId: string,
   medioPago: "efectivo" | "debito" | "credito" | "transferencia",
   lineas: LineaVenta[],
-): Promise<{ error: string } | { id: string }> {
+): Promise<{ error: string } | { id: string; comprobante: ComprobanteResumen | null }> {
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("confirmar_venta", {
@@ -27,8 +35,42 @@ export async function confirmarVenta(
 
   if (error) return { error: error.message };
 
+  const ventaId = (data as { id: string }).id;
+
+  // Facturación automática para cualquier sucursal que tenga un punto de
+  // venta ARCA activo configurado (antes: solo Olavarría, hardcodeado).
+  // Si falla (ARCA caído, rechazo, etc.) no se propaga como error acá --
+  // la venta ya está confirmada y cobrada; queda para reintentar desde
+  // /vender/facturar, mismo criterio que un rechazo manual cualquiera.
+  const { data: puntoVenta } = await supabase
+    .from("puntos_venta")
+    .select("id")
+    .eq("sucursal_id", sucursalId)
+    .eq("activo", true)
+    .maybeSingle();
+  let comprobante: ComprobanteResumen | null = null;
+
+  if (puntoVenta) {
+    await facturarVentaAutomatico(ventaId).catch(() => {});
+
+    const { data: comprobanteRow } = await supabase
+      .from("comprobantes_fiscales")
+      .select("tipo_cbte, numero_comprobante, cae, vencimiento_cae, estado")
+      .eq("venta_id", ventaId)
+      .maybeSingle();
+
+    if (comprobanteRow?.estado === "autorizado" && comprobanteRow.cae && comprobanteRow.numero_comprobante) {
+      comprobante = {
+        tipoCbte: comprobanteRow.tipo_cbte as "A" | "B",
+        numeroComprobante: comprobanteRow.numero_comprobante,
+        cae: comprobanteRow.cae,
+        vencimientoCae: comprobanteRow.vencimiento_cae ?? "",
+      };
+    }
+  }
+
   revalidatePath("/vender");
-  return { id: (data as { id: string }).id };
+  return { id: ventaId, comprobante };
 }
 
 // Encadena desarmar_sku() los niveles que hagan falta (x24 -> x6 -> unidad,
@@ -55,6 +97,67 @@ export async function desarmarParaVenta(
   }
 
   revalidatePath("/vender");
+  return { ok: true };
+}
+
+export type DevolucionItemInput = {
+  ventaItemId: string;
+  cantidad: number;
+  destino: "stock" | "merma";
+};
+
+export type CambioItemInput = {
+  skuId: string;
+  cantidad: number;
+};
+
+export async function confirmarDevolucion(input: {
+  ventaId: string;
+  items: DevolucionItemInput[];
+  resolucion: "dinero" | "cambio";
+  cambioItems: CambioItemInput[];
+  observaciones: string | null;
+}): Promise<{ error: string } | { id: string }> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("confirmar_devolucion", {
+    p_venta_id: input.ventaId,
+    p_items: input.items.map((i) => ({
+      venta_item_id: i.ventaItemId,
+      cantidad: i.cantidad,
+      destino: i.destino,
+    })),
+    p_resolucion: input.resolucion,
+    p_cambio_items:
+      input.resolucion === "cambio"
+        ? input.cambioItems.map((c) => ({ sku_id: c.skuId, cantidad: c.cantidad }))
+        : null,
+    p_observaciones: input.observaciones,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/vender");
+  revalidatePath("/vender/caja");
+  revalidatePath("/vender/devoluciones");
+  return { id: (data as { id: string }).id };
+}
+
+export async function abrirCaja(
+  sucursalId: string,
+  montoApertura: number,
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("abrir_caja", {
+    p_sucursal_id: sucursalId,
+    p_monto_apertura: montoApertura,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/vender");
+  revalidatePath("/vender/caja");
   return { ok: true };
 }
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   resolverTicketEfectivo,
   coincideFragmentos,
@@ -10,8 +11,9 @@ import {
   type Tramo,
 } from "@/lib/promociones";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
-import { confirmarVenta, desarmarParaVenta, type LineaVenta } from "../actions";
+import { confirmarVenta, desarmarParaVenta, type ComprobanteResumen, type LineaVenta } from "../actions";
 import { formatoMoneda } from "../_lib/formato";
+import { AbrirCajaForm } from "./abrir-caja-form";
 
 export type SkuPos = {
   id: string;
@@ -63,18 +65,20 @@ function textoBusqueda(sku: SkuPos) {
 export function PosClient({
   sucursalId,
   sucursalNombre,
+  puedeFacturar,
   skus,
   combos,
   promosCantidad,
-  cajaAbierta,
+  estadoCaja,
   cantidadTicketsHoy,
 }: {
   sucursalId: string;
   sucursalNombre: string;
+  puedeFacturar: boolean;
   skus: SkuPos[];
   combos: ComboData[];
   promosCantidad: PromoCantidadData[];
-  cajaAbierta: boolean;
+  estadoCaja: "sin_abrir" | "abierta" | "cerrada";
   cantidadTicketsHoy: number;
 }) {
   const router = useRouter();
@@ -89,7 +93,16 @@ export function PosClient({
   // solo (para arrancar el siguiente), así que sin esto no queda ningún
   // rastro en pantalla de que la venta anterior se guardó.
   const [ventaConfirmada, setVentaConfirmada] = useState<number | null>(null);
+  const [ultimaVenta, setUltimaVenta] = useState<{ id: string; comprobante: ComprobanteResumen | null } | null>(
+    null,
+  );
   const avisoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [mostrarPago, setMostrarPago] = useState(false);
+  const primerMedioRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (mostrarPago) primerMedioRef.current?.focus();
+  }, [mostrarPago]);
 
   const skuPorId = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
 
@@ -187,7 +200,14 @@ export function PosClient({
     if (e.key !== "Enter") return;
     e.preventDefault();
     const q = query.trim();
-    if (!q) return;
+    if (!q) {
+      // Doble Enter: ya se terminó de escanear (el campo quedó vacío
+      // después del último producto agregado) y se aprieta Enter de nuevo
+      // -- abre el cuadro de medio de pago con el total, sin soltar el
+      // teclado ni el mouse.
+      if (lineas.length > 0) setMostrarPago(true);
+      return;
+    }
 
     const porCodigoBarras = skus.find((s) => s.codigoBarras === q);
     if (porCodigoBarras) {
@@ -280,8 +300,12 @@ export function PosClient({
     return resultado;
   }
 
+  if (estadoCaja === "sin_abrir") {
+    return <AbrirCajaForm sucursalId={sucursalId} sucursalNombre={sucursalNombre} />;
+  }
+
   function confirmar() {
-    if (!cajaAbierta) {
+    if (estadoCaja !== "abierta") {
       setError("La caja de hoy ya está cerrada.");
       return;
     }
@@ -304,6 +328,8 @@ export function PosClient({
       setLineas([]);
       setEnvaseChecked({});
       setMedioPago(null);
+      setMostrarPago(false);
+      setUltimaVenta({ id: resultado.id, comprobante: resultado.comprobante });
 
       if (avisoTimeoutRef.current) clearTimeout(avisoTimeoutRef.current);
       setVentaConfirmada(totalCobrado);
@@ -314,20 +340,36 @@ export function PosClient({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_372px]">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_460px]">
       {/* ============ IZQUIERDA: búsqueda ============ */}
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h1 className="text-[15px] font-semibold text-text">Vender — {sucursalNombre}</h1>
-          <a
-            href="/vender/caja"
-            className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
-          >
-            Caja del día · {cantidadTicketsHoy} ventas
-          </a>
+          <h1 className="text-[15px] font-semibold text-text">Punto de venta — {sucursalNombre}</h1>
+          <div className="flex gap-2">
+            {puedeFacturar && (
+              <Link
+                href="/vender/facturar"
+                className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+              >
+                Facturar
+              </Link>
+            )}
+            <Link
+              href="/vender/devoluciones"
+              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+            >
+              Devoluciones
+            </Link>
+            <Link
+              href="/vender/caja"
+              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+            >
+              Caja del día · {cantidadTicketsHoy} ventas
+            </Link>
+          </div>
         </div>
 
-        {!cajaAbierta && (
+        {estadoCaja === "cerrada" && (
           <div className="mb-3 rounded-[7px] border border-warn/30 bg-warn-bg px-[12px] py-[10px] text-[12.5px] text-warn">
             La caja de hoy ya está cerrada. No se pueden registrar más ventas hasta el próximo día.
           </div>
@@ -410,6 +452,26 @@ export function PosClient({
               <path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
             </svg>
             Venta registrada · {formatoMoneda.format(ventaConfirmada)}
+          </div>
+        )}
+
+        {ultimaVenta && (
+          <div className="mx-[15px] mt-[8px] flex items-center justify-between rounded-[7px] border border-border bg-bg-2 px-[12px] py-[9px] text-[12px]">
+            <span className="text-text-2">
+              {ultimaVenta.comprobante
+                ? `Factura ${ultimaVenta.comprobante.tipoCbte} N° ${ultimaVenta.comprobante.numeroComprobante} autorizada`
+                : puedeFacturar
+                  ? "Sin facturar todavía (reintentar desde Facturar)"
+                  : "Ticket interno"}
+            </span>
+            <a
+              href={`/ticket/${ultimaVenta.id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-moe hover:underline"
+            >
+              Imprimir ticket →
+            </a>
           </div>
         )}
 
@@ -586,6 +648,89 @@ export function PosClient({
           </button>
         </div>
       </div>
+
+      {mostrarPago && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setMostrarPago(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setMostrarPago(false);
+          }}
+        >
+          <div
+            className="w-[380px] rounded-card border border-border bg-bg p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="mb-3 text-[14px] font-semibold text-text">¿Cómo paga?</h2>
+
+            <div className="mb-3 grid grid-cols-2 gap-[8px]">
+              {MEDIOS.map((m, i) => (
+                <button
+                  key={m.id}
+                  ref={i === 0 ? primerMedioRef : undefined}
+                  type="button"
+                  onClick={() => setMedioPago(m.id)}
+                  className={`rounded-card border px-[10px] py-[10px] text-left text-[13px] font-medium ${
+                    medioPago === m.id
+                      ? "border-moe bg-moe-soft text-moe"
+                      : "border-border bg-bg text-text hover:bg-bg-2"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {hayDescuento ? (
+              <>
+                <div className="mb-[5px] flex items-baseline justify-between">
+                  <span className="text-[13px] font-medium text-text-2">Total en efectivo</span>
+                  <span className="text-[20px] font-semibold tabular-nums text-text">
+                    {formatoMoneda.format(totalEfectivo)}
+                  </span>
+                </div>
+                <div className="mb-[9px] flex items-baseline justify-between">
+                  <span className="text-[13px] font-medium text-text-2">Total en otro medio</span>
+                  <span className="text-[15px] font-medium tabular-nums text-text-2">
+                    {formatoMoneda.format(totalOtroMedio)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="mb-[9px] flex items-baseline justify-between">
+                <span className="text-[13px] font-medium text-text-2">Total</span>
+                <span className="text-[22px] font-semibold tabular-nums text-text">
+                  {formatoMoneda.format(totalOtroMedio)}
+                </span>
+              </div>
+            )}
+
+            {error && <p className="mb-2 text-[12.5px] text-err">{error}</p>}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMostrarPago(false)}
+                className="rounded-[7px] border border-border bg-bg px-[11px] py-[10px] text-[13px] font-medium text-text hover:bg-bg-2"
+              >
+                Seguir escaneando
+              </button>
+              <button
+                type="button"
+                disabled={pending || !medioPago}
+                onClick={confirmar}
+                className="flex-1 rounded-[7px] bg-moe px-[11px] py-[10px] text-[14px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+              >
+                {pending
+                  ? "Confirmando…"
+                  : medioPago
+                    ? `Cobrar ${formatoMoneda.format(medioPago === "efectivo" ? totalEfectivo : totalOtroMedio)}`
+                    : "Elegí un medio de pago"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

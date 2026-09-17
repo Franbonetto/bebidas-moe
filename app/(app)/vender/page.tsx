@@ -43,6 +43,7 @@ export default async function VenderPage({
     { data: stockRaw },
     { data: promocionesRaw },
     { data: cajaHoy },
+    { data: puntoVenta },
   ] = await Promise.all([
     supabase
       .from("skus")
@@ -70,11 +71,22 @@ export default async function VenderPage({
       .or(`sucursal_id.is.null,sucursal_id.eq.${sucursal.id}`),
     supabase
       .from("cajas")
-      .select("id, estado, cantidad_tickets")
+      .select("id, estado, monto_apertura, cantidad_tickets")
       .eq("sucursal_id", sucursal.id)
       .eq("fecha", new Date().toISOString().slice(0, 10))
       .maybeSingle(),
+    supabase
+      .from("puntos_venta")
+      .select("id")
+      .eq("sucursal_id", sucursal.id)
+      .eq("activo", true)
+      .maybeSingle(),
   ]);
+
+  // El botón "Facturar" depende de si ESTA sucursal tiene punto de venta
+  // ARCA activo, no de si es la sucursal central (antes solo facturaba
+  // Olavarría, ver 20260917090000_arca_multisucursal.sql).
+  const puedeFacturar = puntoVenta !== null;
 
   const desde = new Date();
   desde.setDate(desde.getDate() - 30);
@@ -274,10 +286,14 @@ export default async function VenderPage({
       <PosClient
         sucursalId={sucursal.id}
         sucursalNombre={sucursal.nombre}
+        puedeFacturar={puedeFacturar}
         skus={skusPos}
         combos={combos}
         promosCantidad={promosCantidad}
-        cajaAbierta={cajaHoy ? cajaHoy.estado === "abierta" : true}
+        // Apertura de caja obligatoria antes de vender: sin fila de hoy
+        // todavia no se abrio (antes se abria sola con la primera venta,
+        // ver supabase/migrations/20260903100000_apertura_caja.sql).
+        estadoCaja={!cajaHoy ? "sin_abrir" : cajaHoy.estado === "abierta" ? "abierta" : "cerrada"}
         cantidadTicketsHoy={cantidadTicketsHoy ?? 0}
       />
     </div>

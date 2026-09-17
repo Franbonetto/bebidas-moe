@@ -7,10 +7,14 @@ import { formatoMoneda } from "../../_lib/formato";
 
 export function CerrarCajaForm({
   cajaId,
-  efectivoSistema,
+  efectivoEsperado,
 }: {
   cajaId: string;
-  efectivoSistema: number;
+  // Monto de apertura + ventas en efectivo del dia (mismo calculo que hace
+  // cerrar_caja() en la base) -- se llama "esperado" y no "sistema" para
+  // no confundirlo con la columna cajas.efectivo_sistema, que recien queda
+  // fijada cuando se cierra.
+  efectivoEsperado: number;
 }) {
   const router = useRouter();
   const [declarado, setDeclarado] = useState("");
@@ -18,7 +22,7 @@ export function CerrarCajaForm({
   const [pending, startTransition] = useTransition();
 
   const declaradoNum = Number(declarado);
-  const diferencia = declarado.trim() === "" ? null : declaradoNum - efectivoSistema;
+  const diferencia = declarado.trim() === "" ? null : declaradoNum - efectivoEsperado;
 
   function confirmar() {
     if (declarado.trim() === "" || Number.isNaN(declaradoNum) || declaradoNum < 0) {
