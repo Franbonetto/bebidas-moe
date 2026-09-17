@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { crearProductoYSku, type NuevoProductoInput } from "../../actions";
 
@@ -8,6 +8,7 @@ export type MarcaOpcion = { id: string; nombre: string };
 export type CategoriaOpcion = { id: string; nombre: string; categoria_padre_id: string | null };
 export type ProductoOpcion = { id: string; nombre: string; marca: { nombre: string } | null };
 export type TipoEnvaseOpcion = { id: string; nombre: string; es_generico: boolean; valor_deposito: number };
+export type ProveedorOpcion = { id: string; razon_social: string; nombre_comercial: string | null };
 export type SkuOpcion = {
   id: string;
   nombre: string;
@@ -34,18 +35,24 @@ function skuLabel(s: { nombre: string; producto: { nombre: string; marca: { nomb
   return marca ? `${producto} — ${marca} (${s.nombre})` : `${producto} (${s.nombre})`;
 }
 
+function proveedorLabel(p: ProveedorOpcion) {
+  return p.nombre_comercial ?? p.razon_social;
+}
+
 export function ProductoSkuForm({
   marcas,
   categorias,
   productos,
   tiposEnvase,
   skus,
+  proveedores,
 }: {
   marcas: MarcaOpcion[];
   categorias: CategoriaOpcion[];
   productos: ProductoOpcion[];
   tiposEnvase: TipoEnvaseOpcion[];
   skus: SkuOpcion[];
+  proveedores: ProveedorOpcion[];
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -83,8 +90,9 @@ export function ProductoSkuForm({
   const [nombreSku, setNombreSku] = useState("");
   const [codigoInterno, setCodigoInterno] = useState("");
   const [codigoBarras, setCodigoBarras] = useState("");
+  const nombreSkuRef = useRef<HTMLInputElement>(null);
   const [volumen, setVolumen] = useState("");
-  const [unidadVolumen, setUnidadVolumen] = useState<"ml" | "l">("ml");
+  const [unidadVolumen, setUnidadVolumen] = useState<"ml" | "l" | "un" | "g">("ml");
   const [tipoPresentacion, setTipoPresentacion] = useState<"unidad" | "pack" | "cajon" | "estuche">("unidad");
   const [unidadesContenidas, setUnidadesContenidas] = useState("1");
   const [stockMinimo, setStockMinimo] = useState("0");
@@ -114,6 +122,21 @@ export function ProductoSkuForm({
   }, [skus, desarmaQuery]);
 
   const desarmaSkuSeleccionado = skus.find((s) => s.id === desarmaEnSkuId) ?? null;
+
+  // ---- Proveedores (proveedor_skus: opcional, uno o varios por SKU) ----
+  const [proveedorFilas, setProveedorFilas] = useState<{ proveedorId: string; costoReferencia: string }[]>([]);
+
+  function agregarProveedorFila() {
+    setProveedorFilas((prev) => [...prev, { proveedorId: "", costoReferencia: "" }]);
+  }
+
+  function actualizarProveedorFila(index: number, campo: "proveedorId" | "costoReferencia", valor: string) {
+    setProveedorFilas((prev) => prev.map((f, i) => (i === index ? { ...f, [campo]: valor } : f)));
+  }
+
+  function quitarProveedorFila(index: number) {
+    setProveedorFilas((prev) => prev.filter((_, i) => i !== index));
+  }
 
   function validar(): string | null {
     if (productoModo === "existente" && !productoId) return "Elegí un producto existente.";
@@ -152,6 +175,17 @@ export function ProductoSkuForm({
       const cantidad = Number(desarmaEnCantidad);
       if (!Number.isInteger(cantidad) || cantidad <= 0)
         return "La cantidad de desarme tiene que ser un entero mayor a cero.";
+    }
+
+    const proveedorIdsUsados = new Set<string>();
+    for (const fila of proveedorFilas) {
+      if (!fila.proveedorId) return "Elegí un proveedor en cada fila, o quitá la fila vacía.";
+      if (proveedorIdsUsados.has(fila.proveedorId)) return "Hay un proveedor repetido en la lista.";
+      proveedorIdsUsados.add(fila.proveedorId);
+      if (fila.costoReferencia.trim()) {
+        const costo = Number(fila.costoReferencia);
+        if (Number.isNaN(costo) || costo < 0) return "El costo de referencia no puede ser negativo.";
+      }
     }
 
     return null;
@@ -197,6 +231,10 @@ export function ProductoSkuForm({
         stockMinimo: Number(stockMinimo),
         stockObjetivo: Number(stockObjetivo),
       },
+      proveedores: proveedorFilas.map((f) => ({
+        proveedorId: f.proveedorId,
+        costoReferencia: f.costoReferencia.trim() ? Number(f.costoReferencia) : null,
+      })),
     };
 
     startTransition(async () => {
@@ -388,6 +426,7 @@ export function ProductoSkuForm({
           <div>
             <label className={labelClass}>Nombre *</label>
             <input
+              ref={nombreSkuRef}
               type="text"
               value={nombreSku}
               onChange={(e) => setNombreSku(e.target.value)}
@@ -409,9 +448,21 @@ export function ProductoSkuForm({
             <label className={labelClass}>Código de barras</label>
             <input
               type="text"
+              autoFocus
               value={codigoBarras}
               onChange={(e) => setCodigoBarras(e.target.value)}
-              placeholder="Opcional — se puede cargar después"
+              // Pistola lectora: escanea, "escribe" el código y manda un Enter
+              // solo — no hay <form> acá (se guarda con un botón), así que el
+              // Enter no dispara nada por sí solo. Esto lo aprovecha para
+              // saltar directo a Nombre y no perder tiempo pasando de campo
+              // en campo a mano.
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  nombreSkuRef.current?.focus();
+                }
+              }}
+              placeholder="Escaneá con la pistola o cargalo a mano — opcional"
               className={inputClass}
             />
           </div>
@@ -432,10 +483,12 @@ export function ProductoSkuForm({
               <select
                 className={inputClass}
                 value={unidadVolumen}
-                onChange={(e) => setUnidadVolumen(e.target.value as "ml" | "l")}
+                onChange={(e) => setUnidadVolumen(e.target.value as "ml" | "l" | "un" | "g")}
               >
                 <option value="ml">ml</option>
                 <option value="l">l</option>
+                <option value="un">unidad</option>
+                <option value="g">gramo</option>
               </select>
             </div>
           </div>
@@ -625,6 +678,57 @@ export function ProductoSkuForm({
                 className={inputClass}
               />
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ============ Proveedores ============ */}
+      <div className={seccionClass}>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-[13px] font-semibold text-text">Proveedores</h2>
+          <button type="button" onClick={agregarProveedorFila} className={modoBtnClass(false)}>
+            + Agregar proveedor
+          </button>
+        </div>
+
+        {proveedorFilas.length === 0 ? (
+          <p className="text-[12.5px] text-text-3">
+            Opcional — se puede dejar sin proveedor (ej. combos o envases genéricos) y cargarlo después.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {proveedorFilas.map((fila, index) => (
+              <div key={index} className="grid grid-cols-[1fr_140px_auto] gap-2">
+                <select
+                  className={inputClass}
+                  value={fila.proveedorId}
+                  onChange={(e) => actualizarProveedorFila(index, "proveedorId", e.target.value)}
+                >
+                  <option value="">Elegir proveedor…</option>
+                  {proveedores.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {proveedorLabel(p)}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={fila.costoReferencia}
+                  onChange={(e) => actualizarProveedorFila(index, "costoReferencia", e.target.value)}
+                  placeholder="Costo ref. (opcional)"
+                  className={inputClass}
+                />
+                <button
+                  type="button"
+                  onClick={() => quitarProveedorFila(index)}
+                  className="rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[12.5px] text-text-3 hover:bg-bg-2 hover:text-err"
+                >
+                  Quitar
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </div>

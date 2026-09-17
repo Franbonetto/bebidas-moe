@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { presentacionLabel } from "../_lib/presentacion";
+import { MovimientosSkuModal } from "./movimientos-sku-modal";
 
 export type Sucursal = {
   id: string;
@@ -18,6 +19,7 @@ export type SkuRow = {
   volumen: number;
   unidad_volumen: string;
   unidades_contenidas: number;
+  stock_minimo: number;
   producto: {
     nombre: string;
     marca: { nombre: string } | null;
@@ -32,12 +34,21 @@ export type SkuRow = {
 export { presentacionLabel } from "../_lib/presentacion";
 export type { SkuPresentacion } from "../_lib/presentacion";
 
-// Cero es el estado inicial de un catálogo sin movimientos todavía, no una
-// alerta: se muestra en gris neutro. El rojo queda reservado para stock
-// negativo (el POS permite vender sin stock, arquitectura.md 1.8).
-function stockClassName(cantidad: number) {
+// Mismo criterio que las alertas del dashboard del dueño ("productos sin
+// stock" / "bajo mínimo"): acá se reusa por fila para no tener que ir a
+// otra pantalla a ver qué SKU necesita atención. Negativo (el POS permite
+// vender sin stock, arquitectura.md 1.8) y cero pesan igual de fuerte que
+// "sin stock" -- bajo mínimo es una alerta más suave.
+function stockClassName(cantidad: number, stockMinimo: number) {
   if (cantidad < 0) return "font-medium text-err";
-  if (cantidad === 0) return "text-text-3";
+  if (cantidad === 0) return "text-err";
+  if (stockMinimo > 0 && cantidad < stockMinimo) return "font-medium text-warn";
+  return "text-text";
+}
+
+function totalClassName(total: number) {
+  if (total < 0) return "font-medium text-err";
+  if (total === 0) return "text-text-3";
   return "text-text";
 }
 
@@ -51,23 +62,46 @@ export function ProductosTable({
   puedeCrear: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const [categoria, setCategoria] = useState("");
+  const [skuSeleccionado, setSkuSeleccionado] = useState<SkuRow | null>(null);
+
+  const categorias = useMemo(() => {
+    const nombres = new Set<string>();
+    for (const sku of skus) {
+      if (sku.producto?.categoria?.nombre) nombres.add(sku.producto.categoria.nombre);
+    }
+    return [...nombres].sort((a, b) => a.localeCompare(b, "es"));
+  }, [skus]);
 
   const filtrados = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return skus;
     return skus.filter((sku) => {
+      if (categoria && sku.producto?.categoria?.nombre !== categoria) return false;
+      if (!q) return true;
       const producto = sku.producto?.nombre.toLowerCase() ?? "";
       const marca = sku.producto?.marca?.nombre.toLowerCase() ?? "";
       const codigo = sku.codigo_interno.toLowerCase();
       return producto.includes(q) || marca.includes(q) || codigo.includes(q);
     });
-  }, [skus, query]);
+  }, [skus, query, categoria]);
 
   return (
     <div className="overflow-hidden rounded-card border border-border bg-bg">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[14px] py-[11px]">
         <h2 className="text-[13px] font-semibold text-text">Catálogo</h2>
         <div className="flex items-center gap-3">
+          <select
+            value={categoria}
+            onChange={(e) => setCategoria(e.target.value)}
+            className="rounded-[6px] border border-border bg-bg-2 px-[10px] py-[5px] text-[13px] text-text outline-none focus:border-moe"
+          >
+            <option value="">Todas las categorías</option>
+            {categorias.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={query}
@@ -110,25 +144,25 @@ export function ProductosTable({
           )}
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="max-h-[65vh] overflow-auto">
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
+                <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
                   Producto
                 </th>
-                <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
+                <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
                   Presentación
                 </th>
                 {sucursales.map((s) => (
                   <th
                     key={s.id}
-                    className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2"
+                    className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2"
                   >
                     Stock {s.nombre}
                   </th>
                 ))}
-                <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
+                <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
                   Total
                 </th>
               </tr>
@@ -141,7 +175,9 @@ export function ProductosTable({
                 return (
                   <tr
                     key={sku.id}
-                    className="border-b border-[#F1F1F3] last:border-b-0 hover:bg-[#FAFAFB]"
+                    onClick={() => setSkuSeleccionado(sku)}
+                    className="cursor-pointer border-b border-[#F1F1F3] last:border-b-0 hover:bg-[#FAFAFB]"
+                    title="Ver historial de movimientos"
                   >
                     <td className="px-[14px] py-[9px] align-middle">
                       <p className="font-medium text-text">{sku.producto?.nombre ?? sku.nombre}</p>
@@ -157,13 +193,13 @@ export function ProductosTable({
                     {cantidades.map((cantidad, i) => (
                       <td
                         key={sucursales[i].id}
-                        className={`px-[14px] py-[9px] text-right tabular-nums ${stockClassName(cantidad)}`}
+                        className={`px-[14px] py-[9px] text-right tabular-nums ${stockClassName(cantidad, sku.stock_minimo)}`}
                       >
                         {cantidad}
                       </td>
                     ))}
                     <td
-                      className={`px-[14px] py-[9px] text-right font-medium tabular-nums ${stockClassName(total)}`}
+                      className={`px-[14px] py-[9px] text-right font-medium tabular-nums ${totalClassName(total)}`}
                     >
                       {total}
                     </td>
@@ -173,6 +209,15 @@ export function ProductosTable({
             </tbody>
           </table>
         </div>
+      )}
+
+      {skuSeleccionado && (
+        <MovimientosSkuModal
+          skuId={skuSeleccionado.id}
+          nombre={skuSeleccionado.producto?.nombre ?? skuSeleccionado.nombre}
+          presentacion={presentacionLabel(skuSeleccionado)}
+          onClose={() => setSkuSeleccionado(null)}
+        />
       )}
     </div>
   );

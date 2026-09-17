@@ -25,7 +25,7 @@ export default async function ProductosPage() {
       // implemente, se agrega como columna condicional según rol, no se
       // deja una columna a medio hacer ahora.
       .select(
-        `id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+        `id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
          producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
       )
       .eq("activo", true),

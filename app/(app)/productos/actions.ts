@@ -14,7 +14,7 @@ export type NuevoProductoInput = {
     codigoInterno: string;
     codigoBarras: string | null;
     volumen: number;
-    unidadVolumen: "ml" | "l";
+    unidadVolumen: "ml" | "l" | "un" | "g";
     tipoPresentacion: "unidad" | "pack" | "cajon" | "estuche";
     unidadesContenidas: number;
     esRetornable: boolean;
@@ -25,6 +25,9 @@ export type NuevoProductoInput = {
     stockMinimo: number;
     stockObjetivo: number;
   };
+  // proveedor_skus: opcional, uno o varios (arquitectura.md 1.6 — proveedor
+  // asociado a un SKU especifico, no solo a traves de una compra puntual).
+  proveedores: { proveedorId: string; costoReferencia: number | null }[];
 };
 
 export async function crearProductoYSku(
@@ -120,6 +123,53 @@ export async function crearProductoYSku(
 
   if (skuError) return { error: `No se pudo crear el SKU: ${skuError.message}` };
 
+  if (input.proveedores.length > 0) {
+    const { error: proveedorSkusError } = await supabase.from("proveedor_skus").insert(
+      input.proveedores.map((p) => ({
+        sku_id: sku.id,
+        proveedor_id: p.proveedorId,
+        costo_referencia: p.costoReferencia,
+      })),
+    );
+    if (proveedorSkusError)
+      return { error: `El SKU se creó, pero no se pudo asociar el proveedor: ${proveedorSkusError.message}` };
+  }
+
   revalidatePath("/productos");
   return { id: sku.id };
+}
+
+export type MovimientoSku = {
+  id: string;
+  tipo: string;
+  cantidad: number;
+  stock_anterior: number;
+  stock_posterior: number;
+  fecha: string;
+  motivo: string | null;
+  usuario: { nombre: string } | null;
+  sucursal: { nombre: string } | null;
+};
+
+// Historial de movimientos de un SKU puntual, para el drill-down que
+// reemplazó a la pantalla de "Stock" separada (se unificó en Productos:
+// el catálogo ya tiene el stock actual, esto agrega el histórico sin
+// duplicar una tabla aparte). movimientos_stock es de solo lectura para
+// cualquier usuario activo (RLS, bloque 3) -- no hace falta filtrar por rol.
+export async function obtenerMovimientosSku(
+  skuId: string,
+): Promise<{ error: string } | { movimientos: MovimientoSku[] }> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("movimientos_stock")
+    .select(
+      "id, tipo, cantidad, stock_anterior, stock_posterior, fecha, motivo, usuario:usuarios ( nombre ), sucursal:sucursales ( nombre )",
+    )
+    .eq("sku_id", skuId)
+    .order("fecha", { ascending: false })
+    .limit(50);
+
+  if (error) return { error: error.message };
+  return { movimientos: (data ?? []) as unknown as MovimientoSku[] };
 }

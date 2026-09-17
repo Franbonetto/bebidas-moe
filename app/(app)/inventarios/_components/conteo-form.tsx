@@ -27,7 +27,11 @@ export type ItemConteo = {
   motivo: MotivoInventario | null;
   sku: SkuPresentacion & {
     codigo_interno: string;
-    producto: { nombre: string; marca: { nombre: string } | null } | null;
+    producto: {
+      nombre: string;
+      marca: { nombre: string } | null;
+      categoria: { nombre: string } | null;
+    } | null;
   };
 };
 
@@ -62,18 +66,28 @@ export function ConteoForm({
   const [guardando, setGuardando] = useState<Record<string, boolean>>({});
   const [erroresFila, setErroresFila] = useState<Record<string, string | null>>({});
   const [query, setQuery] = useState("");
+  const [categoria, setCategoria] = useState("");
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  const categorias = useMemo(() => {
+    const nombres = new Set<string>();
+    for (const i of items) {
+      if (i.sku.producto?.categoria?.nombre) nombres.add(i.sku.producto.categoria.nombre);
+    }
+    return [...nombres].sort((a, b) => a.localeCompare(b, "es"));
+  }, [items]);
+
   const filtrados = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return items;
     return items.filter((i) => {
+      if (categoria && i.sku.producto?.categoria?.nombre !== categoria) return false;
+      if (!q) return true;
       const producto = i.sku.producto?.nombre.toLowerCase() ?? "";
       const marca = i.sku.producto?.marca?.nombre.toLowerCase() ?? "";
       return producto.includes(q) || marca.includes(q) || i.sku.codigo_interno.toLowerCase().includes(q);
     });
-  }, [items, query]);
+  }, [items, query, categoria]);
 
   function difiere(skuId: string, sistema: number) {
     const c = contados[skuId];
@@ -171,17 +185,31 @@ export function ConteoForm({
         </div>
       )}
 
-      <div className="rounded-card border border-border bg-bg p-3">
+      <div className="flex flex-col gap-2 rounded-card border border-border bg-bg p-3 sm:flex-row">
+        {categorias.length > 1 && (
+          <select
+            value={categoria}
+            onChange={(e) => setCategoria(e.target.value)}
+            className="rounded-[6px] border border-border bg-bg-2 px-[10px] py-[7px] text-[13.5px] text-text outline-none focus:border-moe"
+          >
+            <option value="">Todas las categorías</option>
+            {categorias.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Buscar por producto, marca o código…"
-          className="w-full rounded-[6px] border border-border bg-bg-2 px-[10px] py-[7px] text-[13.5px] text-text outline-none focus:border-moe"
+          className="flex-1 rounded-[6px] border border-border bg-bg-2 px-[10px] py-[7px] text-[13.5px] text-text outline-none focus:border-moe"
         />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex max-h-[65vh] flex-col gap-2 overflow-y-auto">
         {filtrados.length === 0 && (
           <div className="rounded-card border border-border bg-bg px-[14px] py-[20px] text-center text-[12.5px] text-text-3">
             No encontramos productos con esa búsqueda.

@@ -31,7 +31,7 @@ export default async function InventarioDetallePage({
       .select(
         `id, sku_id, stock_sistema, stock_contado, diferencia, motivo,
          sku:skus ( codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
+           producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) ) )`,
       )
       .eq("inventario_id", id),
     sucursal ? operaSucursal(supabase, sucursal.id) : Promise.resolve(false),
