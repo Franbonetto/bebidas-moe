@@ -208,15 +208,62 @@ Buscar/agregar productos → ticket con los dos totales posibles (si aplica)
 - **Sin stock:** permite vender, advierte, y marca el producto para revisión de inventario.
 - **Caja diaria por sucursal:** total, desglose por medio de pago, cantidad de tickets, diferencia entre sistema y efectivo real.
 
-### Situación fiscal — DIFERIDA
+### Situación fiscal — ETAPA 2 EN CURSO (desde 2026-09-05)
 
-**El cliente ya tiene un sistema que emite facturas A y B.** La integración con ARCA queda
-fuera del alcance inicial y se retoma en Etapa 2.
+**El cliente ya tiene un sistema que emite facturas A y B.** La integración con ARCA
+arrancó como bloque de desarrollo el 2026-09-05 (ver `docs/bloque_arca_facturacion.md`
+para el detalle completo). Mientras dure la convivencia de ambos sistemas puede haber
+**doble carga** en las ventas que requieran factura: el stock lo lleva este sistema, la
+factura la emite el otro, hasta que este bloque esté validado en homologación.
 
 - Bebidas Moe es **Responsable Inscripto**.
-- Durante la convivencia de ambos sistemas habrá **doble carga** en las ventas que requieran
-  factura: el stock lo lleva este sistema, la factura la emite el otro. Conviene medir con
-  qué frecuencia pasa; si son muchas, la Etapa 2 se vuelve prioritaria.
+
+### Decisiones cerradas para el bloque de facturación ARCA (2026-09-05)
+
+- **Ambiente:** arranca en **homologación**, con el certificado personal de Francisco ya
+  generado y vinculado al servicio WSFE. La migración al certificado de producción del
+  cliente es un paso manual posterior, cuando el circuito esté validado.
+- **Comprobantes soportados:** Factura A y Factura B únicamente (no C).
+- **Disparo:** manual, con un botón **"Facturar"** separado de "Confirmar venta", en el
+  detalle de la venta ya confirmada. Una venta puede quedar sin facturar indefinidamente
+  sin romper nada — facturar nunca es requisito para cerrar una venta.
+- **Alcance de sucursal:** **actualizado 2026-09-17** — cualquier sucursal con un punto
+  de venta ARCA activo en `puntos_venta` puede facturar (mismo CUIT/certificado para
+  todas, solo cambia el número de punto de venta). El botón "Facturar" aparece según
+  `opera_sucursal()`, no según `es_central`. Laprida factura en cuanto tenga su fila en
+  `puntos_venta` — el dueño la carga desde `/vender/facturar/configuracion` una vez
+  confirmado/dado de alta el número en ARCA.
+- **WSAA (autenticación) — firma 100% local, sin intermediarios.** La clave privada del
+  certificado fiscal **nunca sale de la infraestructura propia** (Supabase/Vercel).
+  Prohibido usar SDKs o servicios de terceros que reciban el certificado o la clave
+  privada (ej. AfipSDK en modo cert/key), aunque digan no persistirla — se evaluó y se
+  descartó explícitamente. El armado del TRA + firma CMS/PKCS#7 + login contra ARCA se
+  implementa en el propio servidor. El Token+Sign resultante (válido 12hs) se cachea en
+  una tabla propia; no se re-firma en cada venta.
+- **WSFEv1 (facturación):** la solicitud de CAE (`FECAESolicitar`) se llama directo
+  contra los servidores de ARCA (homologación `wswhomo.afip.gov.ar`, producción
+  `servicios1.afip.gov.ar`), nunca a través de un proxy de terceros.
+- **`CondicionIVAReceptorId`:** obligatorio desde el 1° de septiembre de 2026 (RG 5616).
+  **No se hardcodea la tabla de valores** — se sincroniza llamando al método
+  `FEParamGetCondicionIvaReceptor` de WSFEv1 contra una tabla propia `condicion_iva`,
+  refrescada periódicamente (no en cada request).
+- **Desglose de IVA (2026-09-07):** los precios cargados en el sistema son finales (IVA
+  incluido) y hoy no hay alícuota por SKU. Se agrega `categorias.alicuota_iva` (numeric,
+  default 21) — todo el catálogo de Bebidas Moe (vinos, whisky, gin, ron, vodka, licores,
+  fernet, cerveza, gaseosas, energizantes, aceites/aceitunas gourmet, habanos, regalería)
+  factura al 21%, la tasa general (las bebidas alcohólicas no acceden a ninguna alícuota
+  reducida). No se hardcodea el 21% en el código: vive en la categoría para poder darle
+  otro tratamiento a futuro sin tocar código. Al facturar, por línea de venta:
+  `importe_neto = total_línea / (1 + alicuota_iva/100)`, `importe_iva = total_línea -
+  importe_neto`, agrupado por alícuota (hoy siempre una sola, 21%).
+- **Factura A sin CRM todavía:** el botón "Facturar" pide CUIT + razón social ahí mismo,
+  en un formulario mínimo, en vez de bloquear el bloque hasta tener el CRM de clientes
+  completo. Factura B usa Consumidor Final por default (con CUIT opcional).
+- **El comprobante nunca modifica la venta:** es un registro nuevo (`comprobantes_fiscales`)
+  que la referencia. Si falla la emisión, la venta sigue existiendo normalmente y se puede
+  reintentar facturar — mismo principio de inmutabilidad que el resto del sistema.
+- Certificado, clave privada y CUIT viven solo en variables de entorno del servidor: nunca
+  en el repo, nunca en el cliente (browser), nunca en logs.
 
 ### Requisitos técnicos de ARCA relevados (para Etapa 2)
 
@@ -236,12 +283,16 @@ WSFEv1 (facturación)  → datos de la venta → CAE + vencimiento
 6. Repetir en ambiente de homologación con certificado propio
 
 **Cambios normativos 2026 a contemplar:**
-- `CondicionIVAReceptorId` es **obligatorio**: sin ese campo el comprobante no se emite.
+- `CondicionIVAReceptorId` es **obligatorio** en todo comprobante desde el 1° de
+  septiembre de 2026 (RG 5616): sin ese campo el comprobante no se emite, incluso en
+  Factura B a Consumidor Final.
 - `CbteFchHsGen` (fecha y hora de generación) pasa a ser obligatorio.
-- **CAEA** pasa a ser el mecanismo oficial de contingencia. Es un código anticipado que se
-  solicita antes de cada quincena y permite seguir facturando si ARCA está caído.
-- Los puntos de venta CAEA deben asociarse a un domicilio de FE o a un Controlador Fiscal
-  de Nueva Generación.
+- El **CAE en línea es la modalidad obligatoria** desde el 1° de agosto de 2026
+  (RG 5782/5785). El **CAEA queda reservado solo como contingencia** ante caída real del
+  servicio — no se admiten nuevas adhesiones a CAEA como modo principal. La
+  implementación de contingencia CAEA queda fuera de alcance del bloque de facturación
+  (se retoma más adelante si hace falta).
+- El código QR en el comprobante es obligatorio.
 
 **Impacto de la factura A en el modelo de datos:**
 - Cada SKU necesita **`alicuota_iva`** declarada (no todo es 21%; confirmar con contador
@@ -624,18 +675,41 @@ devolucion_items
   motivo
 ```
 
-**Preparado para Etapa 2 (ARCA):**
+**Etapa 2 (ARCA) — modelo real del bloque, ver `docs/bloque_arca_facturacion.md`:**
 
 ```
-comprobantes
-  id, venta_id
-  tipo ∈ {A, B, nota_credito_A, nota_credito_B}
-  punto_venta, numero
-  cae, cae_vencimiento
-  receptor_cuit, receptor_condicion_iva, receptor_nombre
-  estado ∈ {pendiente, emitido, error}
-  intentos, ultimo_error, fecha_emision
+condicion_iva
+  id, codigo_arca, nombre        -- sincronizado desde FEParamGetCondicionIvaReceptor,
+                                  -- nunca hardcodeado, refrescado periódicamente
+
+puntos_venta
+  id, sucursal_id (uno por sucursal que facture), numero_arca, activo
+
+arca_ta_cache
+  servicio ('wsfe'), token, sign, expira_en
+  -- Token+Sign de WSAA (vigencia 12hs), cacheado para no re-firmar en cada venta
+
+comprobantes_fiscales
+  id, venta_id (FK, único -- una venta = máximo un comprobante válido)
+  tipo_cbte ('A', 'B')
+  punto_venta_id, numero_comprobante
+  cae, vencimiento_cae
+  condicion_iva_receptor_id (FK a condicion_iva)
+  cuit_receptor, razon_social_receptor (ambos nullable -- solo Factura A los exige)
+  importe_total, importe_neto, importe_iva
+  estado ∈ {pendiente, autorizado, rechazado, error}
+  motivo_rechazo, qr_data
+  creado_por, creado_en
+
+comprobantes_fiscales_items
+  comprobante_id, venta_item_id, descripcion, cantidad, precio_unitario, subtotal
 ```
+
+El comprobante nunca modifica la venta: es un registro nuevo que la referencia. La firma
+WSAA (TRA + CMS/PKCS#7) y la llamada a `FECAESolicitar` ocurren en el servidor de la app
+(Node.js), no dentro de Postgres — la función `SECURITY DEFINER` solo persiste el
+resultado ya obtenido, con el mismo mecanismo de bloqueo de escritura directa que usan
+`ventas`/`cajas`.
 
 ## 2.9 Inventarios
 
@@ -681,7 +755,8 @@ Se registran especialmente: cambios de precio, ajustes de inventario, anulación
 - **Tipos de envase concretos** que maneja Moe y cuáles son genéricos.
 - Si el recargo de Laprida en **cajones** también se calcula por unidad contenida.
 - **Alícuotas de IVA por categoría** (para Etapa 2, con el contador).
-- Todo lo listado en la sección de ARCA (Etapa 2).
+- **Número de punto de venta ARCA** ya dado de alta para el servicio WSFE (lo carga
+  Francisco cuando el bloque de facturación lo necesite).
 
 ## 3.2 Relevamiento operativo pendiente
 
@@ -740,14 +815,12 @@ además de por categoría.
 Mientras tanto, estos casos se cargan a mano en el ticket ajustando el
 precio de las líneas.
 
-**Pantalla de administración de promociones — pendiente de implementar.**
-Decisión de diseño ya tomada: va como pestaña separada dentro de
-`/precios`, no mezclada en la misma tabla que precios/recargos. Motivo: la
-pantalla de precios ya tiene varias piezas (base, recargo por categoría,
-descuento efectivo, cascada de cerveza) y agregar promociones ahí la
-vuelve confusa para la encargada. El motor (`lib/promociones.ts`) y las
-tablas (`promociones`/`promocion_items`, bloque 6) ya existen; falta la
-pantalla para cargarlas -- hoy solo se pueden insertar por SQL directo.
+**Pantalla de administración de promociones — implementada.** Pestaña
+separada dentro de `/precios` (`PreciosTabs` + `PromocionesPanel` +
+`PromocionForm`, migración `20260903090000_bloque_promociones_admin.sql`),
+como estaba decidido: no mezclada en la misma tabla que precios/recargos
+para no volver confusa esa pantalla. Ya no hace falta insertar promos por
+SQL directo.
 
 ---
 
@@ -765,7 +838,7 @@ pantalla para cargarlas -- hoy solo se pueden insertar por SQL directo.
 8. Inventarios    conteo, diferencias, ajustes
 9. Retornables    envases, depósitos, devolución a proveedor
 10. Reportes      dashboards por rol, alertas
-11. Etapa 2       facturación ARCA
+11. Etapa 2       facturación ARCA  ← EN CURSO desde 2026-09-05
 ```
 
 El bloque 3 es el corazón del sistema. Si la función de movimientos está bien construida, todo lo demás se apoya en algo sólido. Si está mal, cada módulo posterior arrastra el problema.
