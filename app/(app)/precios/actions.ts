@@ -196,3 +196,68 @@ export async function eliminarDescuentoEfectivo(
   revalidatePath("/precios");
   return { ok: true };
 }
+
+export type PromocionItemInput = {
+  skuId: string;
+  cantidadRequerida: number;
+  precioPromocional: number;
+};
+
+export type GuardarPromocionInput = {
+  id: string | null;
+  nombre: string;
+  tipo: "combo" | "cantidad";
+  sucursalId: string | null;
+  vigenteDesde: string | null;
+  vigenteHasta: string | null;
+  activo: boolean;
+  items: PromocionItemInput[];
+};
+
+// Una promocion son dos escrituras (promociones + promocion_items). Se
+// agrupan en la funcion guardar_promocion() (SECURITY DEFINER) para que
+// queden en una sola transaccion -- ver el comentario de la migracion
+// 20260903090000_bloque_promociones_admin.sql.
+export async function guardarPromocion(input: GuardarPromocionInput): Promise<Resultado> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("guardar_promocion", {
+    p_id: input.id,
+    p_nombre: input.nombre,
+    p_tipo: input.tipo,
+    p_sucursal_id: input.sucursalId,
+    p_vigente_desde: input.vigenteDesde,
+    p_vigente_hasta: input.vigenteHasta,
+    p_activo: input.activo,
+    p_items: input.items.map((i) => ({
+      sku_id: i.skuId,
+      cantidad_requerida: i.cantidadRequerida,
+      precio_promocional: i.precioPromocional,
+    })),
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/precios");
+  return { ok: true };
+}
+
+export async function activarPromocion(id: string, activo: boolean): Promise<Resultado> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("promociones").update({ activo }).eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/precios");
+  return { ok: true };
+}
+
+export async function eliminarPromocion(id: string): Promise<Resultado> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("promociones").delete().eq("id", id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/precios");
+  return { ok: true };
+}

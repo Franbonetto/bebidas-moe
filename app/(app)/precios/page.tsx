@@ -5,6 +5,9 @@ import { PreciosTable, type PrecioSkuRow, type Sucursal, type Categoria } from "
 import { RecargosCategoriaPanel } from "./_components/recargos-categoria-panel";
 import { RecargosSkuPanel } from "./_components/recargos-sku-panel";
 import { DescuentosEfectivoPanel } from "./_components/descuentos-efectivo-panel";
+import { PromocionesPanel, type PromocionRow } from "./_components/promociones-panel";
+import type { PromocionSkuOpcion } from "./_components/promocion-form";
+import { PreciosTabs } from "./_components/precios-tabs";
 
 type SkuFila = {
   id: string;
@@ -54,13 +57,20 @@ export default async function PreciosPage() {
       supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override, actualizado_en"),
     ]);
 
-  const [{ data: recargosSucursal }, { data: recargosSku }, { data: descuentosEfectivo }] = puedeVerCostos
-    ? await Promise.all([
-        supabase.from("recargos_sucursal").select("sucursal_id, categoria_id, monto_fijo, actualizado_en"),
-        supabase.from("recargos_sku").select("sucursal_id, sku_id, monto_fijo, actualizado_en"),
-        supabase.from("descuentos_efectivo").select("sucursal_id, categoria_id, porcentaje, actualizado_en"),
-      ])
-    : [{ data: [] }, { data: [] }, { data: [] }];
+  const [{ data: recargosSucursal }, { data: recargosSku }, { data: descuentosEfectivo }, { data: promocionesRaw }] =
+    puedeVerCostos
+      ? await Promise.all([
+          supabase.from("recargos_sucursal").select("sucursal_id, categoria_id, monto_fijo, actualizado_en"),
+          supabase.from("recargos_sku").select("sucursal_id, sku_id, monto_fijo, actualizado_en"),
+          supabase.from("descuentos_efectivo").select("sucursal_id, categoria_id, porcentaje, actualizado_en"),
+          supabase
+            .from("promociones")
+            .select(
+              "id, nombre, tipo, sucursal_id, vigente_desde, vigente_hasta, activo, promocion_items ( sku_id, cantidad_requerida, precio_promocional )",
+            )
+            .order("nombre"),
+        ])
+      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   const sucursalesList = (sucursales ?? []) as Sucursal[];
   const categoriasList = (categorias ?? []) as Categoria[];
@@ -147,8 +157,30 @@ export default async function PreciosPage() {
 
   const sucursalCentral = sucursalesList.find((s) => s.es_central) ?? null;
 
-  return (
-    <div className="flex flex-col gap-5">
+  const skusParaPromo: PromocionSkuOpcion[] = skusList.map((s) => ({
+    id: s.id,
+    codigo_interno: s.codigo_interno,
+    tipo_presentacion: s.tipo_presentacion,
+    volumen: s.volumen,
+    unidad_volumen: s.unidad_volumen,
+    unidades_contenidas: s.unidades_contenidas,
+    costo_actual: s.costo_actual,
+    producto: s.producto ? { nombre: s.producto.nombre, marca: s.producto.marca } : null,
+  }));
+
+  const promocionesList: PromocionRow[] = (promocionesRaw ?? []).map((p) => ({
+    id: p.id,
+    nombre: p.nombre,
+    tipo: p.tipo as "combo" | "cantidad",
+    sucursal_id: p.sucursal_id,
+    vigente_desde: p.vigente_desde,
+    vigente_hasta: p.vigente_hasta,
+    activo: p.activo,
+    items: (p.promocion_items ?? []) as PromocionRow["items"],
+  }));
+
+  const tabPrecios = (
+    <>
       <PreciosTable
         sucursales={sucursalesList}
         filas={filas}
@@ -206,6 +238,15 @@ export default async function PreciosPage() {
           />
         </>
       )}
-    </div>
+    </>
   );
+
+  // Cargar promociones (combo/cantidad) es ve_costos(), igual que el resto
+  // de la carga de precios (mismo criterio que el alta de producto) --
+  // Laprida no ve la pestaña, aunque sí ve las promos ya aplicadas en el POS.
+  const tabPromociones = puedeEditarPrecios ? (
+    <PromocionesPanel sucursales={sucursalesList} skus={skusParaPromo} promociones={promocionesList} />
+  ) : null;
+
+  return <PreciosTabs tabPrecios={tabPrecios} tabPromociones={tabPromociones} />;
 }

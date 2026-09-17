@@ -84,25 +84,47 @@ export function PreciosTable({
   puedeVerCostos: boolean;
 }) {
   const [query, setQuery] = useState("");
+  const [categoria, setCategoria] = useState("");
   const [filaEnEdicion, setFilaEnEdicion] = useState<PrecioSkuRow | null>(null);
+
+  const categorias = useMemo(() => {
+    const nombres = new Set<string>();
+    for (const f of filas) {
+      if (f.categoriaNombre) nombres.add(f.categoriaNombre);
+    }
+    return [...nombres].sort((a, b) => a.localeCompare(b, "es"));
+  }, [filas]);
 
   const filtradas = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return filas;
     return filas.filter((f) => {
+      if (categoria && f.categoriaNombre !== categoria) return false;
+      if (!q) return true;
       return (
         f.nombre.toLowerCase().includes(q) ||
         (f.marcaNombre ?? "").toLowerCase().includes(q) ||
         f.codigoInterno.toLowerCase().includes(q)
       );
     });
-  }, [filas, query]);
+  }, [filas, query, categoria]);
 
   return (
     <div className="overflow-hidden rounded-card border border-border bg-bg">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[14px] py-[11px]">
         <h2 className="text-[13px] font-semibold text-text">Precios</h2>
         <div className="flex items-center gap-3">
+          <select
+            value={categoria}
+            onChange={(e) => setCategoria(e.target.value)}
+            className="rounded-[6px] border border-border bg-bg-2 px-[10px] py-[5px] text-[13px] text-text outline-none focus:border-moe"
+          >
+            <option value="">Todas las categorías</option>
+            {categorias.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={query}
@@ -122,31 +144,31 @@ export function PreciosTable({
           <p className="text-[12.5px] text-text-3">Probá con otro nombre, marca o código.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="max-h-[65vh] overflow-auto">
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
+                <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
                   Producto
                 </th>
-                <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
+                <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
                   Presentación
                 </th>
                 {puedeVerCostos && (
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
+                  <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
                     Costo
                   </th>
                 )}
                 {sucursales.map((s) => (
                   <th
                     key={s.id}
-                    className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2"
+                    className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2"
                   >
                     {s.nombre}
                   </th>
                 ))}
                 {puedeEditar && (
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
+                  <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
                     &nbsp;
                   </th>
                 )}
