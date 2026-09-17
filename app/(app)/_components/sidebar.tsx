@@ -4,11 +4,19 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogoutButton } from "./logout-button";
 
-type NavItem = { label: string; href?: string; icon: string; restringido?: boolean };
+type NavItem = {
+  label: string;
+  href?: string;
+  icon: string;
+  restringido?: boolean;
+  ocultoParaDueno?: boolean;
+};
 
-// Mismo set de íconos/orden que docs/mockups/paneles.html. El resto de las
-// pantallas sin href todavía no existen (se van sumando bloque a bloque),
-// así que quedan visibles pero no navegables en vez de llevar a un 404.
+// Mismo set de íconos que docs/mockups/paneles.html, salvo "Stock": ese
+// ítem quedaba sin pantalla propia y duplicaba lo que ya muestra Productos
+// (catálogo con stock por sucursal) -- se unificó ahí en vez de construir
+// una pantalla aparte (ver histórico de movimientos y alertas de stock
+// bajo mínimo/sin stock dentro de la fila de cada SKU en /productos).
 // Compras y Proveedores están marcados "restringido": solo entran al menú
 // si puedeVerCostos es true (dueño + encargado Olavarría, CLAUDE.md), y ni
 // siquiera se muestran inertes para el resto -- no deben saber que existen.
@@ -24,10 +32,12 @@ const NAV: NavItem[] = [
     href: "/precios",
     icon: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
   },
-  { label: "Stock", icon: "M21 8v13H3V8M1 3h22v5H1zM10 12h4" },
   {
-    label: "Ventas",
+    label: "Punto de venta",
     href: "/vender",
+    // El dueño no opera caja -- su panel es de lectura (reportes, dinero,
+    // stock, movimientos), el POS lo operan los encargados.
+    ocultoParaDueno: true,
     icon: "M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11",
   },
   {
@@ -57,7 +67,7 @@ const NAV: NavItem[] = [
     href: "/envases",
     icon: "M8 21h8M12 17v4M4 4h16v10a4 4 0 01-4 4H8a4 4 0 01-4-4z",
   },
-  { label: "Reportes", icon: "M9 11H3v10h6zM15 3H9v18h6zM21 7h-6v14h6z" },
+  { label: "Reportes", href: "/alertas", icon: "M9 11H3v10h6zM15 3H9v18h6zM21 7h-6v14h6z" },
 ];
 
 const ROL_LABEL: Record<string, string> = {
@@ -69,22 +79,40 @@ export function Sidebar({
   nombre,
   rol,
   puedeVerCostos,
+  abierto = false,
+  onCerrar,
 }: {
   nombre: string;
   rol: string;
   puedeVerCostos: boolean;
+  // En celular la sidebar es un drawer que arranca oculto (fixed +
+  // -translate-x-full) y se muestra con este flag; en desktop (lg:)
+  // siempre está visible y fija en el flujo normal, sin importar
+  // `abierto`.
+  abierto?: boolean;
+  onCerrar?: () => void;
 }) {
   const pathname = usePathname();
-  const nav = NAV.filter((item) => !item.restringido || puedeVerCostos);
+  const nav = NAV.filter(
+    (item) => (!item.restringido || puedeVerCostos) && !(item.ocultoParaDueno && rol === "dueno"),
+  );
 
   return (
-    <aside className="flex w-[216px] shrink-0 flex-col border-r border-border bg-bg-2 p-3">
-      <div className="flex items-center gap-2 px-2 pb-4 pt-1 text-[15px] font-bold tracking-tight text-text">
-        <span className="inline-block h-5 w-5 shrink-0 rounded-[4px] bg-moe" />
-        Bebidas Moe
-      </div>
+    <>
+      {abierto && (
+        <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={onCerrar} aria-hidden="true" />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-[216px] shrink-0 flex-col border-r border-border bg-bg-2 p-3 transition-transform duration-200 lg:static lg:translate-x-0 ${
+          abierto ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex items-center gap-2 px-2 pb-4 pt-1 text-[15px] font-bold tracking-tight text-text">
+          <span className="inline-block h-5 w-5 shrink-0 rounded-[4px] bg-moe" />
+          Bebidas Moe
+        </div>
 
-      <nav className="flex flex-col gap-px">
+        <nav className="flex flex-col gap-px">
         {nav.map((item) => {
           const active = item.href
             ? item.href === "/"
@@ -123,6 +151,7 @@ export function Sidebar({
             <Link
               key={item.label}
               href={item.href}
+              onClick={onCerrar}
               className={`${base} ${
                 active
                   ? "border-moe bg-moe-soft text-moe"
@@ -133,20 +162,21 @@ export function Sidebar({
             </Link>
           );
         })}
-      </nav>
+        </nav>
 
-      <div className="mt-auto border-t border-border pt-2">
-        <div className="flex items-center gap-[9px] px-2 py-1 text-[13px]">
-          <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full bg-[#E4E4E7] text-[11px] font-semibold text-text-2">
-            {nombre.charAt(0).toUpperCase()}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate font-medium text-text">{nombre}</p>
-            <p className="text-[11.5px] text-text-3">{ROL_LABEL[rol] ?? rol}</p>
+        <div className="mt-auto border-t border-border pt-2">
+          <div className="flex items-center gap-[9px] px-2 py-1 text-[13px]">
+            <span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full bg-[#E4E4E7] text-[11px] font-semibold text-text-2">
+              {nombre.charAt(0).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate font-medium text-text">{nombre}</p>
+              <p className="text-[11.5px] text-text-3">{ROL_LABEL[rol] ?? rol}</p>
+            </div>
           </div>
+          <LogoutButton />
         </div>
-        <LogoutButton />
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }

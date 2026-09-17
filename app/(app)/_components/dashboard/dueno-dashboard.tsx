@@ -3,9 +3,11 @@ import {
   MOTIVO_INVENTARIO_LABEL,
   type MotivoInventario,
 } from "@/app/(app)/inventarios/_components/estado-inventario-badge";
+import { TIPO_MOVIMIENTO_LABEL, motivoLegible } from "@/lib/movimientos";
 import { formatoFechaHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { calcularCostosQueSubieron } from "./lib";
+import { AutoRefresh } from "../auto-refresh";
 import {
   AlertRow,
   BarRow,
@@ -13,7 +15,6 @@ import {
   EmptyState,
   Kpi,
   KpiGrid,
-  PlaceholderCard,
   SectionHeader,
   StatRow,
 } from "./ui";
@@ -69,30 +70,6 @@ type MovimientoReciente = {
   sku: { nombre: string; producto: { nombre: string } | null } | null;
 };
 
-// El motivo de un movimiento es texto libre salvo para 'ajuste', donde lo
-// pone confirmar_inventario() con el vocabulario cerrado de inventarios
-// (rotura, error_carga, etc. -- bloque 8). Solo ahí tiene sentido traducirlo
-// con la misma etiqueta que usa el gráfico de diferencias.
-function motivoLegible(motivo: string | null, tipo: string): string | null {
-  if (!motivo) return null;
-  if (tipo === "ajuste" && motivo in MOTIVO_INVENTARIO_LABEL) {
-    return MOTIVO_INVENTARIO_LABEL[motivo as MotivoInventario];
-  }
-  return motivo;
-}
-
-const TIPO_MOVIMIENTO_LABEL: Record<string, string> = {
-  compra: "Entrada por compra",
-  venta: "Salida por venta",
-  transferencia_salida: "Salida por transferencia",
-  transferencia_entrada: "Entrada por transferencia",
-  ajuste: "Ajuste de inventario",
-  merma: "Merma",
-  devolucion_entrada: "Devolución",
-  desarme_salida: "Desarme (salida)",
-  desarme_entrada: "Desarme (entrada)",
-};
-
 export async function DuenoDashboard() {
   const supabase = await createClient();
 
@@ -103,6 +80,7 @@ export async function DuenoDashboard() {
   const cutoff30 = new Date(ahora - 30 * 86_400_000).toISOString();
   const cutoff7 = new Date(ahora - 7 * 86_400_000).toISOString();
   const cutoffInmovilizado = ahora - 90 * 86_400_000;
+  const hoy = new Date().toISOString().slice(0, 10);
 
   const [
     { data: sucursales },
@@ -115,6 +93,7 @@ export async function DuenoDashboard() {
     { data: transferenciasEnTransito },
     { data: pedidosAbiertos },
     { data: inventariosCerrados30d },
+    { data: cajasHoy },
     { data: preciosRecientes },
     { data: preciosSucursalRecientes },
   ] = await Promise.all([
@@ -146,6 +125,10 @@ export async function DuenoDashboard() {
     supabase.from("pedidos").select("id").not("estado", "in", "(borrador,cerrado)"),
     supabase.from("inventarios").select("id").eq("estado", "cerrado").gte("fecha_fin", cutoff30),
     supabase
+      .from("cajas")
+      .select("sucursal_id, estado, monto_apertura, cantidad_tickets, ventas ( total )")
+      .eq("fecha", hoy),
+    supabase
       .from("precios")
       .select("sku_id, precio_base, actualizado_en, usuario:usuarios ( nombre )")
       .gte("actualizado_en", cutoff7)
@@ -164,6 +147,27 @@ export async function DuenoDashboard() {
   const skuPorId = new Map(skusList.map((s) => [s.id, s]));
   const sucursalNombrePorId = new Map(sucursalesList.map((s) => [s.id, s.nombre]));
   const sucursalCentral = sucursalesList.find((s) => s.es_central);
+
+  // Caja del día por sucursal, para el panel "Caja del día" (lado a lado
+  // Olavarría/Laprida) del Inicio.
+  type CajaFila = {
+    sucursal_id: string;
+    estado: "abierta" | "cerrada";
+    monto_apertura: number;
+    cantidad_tickets: number | null;
+    ventas: { total: number }[];
+  };
+  const cajaPorSucursal = new Map(
+    ((cajasHoy ?? []) as unknown as CajaFila[]).map((c) => [
+      c.sucursal_id,
+      {
+        estado: c.estado,
+        montoApertura: c.monto_apertura,
+        totalVendido: c.ventas.reduce((acc, v) => acc + v.total, 0),
+        cantidadTickets: c.cantidad_tickets ?? c.ventas.length,
+      },
+    ]),
+  );
 
   // Precios cargados en los últimos 7 días: base (Olavarría) + excepciones
   // por sucursal, en una sola lista ordenada por fecha. Control detectivo
@@ -331,6 +335,7 @@ export async function DuenoDashboard() {
 
   return (
     <div className="flex flex-col gap-5">
+      <AutoRefresh />
       <div>
         <SectionHeader title="Hoy" />
         <KpiGrid>
@@ -340,11 +345,6 @@ export async function DuenoDashboard() {
             sub={sucursalesList
               .map((s) => `${s.nombre} ${stockTotalPorSucursal[s.id] ?? 0}`)
               .join(" · ")}
-          />
-          <Kpi
-            label="Productos bajo mínimo"
-            value={skusBajoMinimo.size}
-            sub={sucursalesList.map((s) => `${s.nombre} ${bajoMinimoPorSucursal[s.id] ?? 0}`).join(" · ")}
           />
           <Kpi
             label="Productos sin stock"
@@ -357,11 +357,54 @@ export async function DuenoDashboard() {
             sub={`${inmovilizadosUnidades} unidades sin movimiento hace 90+ días`}
           />
         </KpiGrid>
-        <div className="mt-3">
-          <PlaceholderCard
-            title="Ventas, margen y stock valorizado a precio de venta"
-            nota="Van a aparecer acá cuando exista el módulo de precios (bloque 5) y de ventas (bloque 6). Por ahora, la única valorización posible es a costo de compra (abajo)."
-          />
+
+        <div className="mt-3 grid grid-cols-1 gap-[14px] sm:grid-cols-2">
+          {sucursalesList.map((s) => {
+            const caja = cajaPorSucursal.get(s.id);
+            const bajoMinimo = bajoMinimoPorSucursal[s.id] ?? 0;
+            return (
+              <div key={s.id} className="rounded-card border border-border bg-bg p-[15px]">
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-[13px] font-semibold text-text">Caja del día · {s.nombre}</h3>
+                  <span
+                    className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${
+                      caja?.estado === "abierta"
+                        ? "bg-ok-bg text-ok"
+                        : caja?.estado === "cerrada"
+                          ? "bg-bg-2 text-text-2"
+                          : "bg-warn-bg text-warn"
+                    }`}
+                  >
+                    {caja ? (caja.estado === "abierta" ? "Abierta" : "Cerrada") : "Sin abrir"}
+                  </span>
+                </div>
+
+                {caja ? (
+                  <>
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-[12px] text-text-2">Vendido hoy</span>
+                      <span className="text-[20px] font-semibold tabular-nums text-text">
+                        {formatoMoneda.format(caja.totalVendido)}
+                      </span>
+                    </div>
+                    <p className="mt-[3px] text-[12px] text-text-3">
+                      {caja.cantidadTickets} ticket{caja.cantidadTickets === 1 ? "" : "s"} · apertura{" "}
+                      {formatoMoneda.format(caja.montoApertura)}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[12.5px] text-text-3">Todavía no se abrió la caja hoy.</p>
+                )}
+
+                <div className="mt-3 flex items-center justify-between border-t border-border pt-[9px] text-[12.5px]">
+                  <span className="text-text-2">Productos bajo mínimo</span>
+                  <span className={`font-medium tabular-nums ${bajoMinimo > 0 ? "text-warn" : "text-text-2"}`}>
+                    {bajoMinimo}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -476,7 +519,37 @@ export async function DuenoDashboard() {
             sub="Control detectivo: acá aparece quién cargó cada precio, para revisar sin tener que aprobar antes."
           />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            {/* Celular: tarjetas apiladas en vez de comprimir la tabla
+                (docs/identidad-visual.md: "las tablas complejas se
+                adaptan, no se comprimen"). */}
+            <div className="flex flex-col divide-y divide-[#F1F1F3] sm:hidden">
+              {preciosCargados.map((p) => {
+                const sku = skuPorId.get(p.skuId);
+                return (
+                  <div key={p.key} className="flex flex-col gap-[3px] px-[14px] py-[10px]">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="min-w-0 truncate font-medium text-text">
+                        {sku?.producto?.nombre ?? sku?.nombre ?? "—"}
+                      </p>
+                      <p className="shrink-0 tabular-nums text-text">{formatoMoneda.format(p.precio)}</p>
+                    </div>
+                    <p className="text-[11.5px] text-text-3">
+                      {sku ? presentacionLabel(sku) : ""}
+                      {p.tipo === "excepción" ? " · excepción manual" : ""}
+                    </p>
+                    <p className="text-[11.5px] text-text-3">
+                      {p.sucursalNombre} · Margen {p.margenPct == null ? "—" : `${p.margenPct.toFixed(0)}%`}
+                    </p>
+                    <p className="text-[11.5px] text-text-3">
+                      {p.usuarioNombre} · {formatoFechaHora.format(new Date(p.actualizadoEn))}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden overflow-x-auto sm:block">
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
@@ -528,7 +601,8 @@ export async function DuenoDashboard() {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Card>
 
@@ -536,7 +610,31 @@ export async function DuenoDashboard() {
         {movimientosRecientes.length === 0 ? (
           <EmptyState title="Todavía no hay movimientos" sub="Van a aparecer acá a medida que se opere el sistema." />
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="flex flex-col divide-y divide-[#F1F1F3] sm:hidden">
+              {movimientosRecientes.map((m) => (
+                <div key={m.id} className="flex flex-col gap-[3px] px-[14px] py-[10px]">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="font-medium text-text">{TIPO_MOVIMIENTO_LABEL[m.tipo] ?? m.tipo}</p>
+                    <p className="shrink-0 text-[11.5px] text-text-3">
+                      {formatoFechaHora.format(new Date(m.fecha))}
+                    </p>
+                  </div>
+                  <p className="text-[11.5px] text-text-3">
+                    {m.sku?.producto?.nombre ?? m.sku?.nombre}
+                    {" · "}
+                    {m.cantidad > 0 ? "+" : ""}
+                    {m.cantidad}
+                    {motivoLegible(m.motivo, m.tipo) ? ` — ${motivoLegible(m.motivo, m.tipo)}` : ""}
+                  </p>
+                  <p className="text-[11.5px] text-text-3">
+                    {m.sucursal?.nombre} · {m.usuario?.nombre}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto sm:block">
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
@@ -576,7 +674,8 @@ export async function DuenoDashboard() {
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </Card>
     </div>
