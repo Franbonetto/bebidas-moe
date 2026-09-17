@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogoutButton } from "./logout-button";
@@ -108,7 +109,7 @@ export function Sidebar({
         }`}
       >
         <div className="flex items-center gap-2 px-2 pb-4 pt-1 text-[15px] font-bold tracking-tight text-text">
-          <span className="inline-block h-5 w-5 shrink-0 rounded-[4px] bg-moe" />
+          <Image src="/logo-moe.png" alt="" width={22} height={22} className="h-[22px] w-[22px] shrink-0" priority />
           Bebidas Moe
         </div>
 

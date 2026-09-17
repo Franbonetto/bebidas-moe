@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useActionState } from "react";
 import { login } from "./actions";
 
@@ -13,7 +14,7 @@ export default function LoginPage() {
         className="w-full max-w-[360px] rounded-card border border-border bg-bg p-8"
       >
         <div className="mb-6 flex flex-col items-center gap-2">
-          <span className="inline-block h-8 w-8 rounded-[6px] bg-moe" />
+          <Image src="/logo-moe.png" alt="Bebidas Moe" width={64} height={64} className="h-16 w-16" priority />
           <h1 className="text-[16px] font-semibold text-text">Bebidas Moe</h1>
           <p className="text-[13px] text-text-2">Sistema interno</p>
         </div>
