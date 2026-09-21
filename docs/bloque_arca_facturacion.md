@@ -165,19 +165,36 @@ Reglas:
 - Controlador fiscal físico / impresora fiscal.
 - Migración al certificado de producción del cliente (paso manual
   posterior, cuando el circuito esté validado en homologación).
+- **Limpiar `comprobantes_fiscales`/`comprobantes_fiscales_items` de datos
+  de homologación antes de arrancar en producción.** Verificado 2026-09-19:
+  homologación de ARCA resetea su propio historial de tanto en tanto (nada
+  que ver con nuestro código, que siempre pide el último autorizado antes
+  de numerar), y eso deja filas locales viejas apuntando a CAE que ARCA ya
+  no reconoce (detectado con el botón "Verificar" -- ver sección 8).
+  Arrancar producción con la tabla vacía evita arrastrar esa numeración
+  pisada de las pruebas.
 
 ---
 
 ## 8. Testing antes de dar el bloque por cerrado
 
-- Emitir al menos una Factura A y una Factura B de prueba en homologación,
-  con CUIT real de prueba, y verificar el comprobante contra el servicio
-  de consulta de comprobantes de ARCA (no alcanza con que el sistema diga
-  "ok" — confirmar que ARCA lo tiene registrado).
-- Probar el caso de rechazo (CUIT inválido) y confirmar que la venta
-  original queda intacta y facturable de nuevo.
-- Confirmar que el QR generado decodifica correctamente los datos del
-  comprobante.
+Completado 2026-09-19, Olavarría y Laprida:
+
+- [x] Emitir Factura A y Factura B de prueba en homologación y verificar
+  contra el servicio de consulta de ARCA. Encontró la discrepancia de
+  numeración de homologación anotada en la sección 7 (no es un bug
+  propio) -- el botón "Verificar" hizo justamente el trabajo para el que
+  está.
+- [x] Probar el caso de rechazo: no se logró que ARCA rechazara un CUIT
+  mal armado (homologación resultó más permisivo de lo esperado con
+  dígitos verificadores inválidos). Se confirmó igual, leyendo
+  `guardar_comprobante_fiscal()` y el flujo de reintento, que un
+  comprobante rechazado/en error nunca bloquea reintentar (solo uno ya
+  autorizado lo hace) y que la venta nunca se modifica sea cual sea el
+  resultado de facturar.
+- [x] Confirmar que el QR decodifica correctamente: los 13 campos del
+  spec de ARCA presentes y coincidiendo con el comprobante real (CAE,
+  importe, punto de venta, CUIT emisor/receptor).
 
 ---
 
