@@ -37,5 +37,31 @@ export default async function PedidoCompraDetallePage({
 
   if (!pedidoCompra) notFound();
 
-  return <PedidoCompraDetalle pedido={pedidoCompra as unknown as PedidoCompraDetalleData} />;
+  const skuIds = pedidoCompra.pedidos_compra_items.map((i) => i.sku_id);
+  const { data: proveedorSkus } = await supabase
+    .from("proveedor_skus")
+    .select("sku_id, proveedor:proveedores ( id, razon_social, nombre_comercial )")
+    .eq("activo", true)
+    .in("sku_id", skuIds);
+
+  // Mismo criterio que la pantalla de armar el pedido (sugerencia-compra-
+  // form.tsx): un SKU con más de un proveedor queda repetido en cada grupo,
+  // y sin proveedor cargado va a su propio grupo.
+  const proveedoresPorSku: Record<string, { id: string; nombre: string }[]> = {};
+  for (const fila of (proveedorSkus ?? []) as unknown as {
+    sku_id: string;
+    proveedor: { id: string; razon_social: string; nombre_comercial: string | null } | null;
+  }[]) {
+    if (!fila.proveedor) continue;
+    const lista = proveedoresPorSku[fila.sku_id] ?? [];
+    lista.push({ id: fila.proveedor.id, nombre: fila.proveedor.nombre_comercial ?? fila.proveedor.razon_social });
+    proveedoresPorSku[fila.sku_id] = lista;
+  }
+
+  return (
+    <PedidoCompraDetalle
+      pedido={pedidoCompra as unknown as PedidoCompraDetalleData}
+      proveedoresPorSku={proveedoresPorSku}
+    />
+  );
 }

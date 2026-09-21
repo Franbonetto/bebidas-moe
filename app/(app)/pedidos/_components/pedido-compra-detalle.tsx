@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { Fragment, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -34,11 +34,51 @@ export type PedidoCompraDetalleData = {
   }[];
 };
 
-export function PedidoCompraDetalle({ pedido }: { pedido: PedidoCompraDetalleData }) {
+type Proveedor = { id: string; nombre: string };
+const SIN_PROVEEDOR_ID = "__sin_proveedor__";
+
+export function PedidoCompraDetalle({
+  pedido,
+  proveedoresPorSku,
+}: {
+  pedido: PedidoCompraDetalleData;
+  proveedoresPorSku: Record<string, Proveedor[]>;
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
   const totalUnidades = pedido.pedidos_compra_items.reduce((acc, i) => acc + i.cantidad_solicitada, 0);
+
+  // Mismo criterio que al armar el pedido: un ítem con más de un proveedor
+  // aparece repetido en cada grupo, y sin proveedor cargado va aparte.
+  const grupos = useMemo(() => {
+    const porProveedor = new Map<
+      string,
+      { proveedor: Proveedor; items: PedidoCompraDetalleData["pedidos_compra_items"] }
+    >();
+    for (const item of pedido.pedidos_compra_items) {
+      const proveedores = proveedoresPorSku[item.sku_id];
+      if (!proveedores || proveedores.length === 0) {
+        const grupo = porProveedor.get(SIN_PROVEEDOR_ID) ?? {
+          proveedor: { id: SIN_PROVEEDOR_ID, nombre: "Sin proveedor asignado" },
+          items: [],
+        };
+        grupo.items.push(item);
+        porProveedor.set(SIN_PROVEEDOR_ID, grupo);
+        continue;
+      }
+      for (const proveedor of proveedores) {
+        const grupo = porProveedor.get(proveedor.id) ?? { proveedor, items: [] };
+        grupo.items.push(item);
+        porProveedor.set(proveedor.id, grupo);
+      }
+    }
+    return [...porProveedor.values()].sort((a, b) => {
+      if (a.proveedor.id === SIN_PROVEEDOR_ID) return 1;
+      if (b.proveedor.id === SIN_PROVEEDOR_ID) return -1;
+      return a.proveedor.nombre.localeCompare(b.proveedor.nombre, "es");
+    });
+  }, [pedido.pedidos_compra_items, proveedoresPorSku]);
 
   function marcarResuelto() {
     startTransition(async () => {
@@ -123,23 +163,37 @@ export function PedidoCompraDetalle({ pedido }: { pedido: PedidoCompraDetalleDat
               </tr>
             </thead>
             <tbody>
-              {pedido.pedidos_compra_items.map((item) => (
-                <tr key={item.id} className="border-b border-[#F1F1F3] last:border-b-0">
-                  <td className="px-[14px] py-[9px] align-middle">
-                    <p className="font-medium text-text">
-                      {item.sku?.producto?.nombre ?? item.sku?.nombre ?? "SKU eliminado"}
-                    </p>
-                    <p className="text-[11.5px] text-text-3">
-                      {item.sku?.producto?.marca?.nombre} — {item.sku ? presentacionLabel(item.sku) : ""}
-                    </p>
-                  </td>
-                  <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
-                    {item.cantidad_sugerida}
-                  </td>
-                  <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
-                    {item.cantidad_solicitada}
-                  </td>
-                </tr>
+              {grupos.map((g) => (
+                <Fragment key={g.proveedor.id}>
+                  <tr>
+                    <td
+                      colSpan={3}
+                      className={`border-b border-border px-[14px] py-[7px] text-[12px] font-semibold ${
+                        g.proveedor.id === SIN_PROVEEDOR_ID ? "bg-warn-bg text-warn" : "bg-bg-2 text-text"
+                      }`}
+                    >
+                      {g.proveedor.nombre} · {g.items.length} producto{g.items.length === 1 ? "" : "s"}
+                    </td>
+                  </tr>
+                  {g.items.map((item) => (
+                    <tr key={`${g.proveedor.id}-${item.id}`} className="border-b border-[#F1F1F3] last:border-b-0">
+                      <td className="px-[14px] py-[9px] align-middle">
+                        <p className="font-medium text-text">
+                          {item.sku?.producto?.nombre ?? item.sku?.nombre ?? "SKU eliminado"}
+                        </p>
+                        <p className="text-[11.5px] text-text-3">
+                          {item.sku?.producto?.marca?.nombre} — {item.sku ? presentacionLabel(item.sku) : ""}
+                        </p>
+                      </td>
+                      <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
+                        {item.cantidad_sugerida}
+                      </td>
+                      <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
+                        {item.cantidad_solicitada}
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
               ))}
             </tbody>
           </table>

@@ -20,7 +20,7 @@ export default async function NuevoPedidoCompraPage() {
     redirect("/pedidos");
   }
 
-  const [{ data: sugerencias }, { data: skus }] = await Promise.all([
+  const [{ data: sugerencias }, { data: skus }, { data: proveedorSkus }] = await Promise.all([
     supabase.rpc("sugerir_compra_semanal"),
     supabase
       .from("skus")
@@ -28,6 +28,10 @@ export default async function NuevoPedidoCompraPage() {
         `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
          producto:productos ( nombre, marca:marcas ( nombre ) )`,
       )
+      .eq("activo", true),
+    supabase
+      .from("proveedor_skus")
+      .select("sku_id, proveedor:proveedores ( id, razon_social, nombre_comercial )")
       .eq("activo", true),
   ]);
 
@@ -53,5 +57,20 @@ export default async function NuevoPedidoCompraPage() {
     return a.sku.unidades_contenidas - b.sku.unidades_contenidas;
   });
 
-  return <SugerenciaCompraForm filas={filas} />;
+  // Un SKU puede tener más de un proveedor cargado (proveedor_skus es
+  // muchos a muchos, sin uno "principal") -- se agrupa por cada proveedor
+  // que lo tenga asociado, y el que no tenga ninguno queda en su propio
+  // grupo "Sin proveedor asignado" (decisión del usuario 2026-09-21).
+  const proveedoresPorSku = new Map<string, { id: string; nombre: string }[]>();
+  for (const fila of (proveedorSkus ?? []) as unknown as {
+    sku_id: string;
+    proveedor: { id: string; razon_social: string; nombre_comercial: string | null } | null;
+  }[]) {
+    if (!fila.proveedor) continue;
+    const lista = proveedoresPorSku.get(fila.sku_id) ?? [];
+    lista.push({ id: fila.proveedor.id, nombre: fila.proveedor.nombre_comercial ?? fila.proveedor.razon_social });
+    proveedoresPorSku.set(fila.sku_id, lista);
+  }
+
+  return <SugerenciaCompraForm filas={filas} proveedoresPorSku={Object.fromEntries(proveedoresPorSku)} />;
 }
