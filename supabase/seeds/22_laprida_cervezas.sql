@@ -85,16 +85,28 @@ join productos p on p.nombre = v.producto
   and p.categoria_id = (select id from categorias where nombre = 'Cerveza');
 
 -- SKUs nuevos que sí completan una cascada existente (tier 3 de 710cc,
--- desarman del x6 · 710cc correspondiente, factor 6)
-insert into skus (producto_id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, desarma_en_sku_id, desarma_en_cantidad)
-select p.id, v.nombre_sku, v.codigo, 'unidad', 710, 'ml', 1,
-  (select id from skus where codigo_interno = v.padre), 6
+-- desarman del x6 · 710cc correspondiente, factor 6). Se insertan SIN
+-- desarma_en_sku_id (son el tier más chico, no desarman en nada) y en vez
+-- de eso se completa el x6 -710 YA EXISTENTE (de 07_cerveza_latas.sql)
+-- para que apunte para acá -- dirección correcta: el grande apunta al
+-- chico (ver 28_fix_direccion_cascada_desarme.sql).
+insert into skus (producto_id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas)
+select p.id, v.nombre_sku, v.codigo, 'unidad', 710, 'ml', 1
 from (values
-  ('Schneider', 'Schneider', 'Schneider Latón 710cc', 'CERVEZA-LATA-SCHNEIDER-710-UN', 'CERVEZA-LATA-SCHNEIDER-710-X6'),
-  ('Heineken', 'Heineken', 'Heineken Latón 710cc', 'CERVEZA-LATA-HEINEKEN-710-UN', 'CERVEZA-LATA-HEINEKEN-710-X6')
-) as v(producto, marca, nombre_sku, codigo, padre)
+  ('Schneider', 'Schneider', 'Schneider Latón 710cc', 'CERVEZA-LATA-SCHNEIDER-710-UN'),
+  ('Heineken', 'Heineken', 'Heineken Latón 710cc', 'CERVEZA-LATA-HEINEKEN-710-UN')
+) as v(producto, marca, nombre_sku, codigo)
 join marcas m on m.nombre = v.marca
 join productos p on p.marca_id = m.id and p.nombre = v.producto;
+
+update skus as grande
+set desarma_en_sku_id = chico.id, desarma_en_cantidad = 6
+from (values
+  ('CERVEZA-LATA-SCHNEIDER-710-X6', 'CERVEZA-LATA-SCHNEIDER-710-UN'),
+  ('CERVEZA-LATA-HEINEKEN-710-X6', 'CERVEZA-LATA-HEINEKEN-710-UN')
+) as v(codigo_grande, codigo_chico)
+join skus as chico on chico.codigo_interno = v.codigo_chico
+where grande.codigo_interno = v.codigo_grande;
 
 insert into precios_sucursal (sucursal_id, sku_id, precio_override)
 select (select id from sucursales where es_central = false), s.id, v.precio

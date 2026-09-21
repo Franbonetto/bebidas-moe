@@ -66,13 +66,19 @@ from (values
 join productos p on p.nombre = v.producto
   and p.categoria_id = (select id from categorias where nombre = 'Gaseosas');
 
--- SKU que completa la cascada existente de Cepita (desarma del pack x6)
-insert into skus (producto_id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, desarma_en_sku_id, desarma_en_cantidad)
-select p.id, 'Cepita 1L', 'GASEOSA-CEPITA-1000-UN', 'unidad', 1000, 'ml', 1,
-  (select id from skus where codigo_interno = 'GASEOSA-CEPITA-1000-X6'), 6
+-- SKU que completa la cascada existente de Cepita (tier más chico, no
+-- desarma en nada -- el que apunta para acá es el pack x6, ver abajo;
+-- dirección correcta: el grande apunta al chico,
+-- 28_fix_direccion_cascada_desarme.sql).
+insert into skus (producto_id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas)
+select p.id, 'Cepita 1L', 'GASEOSA-CEPITA-1000-UN', 'unidad', 1000, 'ml', 1
 from productos p
 join marcas m on m.id = p.marca_id and m.nombre = 'Cepita'
 where p.nombre = 'Cepita';
+
+update skus set desarma_en_sku_id = (select id from skus where codigo_interno = 'GASEOSA-CEPITA-1000-UN'),
+  desarma_en_cantidad = 6
+where codigo_interno = 'GASEOSA-CEPITA-1000-X6';
 
 insert into precios_sucursal (sucursal_id, sku_id, precio_override)
 select (select id from sucursales where es_central = false), s.id, v.precio
