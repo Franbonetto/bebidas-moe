@@ -65,9 +65,15 @@ export function ComprasTable({ compras }: { compras: Compra[] }) {
           </span>
           <Link
             href="/compras/nueva"
-            className="whitespace-nowrap rounded-[6px] bg-moe px-[12px] py-[6px] text-[13px] font-medium text-white hover:bg-moe/90"
+            className="whitespace-nowrap rounded-[6px] border border-border bg-bg px-[12px] py-[6px] text-[13px] font-medium text-text hover:bg-bg-2"
           >
             Nueva compra
+          </Link>
+          <Link
+            href="/compras/directa"
+            className="whitespace-nowrap rounded-[6px] bg-moe px-[12px] py-[6px] text-[13px] font-medium text-white hover:bg-moe/90"
+          >
+            Cargar mercadería
           </Link>
         </div>
       </div>

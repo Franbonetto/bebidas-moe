@@ -175,6 +175,33 @@ export async function eliminarCompra(compraId: string): Promise<{ error: string 
   return { ok: true };
 }
 
+export async function cargarCompraDirecta(datos: {
+  proveedor_id: string;
+  numero_factura: string | null;
+  fecha_factura: string | null;
+  lineas: LineaCompra[];
+}): Promise<{ error: string } | { id: string }> {
+  const supabase = await createClient();
+
+  if (!datos.proveedor_id) return { error: "Elegí un proveedor." };
+
+  const errorLineas = validarLineas(datos.lineas);
+  if (errorLineas) return { error: errorLineas };
+
+  const { data, error } = await supabase.rpc("cargar_compra_directa", {
+    p_proveedor_id: datos.proveedor_id,
+    p_numero_factura: datos.numero_factura,
+    p_fecha_factura: datos.fecha_factura,
+    p_lineas: datos.lineas,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/compras");
+  revalidatePath("/productos");
+  return { id: data as string };
+}
+
 export type LineaRecepcion = {
   compra_item_id: string;
   sku_id: string;
