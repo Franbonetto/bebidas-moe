@@ -11,7 +11,14 @@ import {
   type Tramo,
 } from "@/lib/promociones";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
-import { confirmarVenta, desarmarParaVenta, type ComprobanteResumen, type LineaVenta } from "../actions";
+import {
+  confirmarVenta,
+  desarmarParaVenta,
+  registrarMovimientoCaja,
+  type ComprobanteResumen,
+  type LineaVenta,
+  type PagoVenta,
+} from "../actions";
 import { formatoMoneda } from "../_lib/formato";
 import { AbrirCajaForm } from "./abrir-caja-form";
 
@@ -40,6 +47,25 @@ export type PromoCantidadData = PromoCantidadDef;
 
 type MedioPago = "efectivo" | "debito" | "credito" | "transferencia";
 
+type LineaTicket = { skuId: string; cantidad: number };
+
+// Pago dividido: hasta 3 medios por venta (ver
+// 20260919100000_venta_pagos.sql). Si hay más de un pago, o el único no es
+// efectivo, se pierde el precio/descuento de efectivo para toda la venta
+// -- decisión de negocio confirmada, no se prorratea por línea.
+type Pago = { medioPago: MedioPago; monto: number };
+
+type Ticket = {
+  id: string;
+  lineas: LineaTicket[];
+  envaseChecked: Record<string, boolean>;
+  pagos: Pago[];
+};
+
+function ticketVacio(id: string): Ticket {
+  return { id, lineas: [], envaseChecked: {}, pagos: [] };
+}
+
 const MEDIOS: { id: MedioPago; label: string }[] = [
   { id: "efectivo", label: "Efectivo" },
   { id: "debito", label: "Débito" },
@@ -62,6 +88,17 @@ function textoBusqueda(sku: SkuPos) {
   return `${sku.marcaNombre ?? ""} ${sku.nombre} ${presentacionLabel(sku.presentacion)}`;
 }
 
+// "3*código" o "3*nombre" -> cantidad 3. Sin el patrón, cantidad 1 y el
+// texto entero se usa para buscar.
+function parseQuery(q: string): { cantidad: number; texto: string } {
+  const m = q.match(/^(\d+)\*(.+)$/);
+  if (m) return { cantidad: Math.max(1, parseInt(m[1], 10)), texto: m[2] };
+  return { cantidad: 1, texto: q };
+}
+
+const inputClass =
+  "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe";
+
 export function PosClient({
   sucursalId,
   sucursalNombre,
@@ -70,6 +107,7 @@ export function PosClient({
   combos,
   promosCantidad,
   estadoCaja,
+  cajaId,
   cantidadTicketsHoy,
 }: {
   sucursalId: string;
@@ -79,16 +117,28 @@ export function PosClient({
   combos: ComboData[];
   promosCantidad: PromoCantidadData[];
   estadoCaja: "sin_abrir" | "abierta" | "cerrada";
+  cajaId: string | null;
   cantidadTicketsHoy: number;
 }) {
   const router = useRouter();
-  const [lineas, setLineas] = useState<{ skuId: string; cantidad: number }[]>([]);
-  const [envaseChecked, setEnvaseChecked] = useState<Record<string, boolean>>({});
-  const [medioPago, setMedioPago] = useState<MedioPago | null>(null);
+  const [tickets, setTickets] = useState<Ticket[]>(() => [ticketVacio("1")]);
+  const [ticketActivoId, setTicketActivoId] = useState("1");
+  const contadorTicketRef = useRef(1);
+
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const [desarmandoSkuId, setDesarmandoSkuId] = useState<string | null>(null);
+  const [lineaSeleccionada, setLineaSeleccionada] = useState<string | null>(null);
+  const [editandoCantidadSkuId, setEditandoCantidadSkuId] = useState<string | null>(null);
+  const [cantidadEditada, setCantidadEditada] = useState("");
+  const [verPrecioAbierto, setVerPrecioAbierto] = useState(false);
+  const [verPrecioQuery, setVerPrecioQuery] = useState("");
+  const [movimientoTipo, setMovimientoTipo] = useState<"entrada" | "salida" | null>(null);
+  const [movimientoMonto, setMovimientoMonto] = useState("");
+  const [movimientoMotivo, setMovimientoMotivo] = useState("");
+  const [movimientoError, setMovimientoError] = useState<string | null>(null);
+  const [pendingMovimiento, startTransitionMovimiento] = useTransition();
+
   // Confirmación visible de que la venta se registró: el ticket se limpia
   // solo (para arrancar el siguiente), así que sin esto no queda ningún
   // rastro en pantalla de que la venta anterior se guardó.
@@ -99,6 +149,7 @@ export function PosClient({
   const avisoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mostrarPago, setMostrarPago] = useState(false);
   const primerMedioRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (mostrarPago) primerMedioRef.current?.focus();
@@ -106,15 +157,51 @@ export function PosClient({
 
   const skuPorId = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
 
+  const ticketActivo = tickets.find((t) => t.id === ticketActivoId) ?? tickets[0];
+  const { lineas, envaseChecked, pagos } = ticketActivo;
+
+  function actualizarTicketActivo(fn: (t: Ticket) => Ticket) {
+    setTickets((prev) => prev.map((t) => (t.id === ticketActivoId ? fn(t) : t)));
+  }
+
+  function nuevoTicket() {
+    contadorTicketRef.current += 1;
+    const id = String(contadorTicketRef.current);
+    setTickets((prev) => [...prev, ticketVacio(id)]);
+    setTicketActivoId(id);
+    setLineaSeleccionada(null);
+    setQuery("");
+    searchInputRef.current?.focus();
+  }
+
+  function cerrarTicket(id: string) {
+    if (tickets.length <= 1) return;
+    const ticket = tickets.find((t) => t.id === id);
+    if (ticket && ticket.lineas.length > 0 && !window.confirm("Este ticket tiene productos sin cobrar. ¿Descartarlo?")) {
+      return;
+    }
+    const restantes = tickets.filter((t) => t.id !== id);
+    setTickets(restantes);
+    if (id === ticketActivoId) setTicketActivoId(restantes[0].id);
+  }
+
+  const { texto: textoQuery, cantidad: cantidadQuery } = parseQuery(query);
+
   const resultados = useMemo(() => {
-    const q = query.trim();
+    const q = textoQuery.trim();
     if (!q) return [];
     const yaEnCarrito = new Set(lineas.map((l) => l.skuId));
     return skus
       .filter((s) => !yaEnCarrito.has(s.id))
       .filter((s) => coincideFragmentos(textoBusqueda(s), q))
       .slice(0, 8);
-  }, [skus, lineas, query]);
+  }, [skus, lineas, textoQuery]);
+
+  const resultadosVerPrecio = useMemo(() => {
+    const q = verPrecioQuery.trim();
+    if (!q) return [];
+    return skus.filter((s) => coincideFragmentos(textoBusqueda(s), q)).slice(0, 8);
+  }, [skus, verPrecioQuery]);
 
   const accesos = useMemo(
     () =>
@@ -160,46 +247,126 @@ export function PosClient({
   const hayDescuento = Math.round(totalEfectivo) < Math.round(totalOtroMedio);
   const cantidadUnidades = lineas.reduce((acc, l) => acc + l.cantidad, 0);
 
+  // Pago dividido: con más de un medio (o el único no siendo efectivo) se
+  // pierde el precio de efectivo para toda la venta -- ver comentario en
+  // el tipo Pago. sumaPagos/restante sirven para validar que lo tipeado
+  // cierre exacto antes de dejar cobrar.
+  const esEfectivoPuro = pagos.length === 1 && pagos[0].medioPago === "efectivo";
+  const totalACobrar = esEfectivoPuro ? totalEfectivo : totalOtroMedio;
+  const sumaPagos = pagos.reduce((acc, p) => acc + p.monto, 0);
+  const restante = Math.round((totalACobrar - sumaPagos) * 100) / 100;
+
   function agregarSku(sku: SkuPos, cantidad = 1) {
     if (ventaConfirmada != null) {
       if (avisoTimeoutRef.current) clearTimeout(avisoTimeoutRef.current);
       setVentaConfirmada(null);
     }
-    setLineas((prev) => {
-      const idx = prev.findIndex((l) => l.skuId === sku.id);
+    actualizarTicketActivo((t) => {
+      const idx = t.lineas.findIndex((l) => l.skuId === sku.id);
+      let lineas: LineaTicket[];
       if (idx >= 0) {
-        const copia = [...prev];
-        copia[idx] = { ...copia[idx], cantidad: copia[idx].cantidad + cantidad };
-        return copia;
+        lineas = [...t.lineas];
+        lineas[idx] = { ...lineas[idx], cantidad: lineas[idx].cantidad + cantidad };
+      } else {
+        lineas = [...t.lineas, { skuId: sku.id, cantidad }];
       }
-      return [...prev, { skuId: sku.id, cantidad }];
+      const envaseChecked =
+        sku.esRetornable && !(sku.id in t.envaseChecked)
+          ? { ...t.envaseChecked, [sku.id]: true }
+          : t.envaseChecked;
+      return { ...t, lineas, envaseChecked };
     });
-    if (sku.esRetornable) {
-      setEnvaseChecked((prev) => (sku.id in prev ? prev : { ...prev, [sku.id]: true }));
-    }
+    setLineaSeleccionada(sku.id);
     setQuery("");
   }
 
   function ajustarCantidad(skuId: string, delta: number) {
-    setLineas((prev) =>
-      prev
-        .map((l) => (l.skuId === skuId ? { ...l, cantidad: l.cantidad + delta } : l))
-        .filter((l) => l.cantidad > 0),
-    );
+    actualizarTicketActivo((t) => ({
+      ...t,
+      lineas: t.lineas.map((l) => (l.skuId === skuId ? { ...l, cantidad: l.cantidad + delta } : l)).filter((l) => l.cantidad > 0),
+    }));
+  }
+
+  function fijarCantidad(skuId: string, cantidad: number) {
+    actualizarTicketActivo((t) => ({
+      ...t,
+      lineas:
+        cantidad > 0
+          ? t.lineas.map((l) => (l.skuId === skuId ? { ...l, cantidad } : l))
+          : t.lineas.filter((l) => l.skuId !== skuId),
+    }));
   }
 
   function quitarLinea(skuId: string) {
-    setLineas((prev) => prev.filter((l) => l.skuId !== skuId));
+    actualizarTicketActivo((t) => ({ ...t, lineas: t.lineas.filter((l) => l.skuId !== skuId) }));
+    setLineaSeleccionada(null);
   }
 
   function alternarEnvase(skuId: string) {
-    setEnvaseChecked((prev) => ({ ...prev, [skuId]: !prev[skuId] }));
+    actualizarTicketActivo((t) => ({ ...t, envaseChecked: { ...t.envaseChecked, [skuId]: !t.envaseChecked[skuId] } }));
+  }
+
+  // Elegir el primer (y hasta ahora único) medio: comportamiento rápido de
+  // siempre, un click y ya está el monto completo cargado.
+  function elegirMedioUnico(m: MedioPago) {
+    const monto = m === "efectivo" ? totalEfectivo : totalOtroMedio;
+    actualizarTicketActivo((t) => ({ ...t, pagos: [{ medioPago: m, monto }] }));
+  }
+
+  // Agrega un segundo/tercer medio con el resto pendiente ya calculado
+  // (con el total "otro medio", porque a partir de acá deja de ser 100%
+  // efectivo). La cajera puede después ajustar los montos a mano.
+  function agregarMedioAdicional() {
+    if (pagos.length === 0 || pagos.length >= 3) return;
+    const sumaActual = pagos.reduce((acc, p) => acc + p.monto, 0);
+    const restanteAgregar = Math.max(0, Math.round((totalOtroMedio - sumaActual) * 100) / 100);
+    const medioLibre = MEDIOS.find((m) => !pagos.some((p) => p.medioPago === m.id))?.id ?? "debito";
+    actualizarTicketActivo((t) => ({ ...t, pagos: [...t.pagos, { medioPago: medioLibre, monto: restanteAgregar }] }));
+  }
+
+  function quitarMedio(index: number) {
+    actualizarTicketActivo((t) => ({ ...t, pagos: t.pagos.filter((_, i) => i !== index) }));
+  }
+
+  function cambiarMedioPago(index: number, medio: MedioPago) {
+    actualizarTicketActivo((t) => ({
+      ...t,
+      pagos: t.pagos.map((p, i) => (i === index ? { ...p, medioPago: medio } : p)),
+    }));
+  }
+
+  function cambiarMontoPago(index: number, monto: number) {
+    actualizarTicketActivo((t) => ({
+      ...t,
+      pagos: t.pagos.map((p, i) => (i === index ? { ...p, monto } : p)),
+    }));
+  }
+
+  function moverSeleccion(delta: number) {
+    if (lineas.length === 0) return;
+    const idx = lineas.findIndex((l) => l.skuId === lineaSeleccionada);
+    const siguiente = idx < 0 ? 0 : Math.min(lineas.length - 1, Math.max(0, idx + delta));
+    setLineaSeleccionada(lineas[siguiente].skuId);
+  }
+
+  function abrirEdicionCantidad(skuId: string) {
+    const linea = lineas.find((l) => l.skuId === skuId);
+    if (!linea) return;
+    setEditandoCantidadSkuId(skuId);
+    setCantidadEditada(String(linea.cantidad));
+  }
+
+  function confirmarEdicionCantidad() {
+    if (!editandoCantidadSkuId) return;
+    const n = parseInt(cantidadEditada, 10);
+    if (Number.isFinite(n) && n > 0) fijarCantidad(editandoCantidadSkuId, n);
+    setEditandoCantidadSkuId(null);
   }
 
   function onScanKeyDown(e: KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
     e.preventDefault();
-    const q = query.trim();
+    const q = textoQuery.trim();
     if (!q) {
       // Doble Enter: ya se terminó de escanear (el campo quedó vacío
       // después del último producto agregado) y se aprieta Enter de nuevo
@@ -211,11 +378,11 @@ export function PosClient({
 
     const porCodigoBarras = skus.find((s) => s.codigoBarras === q);
     if (porCodigoBarras) {
-      agregarSku(porCodigoBarras);
+      agregarSku(porCodigoBarras, cantidadQuery);
       return;
     }
     if (resultados.length === 1) {
-      agregarSku(resultados[0]);
+      agregarSku(resultados[0], cantidadQuery);
     }
   }
 
@@ -250,23 +417,28 @@ export function PosClient({
     return null;
   }
 
-  function desarmar(sku: SkuPos, faltante: number) {
-    const cadena = sugerirDesarme(sku, faltante);
-    if (!cadena) return;
-    setDesarmandoSkuId(sku.id);
-    startTransition(async () => {
+  // Se ejecuta solo, sin avisar ni pedir confirmación (decisión del
+  // usuario 2026-09-20: en horario de mucha demanda no se pueden detener a
+  // clickear nada). Recorre las líneas del ticket en orden; cada
+  // desarmar_sku() es atómico y usa el stock real al momento de llamarla,
+  // así que si dos líneas del mismo ticket tiran del mismo pack padre, la
+  // segunda ya ve el stock actualizado por la primera.
+  async function autoDesarmarFaltantes(): Promise<{ error: string } | { ok: true }> {
+    for (const l of lineas) {
+      const sku = skuPorId.get(l.skuId);
+      if (!sku) continue;
+      const faltante = Math.max(0, l.cantidad - sku.stock);
+      if (faltante <= 0) continue;
+      const cadena = sugerirDesarme(sku, faltante);
+      if (!cadena) continue;
       const resultado = await desarmarParaVenta(sucursalId, cadena);
-      setDesarmandoSkuId(null);
-      if ("error" in resultado) {
-        setError(resultado.error);
-        return;
-      }
-      router.refresh();
-    });
+      if ("error" in resultado) return resultado;
+    }
+    return { ok: true };
   }
 
-  function construirLineasVenta(medio: MedioPago): LineaVenta[] {
-    if (medio !== "efectivo") {
+  function construirLineasVenta(esEfectivoPuro: boolean): LineaVenta[] {
+    if (!esEfectivoPuro) {
       return lineas.map((l) => {
         const sku = skuPorId.get(l.skuId);
         const precio = sku?.precioOtroMedio ?? 0;
@@ -300,10 +472,6 @@ export function PosClient({
     return resultado;
   }
 
-  if (estadoCaja === "sin_abrir") {
-    return <AbrirCajaForm sucursalId={sucursalId} sucursalNombre={sucursalNombre} />;
-  }
-
   function confirmar() {
     if (estadoCaja !== "abierta") {
       setError("La caja de hoy ya está cerrada.");
@@ -313,22 +481,46 @@ export function PosClient({
       setError("El ticket no tiene productos.");
       return;
     }
-    if (!medioPago) {
+    if (pagos.length === 0) {
       setError("Elegí el medio de pago antes de cobrar.");
       return;
     }
+    if (restante !== 0) {
+      setError(
+        restante > 0
+          ? `Faltan ${formatoMoneda.format(restante)} por asignar a algún medio de pago.`
+          : `Sobran ${formatoMoneda.format(-restante)}: ajustá los montos para que sumen el total.`,
+      );
+      return;
+    }
     setError(null);
-    const totalCobrado = medioPago === "efectivo" ? totalEfectivo : totalOtroMedio;
+    const totalCobrado = totalACobrar;
+    const pagosVenta: PagoVenta[] = pagos.map((p) => ({ medio_pago: p.medioPago, monto: p.monto }));
     startTransition(async () => {
-      const resultado = await confirmarVenta(sucursalId, medioPago, construirLineasVenta(medioPago));
+      const desarme = await autoDesarmarFaltantes();
+      if ("error" in desarme) {
+        setError(desarme.error);
+        return;
+      }
+      const resultado = await confirmarVenta(sucursalId, pagosVenta, construirLineasVenta(esEfectivoPuro));
       if ("error" in resultado) {
         setError(resultado.error);
         return;
       }
-      setLineas([]);
-      setEnvaseChecked({});
-      setMedioPago(null);
+
+      const restantes = tickets.filter((t) => t.id !== ticketActivoId);
+      if (restantes.length > 0) {
+        setTickets(restantes);
+        setTicketActivoId(restantes[0].id);
+      } else {
+        contadorTicketRef.current += 1;
+        const nuevoId = String(contadorTicketRef.current);
+        setTickets([ticketVacio(nuevoId)]);
+        setTicketActivoId(nuevoId);
+      }
+
       setMostrarPago(false);
+      setLineaSeleccionada(null);
       setUltimaVenta({ id: resultado.id, comprobante: resultado.comprobante });
 
       if (avisoTimeoutRef.current) clearTimeout(avisoTimeoutRef.current);
@@ -339,59 +531,243 @@ export function PosClient({
     });
   }
 
-  return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_460px]">
-      {/* ============ IZQUIERDA: búsqueda ============ */}
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h1 className="text-[15px] font-semibold text-text">Punto de venta — {sucursalNombre}</h1>
-          <div className="flex gap-2">
-            {puedeFacturar && (
-              <Link
-                href="/vender/facturar"
-                className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
-              >
-                Facturar
-              </Link>
-            )}
-            <Link
-              href="/vender/devoluciones"
-              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
-            >
-              Devoluciones
-            </Link>
-            <Link
-              href="/vender/caja"
-              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
-            >
-              Caja del día · {cantidadTicketsHoy} ventas
-            </Link>
-          </div>
-        </div>
+  function abrirMovimientoCaja(tipo: "entrada" | "salida") {
+    if (!cajaId) return;
+    setMovimientoTipo(tipo);
+    setMovimientoMonto("");
+    setMovimientoMotivo("");
+    setMovimientoError(null);
+  }
 
-        {estadoCaja === "cerrada" && (
-          <div className="mb-3 rounded-[7px] border border-warn/30 bg-warn-bg px-[12px] py-[10px] text-[12.5px] text-warn">
-            La caja de hoy ya está cerrada. No se pueden registrar más ventas hasta el próximo día.
+  function confirmarMovimientoCaja() {
+    if (!movimientoTipo || !cajaId) return;
+    const monto = Number(movimientoMonto);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setMovimientoError("Ingresá un monto válido.");
+      return;
+    }
+    if (!movimientoMotivo.trim()) {
+      setMovimientoError("El motivo es obligatorio.");
+      return;
+    }
+    startTransitionMovimiento(async () => {
+      const resultado = await registrarMovimientoCaja(cajaId, movimientoTipo, monto, movimientoMotivo.trim());
+      if ("error" in resultado) {
+        setMovimientoError(resultado.error);
+        return;
+      }
+      setMovimientoTipo(null);
+      router.refresh();
+    });
+  }
+
+  // Atajos globales de teclado -- pensados para que la cajera no tenga que
+  // soltar el teclado. F5 se intercepta SIEMPRE (si no, el navegador
+  // recarga la página y se pierden los tickets en espera).
+  useEffect(() => {
+    function onKeyDown(e: globalThis.KeyboardEvent) {
+      if (e.key === "F5") {
+        e.preventDefault();
+        if (lineaSeleccionada) abrirEdicionCantidad(lineaSeleccionada);
+        return;
+      }
+      if (e.key === "F9") {
+        e.preventDefault();
+        setVerPrecioAbierto(true);
+        return;
+      }
+      if (e.key === "F10") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (e.key === "F6") {
+        e.preventDefault();
+        nuevoTicket();
+        return;
+      }
+      if (e.key === "F12") {
+        e.preventDefault();
+        if (lineas.length === 0) return;
+        if (pagos.length > 0 && restante === 0) confirmar();
+        else setMostrarPago(true);
+        return;
+      }
+      if (e.key === "F7") {
+        e.preventDefault();
+        abrirMovimientoCaja("entrada");
+        return;
+      }
+      if (e.key === "F8") {
+        e.preventDefault();
+        abrirMovimientoCaja("salida");
+        return;
+      }
+
+      const enCampoTexto = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+      if (enCampoTexto) return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        moverSeleccion(1);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        moverSeleccion(-1);
+      } else if (e.key === "Delete") {
+        e.preventDefault();
+        if (lineaSeleccionada) quitarLinea(lineaSeleccionada);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lineas, lineaSeleccionada, pagos, restante, tickets, ticketActivoId, cajaId]);
+
+  if (estadoCaja === "sin_abrir") {
+    return <AbrirCajaForm sucursalId={sucursalId} sucursalNombre={sucursalNombre} />;
+  }
+
+  // Selector de medios de pago -- reusado en el panel siempre visible y en
+  // el modal "¿Cómo paga?". Arranca mostrando los 4 medios en botones
+  // grandes (elige uno, listo); en cuanto hay un pago cargado, cada medio
+  // pasa a ser una fila editable con "+ dividir en otro medio" para sumar
+  // hasta 3.
+  function renderSelectorPagos(refPrimerBoton?: typeof primerMedioRef) {
+    if (pagos.length === 0) {
+      return (
+        <div className="mb-2 grid grid-cols-2 gap-[7px]">
+          {MEDIOS.map((m, i) => (
+            <button
+              key={m.id}
+              ref={i === 0 ? refPrimerBoton : undefined}
+              type="button"
+              onClick={() => elegirMedioUnico(m.id)}
+              className="rounded-card border border-border bg-bg px-[8px] py-[8px] text-left text-[12.5px] font-medium text-text hover:bg-bg-2"
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div className="mb-2 flex flex-col gap-[6px]">
+        {pagos.map((p, i) => (
+          <div key={i} className="flex items-center gap-[6px]">
+            <select
+              value={p.medioPago}
+              onChange={(e) => cambiarMedioPago(i, e.target.value as MedioPago)}
+              className="rounded-[6px] border border-border bg-bg px-[6px] py-[5px] text-[12.5px] text-text outline-none focus:border-moe"
+            >
+              {MEDIOS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            {pagos.length === 1 ? (
+              <span className="flex-1 text-right text-[13px] tabular-nums text-text-2">
+                {formatoMoneda.format(p.monto)}
+              </span>
+            ) : (
+              <input
+                type="number"
+                value={p.monto}
+                onChange={(e) => cambiarMontoPago(i, Number(e.target.value) || 0)}
+                className="w-[100px] flex-1 rounded-[6px] border border-border bg-bg px-[8px] py-[5px] text-right text-[13px] tabular-nums text-text outline-none focus:border-moe"
+              />
+            )}
+            {pagos.length > 1 && (
+              <button
+                type="button"
+                onClick={() => quitarMedio(i)}
+                className="shrink-0 text-[13px] text-text-3 hover:text-err"
+              >
+                ×
+              </button>
+            )}
           </div>
+        ))}
+
+        {pagos.length < 3 && (
+          <button
+            type="button"
+            onClick={agregarMedioAdicional}
+            className="self-start text-[12px] font-medium text-moe hover:underline"
+          >
+            + Dividir en otro medio
+          </button>
         )}
 
-        <div className="relative mb-3">
+        {pagos.length > 1 && restante !== 0 && (
+          <p className={`text-[12px] font-medium ${restante > 0 ? "text-warn" : "text-err"}`}>
+            {restante > 0
+              ? `Falta asignar ${formatoMoneda.format(restante)}`
+              : `Sobran ${formatoMoneda.format(-restante)}: ajustá los montos`}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-[calc(100vh-76px)] flex-col sm:h-[calc(100vh-92px)] lg:h-[calc(100vh-24px)]">
+      {/* ============ Encabezado + búsqueda + pestañas de ticket ============ */}
+      <div className="mb-3 flex shrink-0 items-center justify-between">
+        <h1 className="text-[15px] font-semibold text-text">Punto de venta — {sucursalNombre}</h1>
+        <div className="flex gap-2">
+          {puedeFacturar && (
+            <Link
+              href="/vender/facturar"
+              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+            >
+              Facturar
+            </Link>
+          )}
+          <Link
+            href="/vender/devoluciones"
+            className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+          >
+            Devoluciones
+          </Link>
+          <Link
+            href="/vender/caja"
+            className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+          >
+            Caja del día · {cantidadTicketsHoy} ventas
+          </Link>
+        </div>
+      </div>
+
+      {estadoCaja === "cerrada" && (
+        <div className="mb-3 shrink-0 rounded-[7px] border border-warn/30 bg-warn-bg px-[12px] py-[10px] text-[12.5px] text-warn">
+          La caja de hoy ya está cerrada. No se pueden registrar más ventas hasta el próximo día.
+        </div>
+      )}
+
+      <div className="mb-3 flex shrink-0 items-stretch gap-2">
+        <div className="relative flex-1">
           <input
+            ref={searchInputRef}
             type="text"
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onScanKeyDown}
-            placeholder="Escaneá el código de barras o escribí el nombre…"
+            placeholder="Escaneá o escribí el código · 3*código para cantidad · nombre para buscar"
             className="w-full rounded-card border border-border bg-bg px-[14px] py-[11px] text-[14.5px] text-text outline-none focus:border-moe"
           />
+          <span className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 text-[11.5px] text-text-3">
+            Enter agrega
+          </span>
           {resultados.length > 0 && (
             <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-[6px] border border-border bg-bg shadow-sm">
               {resultados.map((s) => (
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => agregarSku(s)}
+                  onClick={() => agregarSku(s, cantidadQuery)}
                   className="flex w-full items-center justify-between border-b border-[#F1F1F3] px-[12px] py-[8px] text-left text-[13px] last:border-b-0 hover:bg-bg-2"
                 >
                   <span>
@@ -410,276 +786,302 @@ export function PosClient({
           )}
         </div>
 
-        {accesos.length > 0 && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
-            {accesos.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => agregarSku(s)}
-                className="rounded-card border border-border bg-bg p-[10px] text-left hover:border-border-strong hover:bg-bg-2"
-              >
-                <b className="block text-[12.5px] font-medium leading-tight text-text">{s.nombre}</b>
-                <small className="tabular-nums text-[11.5px] text-text-3">
-                  {s.precioEfectivo != null ? formatoMoneda.format(s.precioEfectivo) : "sin precio"}
-                </small>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ============ DERECHA: ticket ============ */}
-      <div className="flex flex-col rounded-card border border-border bg-bg">
-        <div className="flex items-center justify-between border-b border-border px-[15px] py-[12px]">
-          <h2 className="text-[13px] font-semibold text-text">Ticket</h2>
-          <span className="text-[12px] text-text-3">
-            {lineas.length === 0
-              ? "Sin productos"
-              : `${lineas.length} producto${lineas.length > 1 ? "s" : ""} · ${cantidadUnidades} unidad${cantidadUnidades > 1 ? "es" : ""}`}
-          </span>
-        </div>
-
-        {ventaConfirmada != null && (
-          <div className="mx-[15px] mt-[11px] flex items-center gap-2 rounded-[7px] bg-ok-bg px-[12px] py-[10px] text-[12.5px] font-medium text-ok">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              className="h-[15px] w-[15px] shrink-0"
+        <div className="flex items-center gap-1 rounded-card border border-border bg-bg px-[8px]">
+          {tickets.map((t, i) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                setTicketActivoId(t.id);
+                setLineaSeleccionada(null);
+              }}
+              onDoubleClick={() => cerrarTicket(t.id)}
+              title={t.lineas.length > 0 ? "Doble click para descartar" : undefined}
+              className={`whitespace-nowrap rounded-[6px] px-[10px] py-[7px] text-[12.5px] font-medium ${
+                t.id === ticketActivoId ? "bg-moe-soft text-moe" : "text-text-2 hover:bg-bg-2"
+              }`}
             >
-              <path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-            </svg>
-            Venta registrada · {formatoMoneda.format(ventaConfirmada)}
-          </div>
-        )}
-
-        {ultimaVenta && (
-          <div className="mx-[15px] mt-[8px] flex items-center justify-between rounded-[7px] border border-border bg-bg-2 px-[12px] py-[9px] text-[12px]">
-            <span className="text-text-2">
-              {ultimaVenta.comprobante
-                ? `Factura ${ultimaVenta.comprobante.tipoCbte} N° ${ultimaVenta.comprobante.numeroComprobante} autorizada`
-                : puedeFacturar
-                  ? "Sin facturar todavía (reintentar desde Facturar)"
-                  : "Ticket interno"}
-            </span>
-            <a
-              href={`/ticket/${ultimaVenta.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium text-moe hover:underline"
-            >
-              Imprimir ticket →
-            </a>
-          </div>
-        )}
-
-        <div className="flex-1 overflow-auto">
-          {lineas.length === 0 ? (
-            <div className="p-[40px_20px] text-center text-text-3">
-              <p className="mb-1 text-[13.5px] font-medium text-text-2">Escaneá el primer producto</p>
-              <p className="text-[12.5px]">Aparece acá con su precio y podés ajustar la cantidad.</p>
-            </div>
-          ) : (
-            lineas.map((l) => {
-              const sku = skuPorId.get(l.skuId);
-              if (!sku) return null;
-              const tramos = tramosPorSku.get(l.skuId) ?? [];
-              const subtotal = tramos.reduce((acc, t) => acc + t.precioUnitario * t.cantidad, 0);
-              const faltante = Math.max(0, l.cantidad - sku.stock);
-              const sinStock = faltante > 0;
-              const cadenaDesarme = sinStock ? sugerirDesarme(sku, faltante) : null;
-
-              return (
-                <div key={l.skuId} className="border-b border-[#F1F1F3] px-[15px] py-[10px]">
-                  <div className="grid grid-cols-[1fr_auto] items-start gap-x-[10px] gap-y-[4px]">
-                    <div className="text-[13.5px] font-medium leading-tight text-text">
-                      {sku.nombre}
-                      <small className="mt-[1px] block text-[11.5px] font-normal text-text-3">
-                        {sku.marcaNombre} · {presentacionLabel(sku.presentacion)}
-                      </small>
-                    </div>
-                    <div className="whitespace-nowrap text-right text-[13.5px] tabular-nums text-text">
-                      {formatoMoneda.format(subtotal)}
-                    </div>
-
-                    <div className="col-span-2 mt-[3px] flex flex-wrap items-center gap-[7px]">
-                      <button
-                        type="button"
-                        onClick={() => ajustarCantidad(l.skuId, -1)}
-                        className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[13px] text-text-2 hover:bg-bg-2"
-                      >
-                        −
-                      </button>
-                      <span className="min-w-[20px] text-center text-[13px] font-medium tabular-nums">
-                        {l.cantidad}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => ajustarCantidad(l.skuId, 1)}
-                        className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[13px] text-text-2 hover:bg-bg-2"
-                      >
-                        +
-                      </button>
-
-                      {sku.esRetornable && (
-                        <label className="ml-1 flex items-center gap-1 text-[11.5px] text-text-2">
-                          <input
-                            type="checkbox"
-                            checked={Boolean(envaseChecked[l.skuId])}
-                            onChange={() => alternarEnvase(l.skuId)}
-                          />
-                          Con envase
-                        </label>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => quitarLinea(l.skuId)}
-                        className="ml-auto text-[11.5px] text-text-3 hover:text-err"
-                      >
-                        Quitar
-                      </button>
-                    </div>
-
-                    {tramos.map((t, i) =>
-                      t.origen === "combo" || t.origen === "cantidad" ? (
-                        <span
-                          key={i}
-                          className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-ok-bg px-[6px] py-[1.5px] text-[11px] font-medium text-ok"
-                        >
-                          {t.cantidad} × {t.promocionNombre ?? ORIGEN_LABEL[t.origen]}
-                        </span>
-                      ) : null,
-                    )}
-
-                    {tramos.some((t) => t.bajoCosto) && (
-                      <span className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-orange-bg px-[6px] py-[1.5px] text-[11px] font-medium text-orange">
-                        Precio por debajo del costo
-                      </span>
-                    )}
-
-                    {sinStock && (
-                      <div className="col-span-2 mt-[4px] rounded-[6px] bg-warn-bg px-[9px] py-[7px] text-[11.5px] text-warn">
-                        <p className="mb-1">
-                          Quedan {Math.max(sku.stock, 0)} en el sistema, faltan {faltante}. Se puede vender
-                          igual: queda marcado para revisar en el próximo conteo.
-                        </p>
-                        {cadenaDesarme && (
-                          <button
-                            type="button"
-                            disabled={pending && desarmandoSkuId === sku.id}
-                            onClick={() => desarmar(sku, faltante)}
-                            className="rounded-[5px] border border-warn px-[9px] py-[3px] text-[11.5px] font-medium text-warn hover:bg-warn/10 disabled:opacity-60"
-                          >
-                            {desarmandoSkuId === sku.id ? "Desarmando…" : "Desarmar pack"}
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        <div className="border-t border-border p-[14px_15px]">
-          <div className="mb-2 grid grid-cols-4 gap-[7px]">
-            {MEDIOS.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setMedioPago(m.id)}
-                className={`rounded-card border px-[8px] py-[8px] text-left text-[12.5px] font-medium ${
-                  medioPago === m.id
-                    ? "border-moe bg-moe-soft text-moe"
-                    : "border-border bg-bg text-text hover:bg-bg-2"
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-
-          {depositoTotal > 0 && (
-            <div className="mb-[5px] flex justify-between text-[13px] text-text-2">
-              <span>Depósito de envases</span>
-              <span className="tabular-nums">{formatoMoneda.format(depositoTotal)}</span>
-            </div>
-          )}
-
-          {hayDescuento ? (
-            <>
-              <div className="mb-[5px] flex items-baseline justify-between">
-                <span className="text-[13px] font-medium text-text-2">Total en efectivo</span>
-                <span className="text-[20px] font-semibold tabular-nums text-text">
-                  {formatoMoneda.format(totalEfectivo)}
-                </span>
-              </div>
-              <div className="mb-[9px] flex items-baseline justify-between">
-                <span className="text-[13px] font-medium text-text-2">Total en otro medio</span>
-                <span className="text-[15px] font-medium tabular-nums text-text-2">
-                  {formatoMoneda.format(totalOtroMedio)}
-                </span>
-              </div>
-            </>
-          ) : (
-            <div className="mb-[9px] flex items-baseline justify-between">
-              <span className="text-[13px] font-medium text-text-2">Total</span>
-              <span className="text-[22px] font-semibold tabular-nums text-text">
-                {formatoMoneda.format(totalOtroMedio)}
-              </span>
-            </div>
-          )}
-
-          {error && <p className="mb-2 text-[12.5px] text-err">{error}</p>}
-
+              Ticket {i + 1}
+              {t.lineas.length > 0 && <span className="ml-1 text-[10.5px] text-text-3">({t.lineas.length})</span>}
+            </button>
+          ))}
           <button
             type="button"
-            disabled={pending || lineas.length === 0}
-            onClick={confirmar}
-            className="w-full rounded-[7px] bg-moe px-[11px] py-[11px] text-[14px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+            onClick={nuevoTicket}
+            title="Nuevo ticket (F6) — dejar este en espera"
+            className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[6px] text-text-2 hover:bg-bg-2"
           >
-            {medioPago
-              ? `Cobrar ${formatoMoneda.format(medioPago === "efectivo" ? totalEfectivo : totalOtroMedio)} · ${MEDIOS.find((m) => m.id === medioPago)?.label}`
-              : "Confirmar venta"}
+            +
           </button>
         </div>
       </div>
 
+      {accesos.length > 0 && (
+        <div className="mb-3 grid shrink-0 grid-cols-3 gap-[6px] sm:grid-cols-4 md:grid-cols-6">
+          {accesos.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => agregarSku(s)}
+              className="rounded-[7px] border border-border bg-bg px-[9px] py-[6px] text-left hover:border-border-strong hover:bg-bg-2"
+            >
+              <b className="block truncate text-[11.5px] font-medium leading-tight text-text">{s.nombre}</b>
+              <small className="tabular-nums text-[11px] text-text-3">
+                {s.precioEfectivo != null ? formatoMoneda.format(s.precioEfectivo) : "sin precio"}
+              </small>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ============ Cuerpo: items a la izquierda, total + atajos a la derecha ============ */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+        <div className="flex min-h-0 flex-col rounded-card border border-border bg-bg">
+          <div className="flex shrink-0 items-center justify-between border-b border-border px-[15px] py-[10px]">
+            <h2 className="text-[13px] font-semibold text-text">Ticket</h2>
+            <span className="text-[12px] text-text-3">
+              {lineas.length === 0
+                ? "Sin productos"
+                : `${lineas.length} producto${lineas.length > 1 ? "s" : ""} · ${cantidadUnidades} unidad${cantidadUnidades > 1 ? "es" : ""}`}
+            </span>
+          </div>
+
+          {ventaConfirmada != null && (
+            <div className="mx-[15px] mt-[11px] flex items-center gap-2 rounded-[7px] bg-ok-bg px-[12px] py-[10px] text-[12.5px] font-medium text-ok">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                className="h-[15px] w-[15px] shrink-0"
+              >
+                <path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+              </svg>
+              Venta registrada · {formatoMoneda.format(ventaConfirmada)}
+            </div>
+          )}
+
+          {ultimaVenta && (
+            <div className="mx-[15px] mt-[8px] flex items-center justify-between rounded-[7px] border border-border bg-bg-2 px-[12px] py-[9px] text-[12px]">
+              <span className="text-text-2">
+                {ultimaVenta.comprobante
+                  ? `Factura ${ultimaVenta.comprobante.tipoCbte} N° ${ultimaVenta.comprobante.numeroComprobante} autorizada`
+                  : puedeFacturar
+                    ? "Sin facturar todavía (reintentar desde Facturar)"
+                    : "Ticket interno"}
+              </span>
+              <a
+                href={`/ticket/${ultimaVenta.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-moe hover:underline"
+              >
+                Imprimir ticket →
+              </a>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-auto">
+            {lineas.length === 0 ? (
+              <div className="p-[40px_20px] text-center text-text-3">
+                <p className="mb-1 text-[13.5px] font-medium text-text-2">Escaneá un producto para empezar</p>
+                <p className="text-[12.5px]">F10 buscar · 3*código cantidad · F6 nuevo ticket</p>
+              </div>
+            ) : (
+              lineas.map((l) => {
+                const sku = skuPorId.get(l.skuId);
+                if (!sku) return null;
+                const tramos = tramosPorSku.get(l.skuId) ?? [];
+                const subtotal = tramos.reduce((acc, t) => acc + t.precioUnitario * t.cantidad, 0);
+                const faltante = Math.max(0, l.cantidad - sku.stock);
+                const sinStock = faltante > 0;
+                const seleccionada = l.skuId === lineaSeleccionada;
+
+                return (
+                  <div
+                    key={l.skuId}
+                    onClick={() => setLineaSeleccionada(l.skuId)}
+                    className={`cursor-pointer border-b border-[#F1F1F3] px-[15px] py-[10px] ${
+                      seleccionada ? "bg-moe-soft/40" : ""
+                    }`}
+                  >
+                    <div className="grid grid-cols-[1fr_auto] items-start gap-x-[10px] gap-y-[4px]">
+                      <div className="text-[13.5px] font-medium leading-tight text-text">
+                        {sku.nombre}
+                        <small className="mt-[1px] block text-[11.5px] font-normal text-text-3">
+                          {sku.marcaNombre} · {presentacionLabel(sku.presentacion)} · {sku.codigoInterno} ·{" "}
+                          <span className={sinStock ? "font-medium text-warn" : ""}>
+                            S:{Math.max(sku.stock, 0)}
+                          </span>
+                        </small>
+                      </div>
+                      <div className="whitespace-nowrap text-right text-[13.5px] tabular-nums text-text">
+                        {formatoMoneda.format(subtotal)}
+                      </div>
+
+                      <div className="col-span-2 mt-[3px] flex flex-wrap items-center gap-[7px]">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            ajustarCantidad(l.skuId, -1);
+                          }}
+                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[13px] text-text-2 hover:bg-bg-2"
+                        >
+                          −
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            abrirEdicionCantidad(l.skuId);
+                          }}
+                          className="min-w-[26px] rounded-[5px] px-[4px] text-center text-[13px] font-medium tabular-nums hover:bg-bg-2"
+                          title="Editar cantidad (F5)"
+                        >
+                          {l.cantidad}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            ajustarCantidad(l.skuId, 1);
+                          }}
+                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[13px] text-text-2 hover:bg-bg-2"
+                        >
+                          +
+                        </button>
+
+                        {sku.esRetornable && (
+                          <label
+                            className="ml-1 flex items-center gap-1 text-[11.5px] text-text-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(envaseChecked[l.skuId])}
+                              onChange={() => alternarEnvase(l.skuId)}
+                            />
+                            Con envase
+                          </label>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            quitarLinea(l.skuId);
+                          }}
+                          className="ml-auto text-[11.5px] text-text-3 hover:text-err"
+                        >
+                          Quitar
+                        </button>
+                      </div>
+
+                      {tramos.map((t, i) =>
+                        t.origen === "combo" || t.origen === "cantidad" ? (
+                          <span
+                            key={i}
+                            className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-ok-bg px-[6px] py-[1.5px] text-[11px] font-medium text-ok"
+                          >
+                            {t.cantidad} × {t.promocionNombre ?? ORIGEN_LABEL[t.origen]}
+                          </span>
+                        ) : null,
+                      )}
+
+                      {tramos.some((t) => t.bajoCosto) && (
+                        <span className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-orange-bg px-[6px] py-[1.5px] text-[11px] font-medium text-orange">
+                          Precio por debajo del costo
+                        </span>
+                      )}
+
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="shrink-0 border-t border-border px-[15px] py-[7px] text-[11.5px] text-text-3">
+            ↑↓ elegir línea · F5 cantidad · Supr borrar
+          </div>
+        </div>
+
+        {/* ============ Columna derecha: total + atajos ============ */}
+        <div className="flex min-h-0 flex-col gap-3 overflow-auto">
+          <div className="rounded-card border border-border bg-bg p-[14px_15px]">
+            {renderSelectorPagos()}
+
+            {depositoTotal > 0 && (
+              <div className="mb-[5px] flex justify-between text-[13px] text-text-2">
+                <span>Depósito de envases</span>
+                <span className="tabular-nums">{formatoMoneda.format(depositoTotal)}</span>
+              </div>
+            )}
+
+            {hayDescuento ? (
+              <>
+                <div className="mb-[5px] flex items-baseline justify-between">
+                  <span className="text-[13px] font-medium text-text-2">Total en efectivo</span>
+                  <span className="text-[20px] font-semibold tabular-nums text-text">
+                    {formatoMoneda.format(totalEfectivo)}
+                  </span>
+                </div>
+                <div className="mb-[9px] flex items-baseline justify-between">
+                  <span className="text-[13px] font-medium text-text-2">Total en otro medio</span>
+                  <span className="text-[15px] font-medium tabular-nums text-text-2">
+                    {formatoMoneda.format(totalOtroMedio)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="mb-[9px] flex items-baseline justify-between">
+                <span className="text-[13px] font-medium text-text-2">Total</span>
+                <span className="text-[22px] font-semibold tabular-nums text-text">
+                  {formatoMoneda.format(totalOtroMedio)}
+                </span>
+              </div>
+            )}
+
+            {error && <p className="mb-2 text-[12.5px] text-err">{error}</p>}
+
+            <button
+              type="button"
+              disabled={pending || lineas.length === 0}
+              onClick={pagos.length > 0 && restante === 0 ? confirmar : () => setMostrarPago(true)}
+              className="w-full rounded-[7px] bg-moe px-[11px] py-[11px] text-[14px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+            >
+              {pagos.length > 0 && restante === 0
+                ? `Cobrar ${formatoMoneda.format(totalACobrar)}`
+                : "Cobrar (F12)"}
+            </button>
+          </div>
+
+          <div className="rounded-card border border-border bg-bg p-[14px_15px] text-[12.5px]">
+            <div className="grid grid-cols-2 gap-y-[9px]">
+              <AtajoItem label="Buscar" tecla="F10" />
+              <AtajoItem label="Cantidad" tecla="F5" />
+              <AtajoItem label="Nuevo ticket" tecla="F6" />
+              <AtajoItem label="Ver precio" tecla="F9" />
+              <AtajoItem label="Cobrar" tecla="F12" />
+              <AtajoItem label="Quitar" tecla="Supr" />
+              <AtajoItem label="Entrada $" tecla="F7" deshabilitado={!cajaId} />
+              <AtajoItem label="Salida $" tecla="F8" deshabilitado={!cajaId} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ============ Modal: medio de pago ============ */}
       {mostrarPago && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
           onClick={() => setMostrarPago(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setMostrarPago(false);
-          }}
         >
-          <div
-            className="w-[380px] rounded-card border border-border bg-bg p-5"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="w-[380px] rounded-card border border-border bg-bg p-5" onClick={(e) => e.stopPropagation()}>
             <h2 className="mb-3 text-[14px] font-semibold text-text">¿Cómo paga?</h2>
 
-            <div className="mb-3 grid grid-cols-2 gap-[8px]">
-              {MEDIOS.map((m, i) => (
-                <button
-                  key={m.id}
-                  ref={i === 0 ? primerMedioRef : undefined}
-                  type="button"
-                  onClick={() => setMedioPago(m.id)}
-                  className={`rounded-card border px-[10px] py-[10px] text-left text-[13px] font-medium ${
-                    medioPago === m.id
-                      ? "border-moe bg-moe-soft text-moe"
-                      : "border-border bg-bg text-text hover:bg-bg-2"
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
+            {renderSelectorPagos(primerMedioRef)}
 
             {hayDescuento ? (
               <>
@@ -717,20 +1119,168 @@ export function PosClient({
               </button>
               <button
                 type="button"
-                disabled={pending || !medioPago}
+                disabled={pending || pagos.length === 0 || restante !== 0}
                 onClick={confirmar}
                 className="flex-1 rounded-[7px] bg-moe px-[11px] py-[10px] text-[14px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
               >
                 {pending
                   ? "Confirmando…"
-                  : medioPago
-                    ? `Cobrar ${formatoMoneda.format(medioPago === "efectivo" ? totalEfectivo : totalOtroMedio)}`
-                    : "Elegí un medio de pago"}
+                  : pagos.length === 0
+                    ? "Elegí un medio de pago"
+                    : restante !== 0
+                      ? "Ajustá los montos"
+                      : `Cobrar ${formatoMoneda.format(totalACobrar)}`}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ============ Modal: editar cantidad (F5) ============ */}
+      {editandoCantidadSkuId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setEditandoCantidadSkuId(null)}
+        >
+          <div className="w-[280px] rounded-card border border-border bg-bg p-5" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-3 text-[14px] font-semibold text-text">Cantidad</h2>
+            <input
+              type="number"
+              autoFocus
+              min={1}
+              value={cantidadEditada}
+              onChange={(e) => setCantidadEditada(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmarEdicionCantidad();
+                if (e.key === "Escape") setEditandoCantidadSkuId(null);
+              }}
+              className={inputClass}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditandoCantidadSkuId(null)}
+                className="rounded-[6px] border border-border bg-bg px-[12px] py-[6px] text-[12.5px] font-medium text-text-2 hover:bg-bg-2"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarEdicionCantidad}
+                className="rounded-[6px] bg-moe px-[12px] py-[6px] text-[12.5px] font-medium text-white hover:bg-moe/90"
+              >
+                Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ Modal: ver precio (F9), sin agregar al ticket ============ */}
+      {verPrecioAbierto && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => {
+            setVerPrecioAbierto(false);
+            setVerPrecioQuery("");
+          }}
+        >
+          <div className="w-[400px] rounded-card border border-border bg-bg p-5" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-3 text-[14px] font-semibold text-text">Ver precio</h2>
+            <input
+              type="text"
+              autoFocus
+              value={verPrecioQuery}
+              onChange={(e) => setVerPrecioQuery(e.target.value)}
+              placeholder="Buscar producto…"
+              className={inputClass}
+            />
+            <div className="mt-2 max-h-[280px] overflow-y-auto">
+              {resultadosVerPrecio.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between border-b border-[#F1F1F3] py-[8px] text-[13px] last:border-b-0"
+                >
+                  <span>
+                    <span className="font-medium text-text">{s.nombre}</span>
+                    <span className="text-text-3">
+                      {" "}
+                      · {s.marcaNombre} — {presentacionLabel(s.presentacion)}
+                    </span>
+                  </span>
+                  <span className="tabular-nums text-text-2">
+                    {s.precioEfectivo != null ? formatoMoneda.format(s.precioEfectivo) : "sin precio"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ Modal: entrada/salida de efectivo (F7/F8) ============ */}
+      {movimientoTipo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setMovimientoTipo(null)}
+        >
+          <div className="w-[340px] rounded-card border border-border bg-bg p-5" onClick={(e) => e.stopPropagation()}>
+            <h2 className="mb-3 text-[14px] font-semibold text-text">
+              {movimientoTipo === "entrada" ? "Entrada de efectivo" : "Salida de efectivo"}
+            </h2>
+
+            <label className="mb-1 block text-[12px] font-medium text-text-2">Monto</label>
+            <input
+              type="number"
+              autoFocus
+              min={0}
+              value={movimientoMonto}
+              onChange={(e) => setMovimientoMonto(e.target.value)}
+              className={`${inputClass} mb-3`}
+            />
+
+            <label className="mb-1 block text-[12px] font-medium text-text-2">Motivo</label>
+            <input
+              type="text"
+              value={movimientoMotivo}
+              onChange={(e) => setMovimientoMotivo(e.target.value)}
+              placeholder={movimientoTipo === "entrada" ? "Ej. refuerzo de cambio" : "Ej. retiro para depósito"}
+              className={inputClass}
+            />
+
+            {movimientoError && <p className="mt-2 text-[12.5px] text-err">{movimientoError}</p>}
+
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMovimientoTipo(null)}
+                className="rounded-[6px] border border-border bg-bg px-[12px] py-[6px] text-[12.5px] font-medium text-text-2 hover:bg-bg-2"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={pendingMovimiento}
+                onClick={confirmarMovimientoCaja}
+                className="rounded-[6px] bg-moe px-[12px] py-[6px] text-[12.5px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+              >
+                {pendingMovimiento ? "Guardando…" : "Registrar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AtajoItem({ label, tecla, deshabilitado }: { label: string; tecla: string; deshabilitado?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between ${deshabilitado ? "opacity-40" : ""}`}>
+      <span className="text-text-2">{label}</span>
+      <kbd className="rounded-[4px] border border-border bg-bg-2 px-[6px] py-[1px] text-[11px] font-medium text-text-2">
+        {tecla}
+      </kbd>
     </div>
   );
 }

@@ -47,9 +47,25 @@ export default async function CajaPage({
     .eq("fecha", new Date().toISOString().slice(0, 10))
     .maybeSingle();
 
-  const { data: ventasHoy } = caja?.id
-    ? await supabase.from("ventas").select("medio_pago, total").eq("caja_id", caja.id)
+  // Desglose por medio: sale de venta_pagos, no de ventas.medio_pago/total
+  // -- una venta "mixta" (pago dividido, ver
+  // 20260919100000_venta_pagos.sql) puede tener una porción real en
+  // efectivo aunque no haya tenido el descuento de efectivo.
+  const { data: ventaIdsHoy } = caja?.id
+    ? await supabase.from("ventas").select("id").eq("caja_id", caja.id).eq("estado", "confirmada")
     : { data: [] };
+
+  const idsVentasHoy = (ventaIdsHoy ?? []).map((v) => v.id);
+
+  const { data: pagosHoy } = idsVentasHoy.length > 0
+    ? await supabase.from("venta_pagos").select("medio_pago, monto").in("venta_id", idsVentasHoy)
+    : { data: [] };
+
+  const { data: movimientosHoy } = caja?.id
+    ? await supabase.from("movimientos_caja").select("tipo, monto").eq("caja_id", caja.id)
+    : { data: [] };
+
+  const cantidadVentasHoy = idsVentasHoy.length;
 
   // Devoluciones en dinero contra ESTA caja (arquitectura.md 1.10 +
   // supabase/migrations/20260904090000_devoluciones_cliente.sql): hay que
@@ -67,15 +83,22 @@ export default async function CajaPage({
 
   const totalPorMedio = new Map<string, number>();
   let totalGeneral = 0;
-  for (const v of ventasHoy ?? []) {
-    totalPorMedio.set(v.medio_pago, (totalPorMedio.get(v.medio_pago) ?? 0) + v.total);
-    totalGeneral += v.total;
+  for (const p of (pagosHoy ?? []) as unknown as { medio_pago: string; monto: number }[]) {
+    totalPorMedio.set(p.medio_pago, (totalPorMedio.get(p.medio_pago) ?? 0) + p.monto);
+    totalGeneral += p.monto;
   }
 
   const devolucionesDineroTotal = (devolucionesHoy ?? []).reduce(
     (acc, d) => acc + (d.monto_reembolsado ?? 0),
     0,
   );
+
+  let entradasTotal = 0;
+  let salidasTotal = 0;
+  for (const m of (movimientosHoy ?? []) as { tipo: string; monto: number }[]) {
+    if (m.tipo === "entrada") entradasTotal += m.monto;
+    else salidasTotal += m.monto;
+  }
 
   return (
     <div className="mx-auto max-w-[560px]">
@@ -139,27 +162,48 @@ export default async function CajaPage({
             </div>
 
             {devolucionesDineroTotal > 0 && (
-              <div className="mb-4 flex justify-between rounded-[6px] bg-warn-bg px-[12px] py-[7px] text-[13px] text-warn">
+              <div className="mb-2 flex justify-between rounded-[6px] bg-warn-bg px-[12px] py-[7px] text-[13px] text-warn">
                 <span>Devoluciones en dinero</span>
                 <span className="tabular-nums">−{formatoMoneda.format(devolucionesDineroTotal)}</span>
               </div>
             )}
 
+            {(entradasTotal > 0 || salidasTotal > 0) && (
+              <div className="mb-2 flex flex-col gap-1 rounded-[6px] bg-bg-2 px-[12px] py-[7px] text-[13px]">
+                {entradasTotal > 0 && (
+                  <div className="flex justify-between text-text-2">
+                    <span>Entradas de efectivo</span>
+                    <span className="tabular-nums text-ok">+{formatoMoneda.format(entradasTotal)}</span>
+                  </div>
+                )}
+                {salidasTotal > 0 && (
+                  <div className="flex justify-between text-text-2">
+                    <span>Salidas de efectivo</span>
+                    <span className="tabular-nums text-err">−{formatoMoneda.format(salidasTotal)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <p className="mb-4 text-[12.5px] text-text-3">
-              {caja.cantidad_tickets ?? (ventasHoy ?? []).length} ticket(s) hoy.
+              {caja.cantidad_tickets ?? cantidadVentasHoy ?? 0} ticket(s) hoy.
             </p>
 
             {caja.estado === "abierta" ? (
               <CerrarCajaForm
                 cajaId={caja.id}
                 efectivoEsperado={
-                  (caja.monto_apertura ?? 0) + (totalPorMedio.get("efectivo") ?? 0) - devolucionesDineroTotal
+                  (caja.monto_apertura ?? 0) +
+                  (totalPorMedio.get("efectivo") ?? 0) -
+                  devolucionesDineroTotal +
+                  entradasTotal -
+                  salidasTotal
                 }
               />
             ) : (
               <div className="rounded-[6px] bg-bg-2 p-[12px] text-[13px]">
                 <p className="mb-1 flex justify-between">
-                  <span className="text-text-2">Efectivo según sistema (apertura + ventas − devoluciones)</span>
+                  <span className="text-text-2">Efectivo según sistema (apertura + ventas − devoluciones ± entradas/salidas)</span>
                   <span className="tabular-nums text-text">
                     {formatoMoneda.format(caja.efectivo_sistema ?? 0)}
                   </span>

@@ -38,6 +38,7 @@ const MEDIO_LABEL: Record<string, string> = {
   debito: "Débito",
   credito: "Crédito",
   transferencia: "Transferencia",
+  mixto: "Pago combinado",
 };
 
 export default async function FacturarVentaPage({

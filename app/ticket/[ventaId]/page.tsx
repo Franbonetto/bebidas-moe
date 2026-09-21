@@ -24,6 +24,7 @@ const MEDIO_LABEL: Record<string, string> = {
   debito: "Débito",
   credito: "Crédito",
   transferencia: "Transferencia",
+  mixto: "Pago combinado",
 };
 
 // Página fuera de (app) a propósito: no lleva sidebar ni header, es una
@@ -65,7 +66,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
     );
   }
 
-  const [{ data: itemsRaw }, { data: comprobante }] = await Promise.all([
+  const [{ data: itemsRaw }, { data: comprobante }, { data: pagosRaw }] = await Promise.all([
     supabase
       .from("venta_items")
       .select(
@@ -92,7 +93,10 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
         condicion_iva: { nombre: string } | null;
         punto_venta: { numero_arca: number } | null;
       }>(),
+    supabase.from("venta_pagos").select("medio_pago, monto").eq("venta_id", ventaId),
   ]);
+
+  const pagos = (pagosRaw ?? []) as { medio_pago: string; monto: number }[];
 
   const items = ((itemsRaw ?? []) as unknown as VentaItemFila[]).filter((it) => it.sku);
   const facturado = comprobante?.estado === "autorizado";
@@ -156,10 +160,19 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
           <span>Total</span>
           <span className="tabular-nums">{formatoMoneda.format(venta.total)}</span>
         </div>
-        <div className="flex justify-between text-text-3">
-          <span>Medio de pago</span>
-          <span>{MEDIO_LABEL[venta.medio_pago] ?? venta.medio_pago}</span>
-        </div>
+        {venta.medio_pago === "mixto" && pagos.length > 0 ? (
+          pagos.map((p, i) => (
+            <div key={i} className="flex justify-between text-text-3">
+              <span>{MEDIO_LABEL[p.medio_pago] ?? p.medio_pago}</span>
+              <span className="tabular-nums">{formatoMoneda.format(p.monto)}</span>
+            </div>
+          ))
+        ) : (
+          <div className="flex justify-between text-text-3">
+            <span>Medio de pago</span>
+            <span>{MEDIO_LABEL[venta.medio_pago] ?? venta.medio_pago}</span>
+          </div>
+        )}
       </div>
 
       <div className="my-3 border-t border-dashed border-border" />

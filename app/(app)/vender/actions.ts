@@ -20,16 +20,24 @@ export type ComprobanteResumen = {
   vencimientoCae: string;
 };
 
+export type PagoVenta = {
+  medio_pago: "efectivo" | "debito" | "credito" | "transferencia";
+  monto: number;
+};
+
+// Pago dividido (hasta 3 medios): ver 20260919100000_venta_pagos.sql.
+// Los montos tienen que sumar exacto el total de la venta -- el RPC lo
+// valida de nuevo server-side, esto no reemplaza esa validación.
 export async function confirmarVenta(
   sucursalId: string,
-  medioPago: "efectivo" | "debito" | "credito" | "transferencia",
+  pagos: PagoVenta[],
   lineas: LineaVenta[],
 ): Promise<{ error: string } | { id: string; comprobante: ComprobanteResumen | null }> {
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("confirmar_venta", {
     p_sucursal_id: sucursalId,
-    p_medio_pago: medioPago,
+    p_pagos: pagos,
     p_lineas: lineas,
   });
 
@@ -170,6 +178,32 @@ export async function cerrarCaja(
   const { error } = await supabase.rpc("cerrar_caja", {
     p_caja_id: cajaId,
     p_efectivo_declarado: efectivoDeclarado,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/vender");
+  revalidatePath("/vender/caja");
+  return { ok: true };
+}
+
+// Entrada/salida de efectivo que no es una venta (ej. retirar plata,
+// poner fondo extra a mitad de turno) -- ver
+// 20260919090000_movimientos_caja.sql. Se puede disparar tanto desde el
+// POS (atajo rápido F7/F8) como desde /vender/caja.
+export async function registrarMovimientoCaja(
+  cajaId: string,
+  tipo: "entrada" | "salida",
+  monto: number,
+  motivo: string,
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  const { error } = await supabase.rpc("registrar_movimiento_caja", {
+    p_caja_id: cajaId,
+    p_tipo: tipo,
+    p_monto: monto,
+    p_motivo: motivo,
   });
 
   if (error) return { error: error.message };

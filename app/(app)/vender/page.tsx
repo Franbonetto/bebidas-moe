@@ -294,6 +294,7 @@ export default async function VenderPage({
         // todavia no se abrio (antes se abria sola con la primera venta,
         // ver supabase/migrations/20260903100000_apertura_caja.sql).
         estadoCaja={!cajaHoy ? "sin_abrir" : cajaHoy.estado === "abierta" ? "abierta" : "cerrada"}
+        cajaId={cajaHoy?.id ?? null}
         cantidadTicketsHoy={cantidadTicketsHoy ?? 0}
       />
     </div>

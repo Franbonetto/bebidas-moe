@@ -20,6 +20,7 @@ const MEDIO_LABEL: Record<string, string> = {
   debito: "Débito",
   credito: "Crédito",
   transferencia: "Transferencia",
+  mixto: "Pago combinado",
 };
 
 const ESTADO_BADGE: Record<string, { label: string; className: string }> = {
