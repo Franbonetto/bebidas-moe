@@ -45,7 +45,12 @@ export function SkuPicker({
     const q = query.trim().toLowerCase();
     if (!q) return [];
     return skus
-      .filter((s) => !excluirIds.has(s.id))
+      // Al asignar un código escaneado, un producto que ya está en la lista
+      // de la compra (por ejemplo, cargado a mano por nombre sin código
+      // todavía) tiene que poder aparecer igual -- si no, nunca se le podría
+      // asignar el código. excluirIds solo tiene sentido para el buscador
+      // normal de "agregar producto".
+      .filter((s) => codigoPendiente || !excluirIds.has(s.id))
       .filter((s) => {
         const producto = s.producto?.nombre.toLowerCase() ?? "";
         const marca = s.producto?.marca?.nombre.toLowerCase() ?? "";
@@ -98,7 +103,13 @@ export function SkuPicker({
       setErrorAsignar(resultado.error);
       return;
     }
-    onSelect(sku);
+    // Si el producto ya estaba en la lista (lo cargaron a mano antes de
+    // tener el código escaneado), alcanza con asignarle el código -- no
+    // hay que sumarle otra unidad. Si todavía no estaba, se agrega como
+    // línea nueva (venía de escanear el producto recién llegado).
+    if (!excluirIds.has(sku.id)) {
+      onSelect(sku);
+    }
     setQuery("");
     setCodigoPendiente(null);
   }
