@@ -229,6 +229,7 @@ export async function DuenoDashboard() {
     { data: ventasSemana },
     { data: ventasMes },
     { data: ventas30 },
+    { data: pedidoCompraReciente },
   ] = await Promise.all([
     supabase.from("sucursales").select("id, nombre, es_central").eq("activo", true).order("es_central", { ascending: false }),
     supabase
@@ -255,12 +256,7 @@ export async function DuenoDashboard() {
     // manda null si no se cargó) y un gte() contra una columna null la
     // descarta en silencio. El recorte por mes se hace después, en JS, con
     // fallback a la primera recepción cuando no hay fecha_factura.
-    supabase
-      .from("compras")
-      .select(
-        "id, total, estado, fecha_factura, proveedor:proveedores ( razon_social, nombre_comercial )",
-      )
-      .neq("estado", "borrador"),
+    supabase.from("compras").select("id, total, estado, fecha_factura").neq("estado", "borrador"),
     supabase.from("recepciones_compra").select("compra_id, fecha"),
     supabase.from("transferencias").select("id").eq("estado", "en_transito"),
     supabase.from("pedidos").select("id").not("estado", "in", "(borrador,cerrado)"),
@@ -283,6 +279,22 @@ export async function DuenoDashboard() {
     supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioSemana.toISOString()),
     supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioMes.toISOString()),
     supabase.from("ventas").select("id, sucursal_id, total").eq("estado", "confirmada").gte("fecha", cutoff30),
+    // "Pedido de la semana": lo que la encargada de Olavarría arma para que
+    // el dueño sepa qué pedirle a cada proveedor (pedidos_compra, bloque 9
+    // de pedidos.md) -- pedido del usuario 2026-09-22, no confundir con
+    // "pedidos" (el flujo interno Laprida -> Olavarría) ni con "compras"
+    // (lo que ya llegó). Se muestra el más reciente que sigue pendiente.
+    supabase
+      .from("pedidos_compra")
+      .select(
+        `id, numero, estado, fecha_creacion,
+         creador:usuarios!pedidos_compra_usuario_creador_id_fkey ( nombre ),
+         pedidos_compra_items ( id )`,
+      )
+      .eq("estado", "pendiente")
+      .order("fecha_creacion", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const sucursalesList = (sucursales ?? []) as Sucursal[];
@@ -442,34 +454,28 @@ export async function DuenoDashboard() {
     const actual = primeraRecepcionPorCompra.get(r.compra_id);
     if (!actual || r.fecha < actual) primeraRecepcionPorCompra.set(r.compra_id, r.fecha);
   }
-  type CompraFila = {
-    id: string;
-    total: number;
-    fecha_factura: string | null;
-    proveedor: { razon_social: string; nombre_comercial: string | null } | null;
-  };
   const inicioMesTime = inicioMes.getTime();
-  const inicioSemanaTime = inicioSemana.getTime();
   let comprasMesTotal = 0;
   let comprasMesCount = 0;
-  let comprasSemanaTotal = 0;
-  const proveedoresSemana = new Set<string>();
-  for (const c of (compras ?? []) as unknown as CompraFila[]) {
+  for (const c of (compras ?? []) as { id: string; total: number; fecha_factura: string | null }[]) {
     const fechaEfectiva = c.fecha_factura
       ? new Date(c.fecha_factura).getTime()
       : primeraRecepcionPorCompra.has(c.id)
         ? new Date(primeraRecepcionPorCompra.get(c.id)!).getTime()
         : null;
-    if (fechaEfectiva == null) continue;
-    if (fechaEfectiva >= inicioMesTime) {
-      comprasMesTotal += Number(c.total);
-      comprasMesCount += 1;
-    }
-    if (fechaEfectiva >= inicioSemanaTime) {
-      comprasSemanaTotal += Number(c.total);
-      proveedoresSemana.add(c.proveedor?.nombre_comercial ?? c.proveedor?.razon_social ?? "—");
-    }
+    if (fechaEfectiva == null || fechaEfectiva < inicioMesTime) continue;
+    comprasMesTotal += Number(c.total);
+    comprasMesCount += 1;
   }
+
+  type PedidoCompraReciente = {
+    id: string;
+    numero: string;
+    estado: "pendiente" | "resuelto";
+    creador: { nombre: string } | null;
+    pedidos_compra_items: { id: string }[];
+  };
+  const pedidoCompra = pedidoCompraReciente as unknown as PedidoCompraReciente | null;
 
   // Diferencias de inventario por motivo, últimos 30 días.
   const idsInventariosCerrados = (inventariosCerrados30d ?? []).map((i) => i.id);
@@ -501,15 +507,17 @@ export async function DuenoDashboard() {
       <AutoRefresh />
 
       <Link
-        href="/compras"
+        href={pedidoCompra ? `/pedidos/compra/${pedidoCompra.id}` : "/pedidos"}
         className="flex items-center justify-between gap-3 rounded-card border border-border bg-bg px-[14px] py-[10px] hover:border-border-strong hover:bg-[#FAFAFB]"
       >
         <div className="min-w-0">
-          <p className="text-[13px] font-medium text-text">Compras de la semana · Olavarría</p>
+          <p className="text-[13px] font-medium text-text">
+            Pedido de la semana{pedidoCompra?.creador?.nombre ? ` · ${pedidoCompra.creador.nombre}` : ""}
+          </p>
           <p className="text-[11.5px] text-text-3">
-            {proveedoresSemana.size === 0
-              ? "Todavía no se cargó ninguna compra esta semana"
-              : `${formatoMoneda.format(comprasSemanaTotal)} · ${proveedoresSemana.size} proveedor${proveedoresSemana.size === 1 ? "" : "es"}`}
+            {pedidoCompra
+              ? `${pedidoCompra.numero} · ${pedidoCompra.pedidos_compra_items.length} producto${pedidoCompra.pedidos_compra_items.length === 1 ? "" : "s"} para pedirle a los proveedores`
+              : "Sin pedido de compra pendiente"}
           </p>
         </div>
         <span className="shrink-0 text-[12px] font-medium text-moe">Ver detalle →</span>
