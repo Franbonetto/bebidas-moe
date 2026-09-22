@@ -32,6 +32,7 @@ export function PedidosTable({
   pedidos,
   puedeCrear,
   agruparPorRecepcion = false,
+  entregadoPorPedido,
 }: {
   pedidos: PedidoRow[];
   puedeCrear: boolean;
@@ -39,6 +40,11 @@ export function PedidosTable({
   // (recibidos) de lo que salió de Olavarría y todavía está en camino
   // (enviados), además de lo que sigue en preparación.
   agruparPorRecepcion?: boolean;
+  // Unidades efectivamente despachadas por Olavarría, por pedido_id --
+  // distinto de lo solicitado (pedido_items). Si se pasa, agrega la
+  // columna "Entregado" (pedido del usuario 2026-09-22: "la mercadería
+  // que pidió y la mercadería que entregó").
+  entregadoPorPedido?: Record<string, number>;
 }) {
   const [query, setQuery] = useState("");
 
@@ -57,6 +63,7 @@ export function PedidosTable({
 
   function filaPedido(p: PedidoRow) {
     const unidades = p.pedido_items.reduce((acc, i) => acc + i.cantidad_solicitada, 0);
+    const entregado = entregadoPorPedido?.[p.id] ?? 0;
     return (
       <tr key={p.id} className="border-b border-[#F1F1F3] last:border-b-0 hover:bg-[#FAFAFB]">
         <td className="px-0 py-0">
@@ -76,6 +83,11 @@ export function PedidosTable({
         <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
           {unidades}
         </td>
+        {entregadoPorPedido && (
+          <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
+            {entregado > 0 ? entregado : "—"}
+          </td>
+        )}
       </tr>
     );
   }
@@ -140,8 +152,13 @@ export function PedidosTable({
                   Productos
                 </th>
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
-                  Unidades
+                  Pedido
                 </th>
+                {entregadoPorPedido && (
+                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
+                    Entregado
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -151,7 +168,7 @@ export function PedidosTable({
                       <Fragment key={g}>
                         <tr>
                           <td
-                            colSpan={5}
+                            colSpan={entregadoPorPedido ? 6 : 5}
                             className="border-b border-border bg-bg-2 px-[14px] py-[6px] text-[11.5px] font-medium text-text-2"
                           >
                             {GRUPO_LABEL[g]} ({grupos[g].length})

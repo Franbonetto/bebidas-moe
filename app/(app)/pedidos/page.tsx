@@ -40,6 +40,23 @@ export default async function PedidosPage({
 
   const pedidos = (pedidosRaw ?? []) as unknown as PedidoRow[];
 
+  // Mercadería que Olavarría efectivamente despachó por pedido (distinto de
+  // lo solicitado en pedido_items) -- pedido del usuario 2026-09-22: "la
+  // mercadería que pidió y la mercadería que entregó".
+  const { data: transferenciaItemsRaw } = await supabase
+    .from("transferencia_items")
+    .select("cantidad_despachada, transferencia:transferencias ( pedido_id )");
+
+  const entregadoPorPedido: Record<string, number> = {};
+  for (const item of (transferenciaItemsRaw ?? []) as unknown as {
+    cantidad_despachada: number;
+    transferencia: { pedido_id: string } | null;
+  }[]) {
+    const pedidoId = item.transferencia?.pedido_id;
+    if (!pedidoId) continue;
+    entregadoPorPedido[pedidoId] = (entregadoPorPedido[pedidoId] ?? 0) + item.cantidad_despachada;
+  }
+
   // El dueño solo visualiza: recibe lo que arma la encargada de cada
   // sucursal (pedido de compra a proveedores en Olavarría, pedido semanal
   // en Laprida) y ve el historial -- no arma ninguno de los dos (pedido
@@ -82,11 +99,20 @@ export default async function PedidosPage({
           <PedidosCompraTable pedidos={pedidosCompra} puedeCrear={!esDuenoActual} />
         )}
 
-        <PedidosTable
-          pedidos={pedidos}
-          puedeCrear={puedeCrearPedidoLaprida}
-          agruparPorRecepcion={!sucursal.es_central}
-        />
+        {/* En la pestaña Olavarría, el dueño ve solo el pedido de compra a
+            proveedores de arriba -- los pedidos internos de Laprida no le
+            aportan nada ahí (pedido del usuario 2026-09-22: "eliminar los
+            que se enviaron a la prida"). La encargada de Olavarría sigue
+            viéndolos en su propio panel (sin pestañas) para poder
+            prepararlos/despacharlos. */}
+        {(!sucursal.es_central || !esDuenoActual) && (
+          <PedidosTable
+            pedidos={pedidos}
+            puedeCrear={puedeCrearPedidoLaprida}
+            agruparPorRecepcion={!sucursal.es_central}
+            entregadoPorPedido={entregadoPorPedido}
+          />
+        )}
       </div>
     </div>
   );
