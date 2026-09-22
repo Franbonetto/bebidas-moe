@@ -69,7 +69,7 @@ export default async function PedidosPage({
   if (sucursal.es_central && (await veCostos(supabase))) {
     const { data: pedidosCompraRaw } = await supabase
       .from("pedidos_compra")
-      .select("id, numero, estado, fecha_creacion, pedidos_compra_items ( cantidad_solicitada )")
+      .select("id, numero, estado, fecha_creacion, visto_en, pedidos_compra_items ( cantidad_solicitada )")
       .order("fecha_creacion", { ascending: false });
     pedidosCompra = (pedidosCompraRaw ?? []) as unknown as PedidoCompraRow[];
   }

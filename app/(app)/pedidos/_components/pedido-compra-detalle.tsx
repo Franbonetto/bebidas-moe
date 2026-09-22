@@ -23,6 +23,10 @@ export type PedidoCompraDetalleData = {
   fecha_creacion: string;
   fecha_resolucion: string | null;
   observaciones: string | null;
+  // No null = el dueño ya abrió este detalle (pedido del usuario
+  // 2026-09-22: "que a la encargada le aparezca enviado y visto cuando lo
+  // vio el dueño, nada más").
+  visto_en: string | null;
   creador: { nombre: string } | null;
   resolutor: { nombre: string } | null;
   pedidos_compra_items: {
@@ -117,7 +121,7 @@ export function PedidoCompraDetalle({
               pedido.estado === "resuelto" ? "bg-ok-bg text-ok" : "bg-info-bg text-info"
             }`}
           >
-            {pedido.estado === "resuelto" ? "Resuelto" : "Pendiente"}
+            {pedido.estado === "resuelto" ? "Resuelto" : pedido.visto_en ? "Enviado y visto" : "Pendiente"}
           </span>
         </div>
 

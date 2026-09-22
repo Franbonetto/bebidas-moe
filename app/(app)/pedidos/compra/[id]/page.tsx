@@ -23,7 +23,7 @@ export default async function PedidoCompraDetallePage({
   const { data: pedidoCompra } = await supabase
     .from("pedidos_compra")
     .select(
-      `id, numero, estado, fecha_creacion, fecha_resolucion, observaciones,
+      `id, numero, estado, fecha_creacion, fecha_resolucion, observaciones, visto_en,
        creador:usuarios!pedidos_compra_usuario_creador_id_fkey ( nombre ),
        resolutor:usuarios!pedidos_compra_usuario_resolucion_id_fkey ( nombre ),
        pedidos_compra_items (

@@ -6,6 +6,10 @@ export type PedidoCompraRow = {
   numero: string;
   estado: "pendiente" | "resuelto";
   fecha_creacion: string;
+  // No null = el dueño ya abrió el detalle (pedido del usuario 2026-09-22:
+  // "que a la encargada le aparezca enviado y visto cuando lo vio el
+  // dueño, nada más").
+  visto_en: string | null;
   pedidos_compra_items: { cantidad_solicitada: number }[];
 };
 
@@ -83,7 +87,7 @@ export function PedidosCompraTable({
                           p.estado === "resuelto" ? "bg-ok-bg text-ok" : "bg-info-bg text-info"
                         }`}
                       >
-                        {p.estado === "resuelto" ? "Resuelto" : "Pendiente"}
+                        {p.estado === "resuelto" ? "Resuelto" : p.visto_en ? "Enviado y visto" : "Pendiente"}
                       </span>
                     </td>
                     <td className="px-[14px] py-[9px] align-middle text-text-2">
