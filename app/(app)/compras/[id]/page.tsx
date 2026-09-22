@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CompraDetalle, type CompraDetalleData, type RecepcionDetalle } from "../_components/compra-detalle";
-import type { SkuCatalogo } from "../_components/sku-picker";
 
 export default async function CompraDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -53,23 +52,5 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
     return { ...it, recibido_previo: recibidoPrevio, pendiente: it.cantidad - recibidoPrevio };
   });
 
-  let skusDisponibles: SkuCatalogo[] = [];
-  if (compraRaw.estado === "borrador") {
-    const { data: skus } = await supabase
-      .from("skus")
-      .select(
-        `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true);
-    skusDisponibles = (skus ?? []) as unknown as SkuCatalogo[];
-  }
-
-  return (
-    <CompraDetalle
-      compra={{ ...compraRaw, items }}
-      recepciones={recepcionesList}
-      skusDisponibles={skusDisponibles}
-    />
-  );
+  return <CompraDetalle compra={{ ...compraRaw, items }} recepciones={recepcionesList} />;
 }
