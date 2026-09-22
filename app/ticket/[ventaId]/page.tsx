@@ -43,7 +43,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
   const { data: venta } = await supabase
     .from("ventas")
     .select(
-      "id, fecha, medio_pago, subtotal, descuentos, deposito_envases, total, sucursal_id, sucursal:sucursales ( nombre )",
+      "id, fecha, medio_pago, subtotal, descuentos, deposito_envases, total, sucursal_id, es_envio, motomandado, direccion_envio, sucursal:sucursales ( nombre )",
     )
     .eq("id", ventaId)
     .maybeSingle<{
@@ -55,6 +55,9 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
       deposito_envases: number;
       total: number;
       sucursal_id: string;
+      es_envio: boolean;
+      motomandado: string | null;
+      direccion_envio: string | null;
       sucursal: { nombre: string } | null;
     }>();
 
@@ -121,6 +124,17 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
         <p className="text-[12px] text-text-3">{venta.sucursal?.nombre}</p>
         <p className="mt-1 text-[11.5px] text-text-3">{formatoFechaHora.format(new Date(venta.fecha))}</p>
       </div>
+
+      {venta.es_envio && (
+        <>
+          <div className="my-3 border-t border-dashed border-border" />
+          <div className="text-center">
+            <p className="text-[13px] font-bold uppercase tracking-wide">Envío</p>
+            <p className="text-[12.5px]">Motomandado: {venta.motomandado}</p>
+            <p className="text-[12.5px]">Dirección: {venta.direccion_envio}</p>
+          </div>
+        </>
+      )}
 
       <div className="my-3 border-t border-dashed border-border" />
 

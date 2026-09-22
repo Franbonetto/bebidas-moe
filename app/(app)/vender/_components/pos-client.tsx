@@ -60,10 +60,14 @@ type Ticket = {
   lineas: LineaTicket[];
   envaseChecked: Record<string, boolean>;
   pagos: Pago[];
+  // Solo se usan en modoEnvio (ver PosClient) -- uno por ticket, para poder
+  // tener más de un pedido de envío en espera con su propio moto/dirección.
+  motomandado: string;
+  direccionEnvio: string;
 };
 
 function ticketVacio(id: string): Ticket {
-  return { id, lineas: [], envaseChecked: {}, pagos: [] };
+  return { id, lineas: [], envaseChecked: {}, pagos: [], motomandado: "", direccionEnvio: "" };
 }
 
 // Orden pensado para los atajos F1-F4 (pedido del usuario 2026-09-21):
@@ -113,6 +117,7 @@ export function PosClient({
   estadoCaja,
   cajaId,
   cantidadTicketsHoy,
+  modoEnvio = false,
 }: {
   sucursalId: string;
   sucursalNombre: string;
@@ -123,6 +128,12 @@ export function PosClient({
   estadoCaja: "sin_abrir" | "abierta" | "cerrada";
   cajaId: string | null;
   cantidadTicketsHoy: number;
+  // Envíos (2026-09-21): mismo motor de venta, pero pide motomandado y
+  // dirección a mano, nunca factura automático (el ticket impreso tiene
+  // que ser siempre el interno, nunca la factura ARCA), y esconde los
+  // accesos que no aplican a un pedido para delivery (Facturar,
+  // Devoluciones).
+  modoEnvio?: boolean;
 }) {
   const router = useRouter();
   const [tickets, setTickets] = useState<Ticket[]>(() => [ticketVacio("1")]);
@@ -162,7 +173,7 @@ export function PosClient({
   const skuPorId = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
 
   const ticketActivo = tickets.find((t) => t.id === ticketActivoId) ?? tickets[0];
-  const { lineas, envaseChecked, pagos } = ticketActivo;
+  const { lineas, envaseChecked, pagos, motomandado, direccionEnvio } = ticketActivo;
 
   function actualizarTicketActivo(fn: (t: Ticket) => Ticket) {
     setTickets((prev) => prev.map((t) => (t.id === ticketActivoId ? fn(t) : t)));
@@ -496,6 +507,10 @@ export function PosClient({
       );
       return;
     }
+    if (modoEnvio && (!motomandado.trim() || !direccionEnvio.trim())) {
+      setError("Completá el motomandado y la dirección antes de cobrar.");
+      return;
+    }
     setError(null);
     const totalCobrado = totalACobrar;
     const pagosVenta: PagoVenta[] = pagos.map((p) => ({ medio_pago: p.medioPago, monto: p.monto }));
@@ -505,7 +520,12 @@ export function PosClient({
         setError(desarme.error);
         return;
       }
-      const resultado = await confirmarVenta(sucursalId, pagosVenta, construirLineasVenta(esEfectivoPuro));
+      const resultado = await confirmarVenta(
+        sucursalId,
+        pagosVenta,
+        construirLineasVenta(esEfectivoPuro),
+        modoEnvio ? { motomandado: motomandado.trim(), direccionEnvio: direccionEnvio.trim() } : undefined,
+      );
       if ("error" in resultado) {
         setError(resultado.error);
         return;
@@ -741,9 +761,11 @@ export function PosClient({
     <div className="flex h-[calc(100vh-76px)] flex-col sm:h-[calc(100vh-92px)] lg:h-[calc(100vh-24px)]">
       {/* ============ Encabezado + búsqueda + pestañas de ticket ============ */}
       <div className="mb-3 flex shrink-0 items-center justify-between">
-        <h1 className="text-[15px] font-semibold text-text">Punto de venta — {sucursalNombre}</h1>
+        <h1 className="text-[15px] font-semibold text-text">
+          {modoEnvio ? "Envíos" : "Punto de venta"} — {sucursalNombre}
+        </h1>
         <div className="flex gap-2">
-          {puedeFacturar && (
+          {!modoEnvio && puedeFacturar && (
             <Link
               href="/vender/facturar"
               className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
@@ -751,12 +773,14 @@ export function PosClient({
               Facturar
             </Link>
           )}
-          <Link
-            href="/vender/devoluciones"
-            className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
-          >
-            Devoluciones
-          </Link>
+          {!modoEnvio && (
+            <Link
+              href="/vender/devoluciones"
+              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+            >
+              Devoluciones
+            </Link>
+          )}
           <Link
             href="/vender/caja"
             className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
@@ -769,6 +793,25 @@ export function PosClient({
       {estadoCaja === "cerrada" && (
         <div className="mb-3 shrink-0 rounded-[7px] border border-warn/30 bg-warn-bg px-[12px] py-[10px] text-[12.5px] text-warn">
           La caja de hoy ya está cerrada. No se pueden registrar más ventas hasta el próximo día.
+        </div>
+      )}
+
+      {modoEnvio && (
+        <div className="mb-3 grid shrink-0 grid-cols-1 gap-2 sm:grid-cols-2">
+          <input
+            type="text"
+            value={motomandado}
+            onChange={(e) => actualizarTicketActivo((t) => ({ ...t, motomandado: e.target.value }))}
+            placeholder="Motomandado *"
+            className="w-full rounded-card border border-border bg-bg px-[14px] py-[9px] text-[13.5px] text-text outline-none focus:border-moe"
+          />
+          <input
+            type="text"
+            value={direccionEnvio}
+            onChange={(e) => actualizarTicketActivo((t) => ({ ...t, direccionEnvio: e.target.value }))}
+            placeholder="Dirección *"
+            className="w-full rounded-card border border-border bg-bg px-[14px] py-[9px] text-[13.5px] text-text outline-none focus:border-moe"
+          />
         </div>
       )}
 

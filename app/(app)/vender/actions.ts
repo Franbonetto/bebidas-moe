@@ -25,13 +25,23 @@ export type PagoVenta = {
   monto: number;
 };
 
+export type DatosEnvio = {
+  motomandado: string;
+  direccionEnvio: string;
+};
+
 // Pago dividido (hasta 3 medios): ver 20260919100000_venta_pagos.sql.
 // Los montos tienen que sumar exacto el total de la venta -- el RPC lo
 // valida de nuevo server-side, esto no reemplaza esa validación.
+//
+// `envio` es opcional (ver 20260921100000_envios.sql): el POS normal nunca
+// lo manda, así que confirmar_venta() recibe es_envio=false/motomandado y
+// direccion en null por default -- una venta de mostrador no cambia nada.
 export async function confirmarVenta(
   sucursalId: string,
   pagos: PagoVenta[],
   lineas: LineaVenta[],
+  envio?: DatosEnvio,
 ): Promise<{ error: string } | { id: string; comprobante: ComprobanteResumen | null }> {
   const supabase = await createClient();
 
@@ -39,6 +49,9 @@ export async function confirmarVenta(
     p_sucursal_id: sucursalId,
     p_pagos: pagos,
     p_lineas: lineas,
+    p_es_envio: Boolean(envio),
+    p_motomandado: envio?.motomandado ?? null,
+    p_direccion_envio: envio?.direccionEnvio ?? null,
   });
 
   if (error) return { error: error.message };
@@ -50,12 +63,20 @@ export async function confirmarVenta(
   // Si falla (ARCA caído, rechazo, etc.) no se propaga como error acá --
   // la venta ya está confirmada y cobrada; queda para reintentar desde
   // /vender/facturar, mismo criterio que un rechazo manual cualquiera.
-  const { data: puntoVenta } = await supabase
-    .from("puntos_venta")
-    .select("id")
-    .eq("sucursal_id", sucursalId)
-    .eq("activo", true)
-    .maybeSingle();
+  //
+  // Un envío NUNCA se factura solo (pedido del usuario 2026-09-21): el
+  // ticket que se imprime tiene que ser siempre el interno, nunca la
+  // factura ARCA. Si alguna vez hace falta facturar un envío puntual,
+  // queda la vía manual de /vender/facturar -- esto solo evita el disparo
+  // automático.
+  const { data: puntoVenta } = envio
+    ? { data: null }
+    : await supabase
+        .from("puntos_venta")
+        .select("id")
+        .eq("sucursal_id", sucursalId)
+        .eq("activo", true)
+        .maybeSingle();
   let comprobante: ComprobanteResumen | null = null;
 
   if (puntoVenta) {
@@ -78,6 +99,7 @@ export async function confirmarVenta(
   }
 
   revalidatePath("/vender");
+  revalidatePath("/envios");
   return { id: ventaId, comprobante };
 }
 

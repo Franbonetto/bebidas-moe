@@ -82,6 +82,17 @@ export default async function CajaPage({
         .eq("resolucion", "dinero")
     : { data: [] };
 
+  // Envíos discriminados aparte solo para informar cuánto del total fue
+  // delivery (pedido del usuario 2026-09-21) -- el dinero en sí ya está
+  // contado arriba en totalPorMedio, cada envío suma a su medio de pago
+  // real como cualquier otra venta, no hay una caja de "envíos" aparte.
+  const { data: enviosHoy } = caja?.id
+    ? await supabase.from("ventas").select("total").eq("caja_id", caja.id).eq("estado", "confirmada").eq("es_envio", true)
+    : { data: [] };
+
+  const enviosTotal = (enviosHoy ?? []).reduce((acc, v) => acc + v.total, 0);
+  const enviosCantidad = (enviosHoy ?? []).length;
+
   const totalPorMedio = new Map<string, number>();
   let totalGeneral = 0;
   for (const p of (pagosHoy ?? []) as unknown as { medio_pago: string; monto: number }[]) {
@@ -161,6 +172,16 @@ export default async function CajaPage({
                 <span className="tabular-nums text-text">{formatoMoneda.format(totalGeneral)}</span>
               </div>
             </div>
+
+            {enviosCantidad > 0 && (
+              <div className="mb-2 flex justify-between rounded-[6px] bg-info-bg px-[12px] py-[7px] text-[13px] text-info">
+                <span>
+                  De arriba, {enviosCantidad} envío{enviosCantidad === 1 ? "" : "s"} (ya contado en su medio de
+                  pago)
+                </span>
+                <span className="tabular-nums">{formatoMoneda.format(enviosTotal)}</span>
+              </div>
+            )}
 
             {devolucionesDineroTotal > 0 && (
               <div className="mb-2 flex justify-between rounded-[6px] bg-warn-bg px-[12px] py-[7px] text-[13px] text-warn">

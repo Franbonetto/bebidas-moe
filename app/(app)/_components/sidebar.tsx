@@ -47,6 +47,15 @@ const NAV: NavItem[] = [
     icon: "M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11",
   },
   {
+    label: "Envíos",
+    href: "/envios",
+    seccion: "operacion",
+    // A diferencia de Punto de venta, acá el dueño SÍ entra -- ve el
+    // historial de envíos de las dos sucursales en modo lectura, no arma
+    // pedidos (misma pantalla, /envios/page.tsx decide qué mostrarle).
+    icon: "M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10",
+  },
+  {
     label: "Compras",
     href: "/compras",
     seccion: "operacion",
