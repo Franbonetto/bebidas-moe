@@ -46,6 +46,10 @@ export function CompraDirectaForm({
   const [avisoPrecio, setAvisoPrecio] = useState<string | null>(null);
   const [compraCreadaId, setCompraCreadaId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [filaAsignandoCodigo, setFilaAsignandoCodigo] = useState<number | null>(null);
+  const [codigoInput, setCodigoInput] = useState("");
+  const [errorCodigo, setErrorCodigo] = useState<string | null>(null);
+  const [filaCodigoOk, setFilaCodigoOk] = useState<number | null>(null);
 
   const excluirIds = useMemo(() => new Set(lineas.map((l) => l.sku.id)), [lineas]);
   const total = lineas.reduce((acc, l) => acc + l.cantidad * l.costoUnitario, 0);
@@ -132,6 +136,36 @@ export function CompraDirectaForm({
 
   function quitarLinea(index: number) {
     setLineas((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function iniciarAsignarCodigo(index: number) {
+    setFilaAsignandoCodigo(index);
+    setCodigoInput("");
+    setErrorCodigo(null);
+  }
+
+  function cancelarAsignarCodigo() {
+    setFilaAsignandoCodigo(null);
+    setCodigoInput("");
+    setErrorCodigo(null);
+  }
+
+  async function confirmarAsignarCodigo(index: number) {
+    const codigo = codigoInput.trim();
+    if (!codigo) return;
+    const resultado = await actualizarCodigoBarras(lineas[index].sku.id, codigo);
+    if ("error" in resultado) {
+      setErrorCodigo(resultado.error);
+      return;
+    }
+    setLineas((prev) =>
+      prev.map((l, i) => (i === index ? { ...l, sku: { ...l.sku, codigo_barras: codigo } } : l)),
+    );
+    setFilaAsignandoCodigo(null);
+    setCodigoInput("");
+    setErrorCodigo(null);
+    setFilaCodigoOk(index);
+    setTimeout(() => setFilaCodigoOk((cur) => (cur === index ? null : cur)), 2500);
   }
 
   function validar(): string | null {
@@ -317,6 +351,45 @@ export function CompraDirectaForm({
                     <p className="text-[11.5px] text-text-3">
                       {l.sku.producto?.marca?.nombre} — {presentacionLabel(l.sku)}
                     </p>
+                    {!l.sku.codigo_barras &&
+                      (filaAsignandoCodigo === i ? (
+                        <div className="mt-1 flex items-center gap-1">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={codigoInput}
+                            onChange={(e) => setCodigoInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                confirmarAsignarCodigo(i);
+                              }
+                              if (e.key === "Escape") cancelarAsignarCodigo();
+                            }}
+                            placeholder="Escaneá el código…"
+                            className="w-[150px] rounded-[4px] border border-border bg-bg px-[6px] py-[2px] text-[11.5px] outline-none focus:border-moe"
+                          />
+                          <button
+                            type="button"
+                            onClick={cancelarAsignarCodigo}
+                            className="text-[11px] text-text-3 hover:text-err"
+                          >
+                            Cancelar
+                          </button>
+                          {errorCodigo && <p className="text-[11px] text-err">{errorCodigo}</p>}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => iniciarAsignarCodigo(i)}
+                          className="mt-0.5 text-[11px] text-warn underline underline-offset-2"
+                        >
+                          Sin código de barras · asignar
+                        </button>
+                      ))}
+                    {filaCodigoOk === i && (
+                      <p className="mt-0.5 text-[11px] text-ok">Código de barras asignado ✓</p>
+                    )}
                   </td>
                   <td className="px-[12px] py-[7px] align-middle">
                     {l.soloPrecio ? (
