@@ -45,7 +45,7 @@ export type SkuPos = {
 export type ComboData = ComboDef;
 export type PromoCantidadData = PromoCantidadDef;
 
-type MedioPago = "efectivo" | "debito" | "credito" | "transferencia";
+type MedioPago = "efectivo" | "debito" | "credito" | "transferencia" | "qr";
 
 type LineaTicket = { skuId: string; cantidad: number };
 
@@ -66,11 +66,15 @@ function ticketVacio(id: string): Ticket {
   return { id, lineas: [], envaseChecked: {}, pagos: [] };
 }
 
-const MEDIOS: { id: MedioPago; label: string }[] = [
-  { id: "efectivo", label: "Efectivo" },
-  { id: "debito", label: "Débito" },
+// Orden pensado para los atajos F1-F4 (pedido del usuario 2026-09-21):
+// Crédito queda sin atajo porque no hay más teclas F libres en el POS
+// (F5-F12 ya están todas asignadas).
+const MEDIOS: { id: MedioPago; label: string; tecla?: string }[] = [
+  { id: "efectivo", label: "Efectivo", tecla: "F1" },
+  { id: "qr", label: "QR", tecla: "F2" },
+  { id: "debito", label: "Débito", tecla: "F3" },
+  { id: "transferencia", label: "Transferencia", tecla: "F4" },
   { id: "credito", label: "Crédito" },
-  { id: "transferencia", label: "Transferencia" },
 ];
 
 const ORIGEN_LABEL: Record<Tramo["origen"], string> = {
@@ -368,10 +372,9 @@ export function PosClient({
     e.preventDefault();
     const q = textoQuery.trim();
     if (!q) {
-      // Doble Enter: ya se terminó de escanear (el campo quedó vacío
-      // después del último producto agregado) y se aprieta Enter de nuevo
-      // -- abre el cuadro de medio de pago con el total, sin soltar el
-      // teclado ni el mouse.
+      // Primer Enter con el campo vacío: abre "¿Cómo paga?" (el segundo
+      // Enter que cobra de verdad se maneja a nivel global más abajo,
+      // porque el modal le saca el foco a este input apenas se abre).
       if (lineas.length > 0) setMostrarPago(true);
       return;
     }
@@ -566,6 +569,24 @@ export function PosClient({
   // recarga la página y se pierden los tickets en espera).
   useEffect(() => {
     function onKeyDown(e: globalThis.KeyboardEvent) {
+      // Doble Enter para cobrar (pedido del usuario 2026-09-21): el primer
+      // Enter (con el buscador vacío, ver onScanKeyDown) abre "¿Cómo
+      // paga?"; acá, con el modal ya abierto y un medio+monto que ya
+      // cierran, el segundo Enter cobra directo. Va a nivel global (no
+      // atado al input) porque el modal le saca el foco al buscador apenas
+      // se abre.
+      if (e.key === "Enter" && mostrarPago && pagos.length > 0 && restante === 0) {
+        e.preventDefault();
+        confirmar();
+        return;
+      }
+      if (e.key === "F1" || e.key === "F2" || e.key === "F3" || e.key === "F4") {
+        e.preventDefault();
+        if (lineas.length === 0) return;
+        const medio = { F1: "efectivo", F2: "qr", F3: "debito", F4: "transferencia" } as const;
+        elegirMedioUnico(medio[e.key]);
+        return;
+      }
       if (e.key === "F5") {
         e.preventDefault();
         if (lineaSeleccionada) abrirEdicionCantidad(lineaSeleccionada);
@@ -621,7 +642,7 @@ export function PosClient({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lineas, lineaSeleccionada, pagos, restante, tickets, ticketActivoId, cajaId]);
+  }, [lineas, lineaSeleccionada, pagos, restante, tickets, ticketActivoId, cajaId, mostrarPago]);
 
   if (estadoCaja === "sin_abrir") {
     return <AbrirCajaForm sucursalId={sucursalId} sucursalNombre={sucursalNombre} />;
@@ -642,9 +663,14 @@ export function PosClient({
               ref={i === 0 ? refPrimerBoton : undefined}
               type="button"
               onClick={() => elegirMedioUnico(m.id)}
-              className="rounded-card border border-border bg-bg px-[8px] py-[8px] text-left text-[12.5px] font-medium text-text hover:bg-bg-2"
+              className="flex items-center justify-between rounded-card border border-border bg-bg px-[8px] py-[8px] text-left text-[12.5px] font-medium text-text hover:bg-bg-2"
             >
               {m.label}
+              {m.tecla && (
+                <kbd className="rounded-[4px] border border-border bg-bg-2 px-[5px] py-[1px] text-[10.5px] font-medium text-text-3">
+                  {m.tecla}
+                </kbd>
+              )}
             </button>
           ))}
         </div>

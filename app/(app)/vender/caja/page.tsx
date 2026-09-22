@@ -9,6 +9,7 @@ const MEDIO_LABEL: Record<string, string> = {
   debito: "Débito",
   credito: "Crédito",
   transferencia: "Transferencia",
+  qr: "QR",
 };
 
 export default async function CajaPage({

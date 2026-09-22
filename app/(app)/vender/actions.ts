@@ -21,7 +21,7 @@ export type ComprobanteResumen = {
 };
 
 export type PagoVenta = {
-  medio_pago: "efectivo" | "debito" | "credito" | "transferencia";
+  medio_pago: "efectivo" | "debito" | "credito" | "transferencia" | "qr";
   monto: number;
 };
 
