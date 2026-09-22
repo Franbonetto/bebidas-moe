@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { operaSucursal, veCostos } from "@/lib/permisos";
+import { esDueno, operaSucursal, veCostos } from "@/lib/permisos";
 import { PedidosTable, type PedidoRow } from "./_components/pedidos-table";
 import { PedidosCompraTable, type PedidoCompraRow } from "./_components/pedidos-compra-table";
 
@@ -40,7 +40,13 @@ export default async function PedidosPage({
 
   const pedidos = (pedidosRaw ?? []) as unknown as PedidoRow[];
 
-  const puedeCrearPedidoLaprida = !sucursal.es_central;
+  // El dueño solo visualiza: recibe lo que arma la encargada de cada
+  // sucursal (pedido de compra a proveedores en Olavarría, pedido semanal
+  // en Laprida) y ve el historial -- no arma ninguno de los dos (pedido
+  // del usuario 2026-09-22: "no quiero que pueda hacer un pedido... solo
+  // tiene que recibir lo que le manda la encargada").
+  const esDuenoActual = await esDueno(supabase);
+  const puedeCrearPedidoLaprida = !sucursal.es_central && !esDuenoActual;
 
   let pedidosCompra: PedidoCompraRow[] = [];
   if (sucursal.es_central && (await veCostos(supabase))) {
@@ -72,7 +78,9 @@ export default async function PedidosPage({
       )}
 
       <div className="flex flex-col gap-4">
-        {sucursal.es_central && <PedidosCompraTable pedidos={pedidosCompra} />}
+        {sucursal.es_central && (
+          <PedidosCompraTable pedidos={pedidosCompra} puedeCrear={!esDuenoActual} />
+        )}
 
         <PedidosTable
           pedidos={pedidos}

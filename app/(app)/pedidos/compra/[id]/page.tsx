@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { veCostos } from "@/lib/permisos";
+import { esDueno, veCostos } from "@/lib/permisos";
 import { PedidoCompraDetalle, type PedidoCompraDetalleData } from "../../_components/pedido-compra-detalle";
 
 export default async function PedidoCompraDetallePage({
@@ -62,6 +62,7 @@ export default async function PedidoCompraDetallePage({
     <PedidoCompraDetalle
       pedido={pedidoCompra as unknown as PedidoCompraDetalleData}
       proveedoresPorSku={proveedoresPorSku}
+      soloLectura={await esDueno(supabase)}
     />
   );
 }

@@ -9,7 +9,15 @@ export type PedidoCompraRow = {
   pedidos_compra_items: { cantidad_solicitada: number }[];
 };
 
-export function PedidosCompraTable({ pedidos }: { pedidos: PedidoCompraRow[] }) {
+export function PedidosCompraTable({
+  pedidos,
+  puedeCrear,
+}: {
+  pedidos: PedidoCompraRow[];
+  // El dueño solo visualiza estos pedidos y su historial -- los arma la
+  // encargada de Olavarría, no él (pedido del usuario 2026-09-22).
+  puedeCrear: boolean;
+}) {
   return (
     <div className="overflow-hidden rounded-card border border-border bg-bg">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[14px] py-[11px]">
@@ -20,18 +28,22 @@ export function PedidosCompraTable({ pedidos }: { pedidos: PedidoCompraRow[] }) 
             proveedores.
           </p>
         </div>
-        <Link
-          href="/pedidos/compra/nueva"
-          className="whitespace-nowrap rounded-[6px] bg-moe px-[12px] py-[6px] text-[13px] font-medium text-white hover:bg-moe/90"
-        >
-          Nuevo pedido de compra
-        </Link>
+        {puedeCrear && (
+          <Link
+            href="/pedidos/compra/nueva"
+            className="whitespace-nowrap rounded-[6px] bg-moe px-[12px] py-[6px] text-[13px] font-medium text-white hover:bg-moe/90"
+          >
+            Nuevo pedido de compra
+          </Link>
+        )}
       </div>
 
       {pedidos.length === 0 ? (
         <div className="px-[14px] py-[26px] text-center">
           <p className="mb-[3px] text-[13.5px] font-semibold text-text">Todavía no hay pedidos de compra</p>
-          <p className="text-[12.5px] text-text-3">Se arman desde acá, semana a semana.</p>
+          <p className="text-[12.5px] text-text-3">
+            {puedeCrear ? "Se arman desde acá, semana a semana." : "Los arma la encargada, semana a semana."}
+          </p>
         </div>
       ) : (
         <div className="overflow-x-auto">

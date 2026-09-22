@@ -40,9 +40,13 @@ const SIN_PROVEEDOR_ID = "__sin_proveedor__";
 export function PedidoCompraDetalle({
   pedido,
   proveedoresPorSku,
+  soloLectura,
 }: {
   pedido: PedidoCompraDetalleData;
   proveedoresPorSku: Record<string, Proveedor[]>;
+  // El dueño solo visualiza este pedido y su historial -- lo arma y lo
+  // resuelve la encargada de Olavarría (pedido del usuario 2026-09-22).
+  soloLectura: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -117,7 +121,7 @@ export function PedidoCompraDetalle({
           </span>
         </div>
 
-        {pedido.estado === "pendiente" && (
+        {!soloLectura && pedido.estado === "pendiente" && (
           <div className="mt-4 flex justify-end gap-2">
             <button
               type="button"
