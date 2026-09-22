@@ -95,3 +95,45 @@ export function calcularProductosPorVencer(
 
   return resultado.sort((a, b) => a.dias_restantes - b.dias_restantes);
 }
+
+export type ResumenVentas = {
+  vendidoHoy: number;
+  vendidoMes: number;
+  ticketPromedio: number;
+  cantidadTickets: number;
+};
+
+// Resumen de ventas de una sucursal para el panel del dueño (pedido del
+// usuario 2026-09-22: "ticket promedio, cuáles son los productos que más
+// se venden"). `ventasHoy`/`ventasMes`/`ventasVentana` ya vienen filtradas
+// por sucursal y estado = 'confirmada' -- esta función solo suma/promedia,
+// no filtra (mismo criterio que el resto de los helpers de este archivo).
+export function calcularResumenVentas(
+  ventasHoy: { total: number }[],
+  ventasMes: { total: number }[],
+  ventasVentana: { total: number }[],
+): ResumenVentas {
+  const vendidoHoy = ventasHoy.reduce((acc, v) => acc + v.total, 0);
+  const vendidoMes = ventasMes.reduce((acc, v) => acc + v.total, 0);
+  const totalVentana = ventasVentana.reduce((acc, v) => acc + v.total, 0);
+  const cantidadTickets = ventasVentana.length;
+  return {
+    vendidoHoy,
+    vendidoMes,
+    ticketPromedio: cantidadTickets > 0 ? totalVentana / cantidadTickets : 0,
+    cantidadTickets,
+  };
+}
+
+export type ProductoVendido = { sku_id: string; unidades: number };
+
+// Top de SKU por unidades vendidas dentro de la ventana ya filtrada en
+// `items` (venta_items de ventas confirmadas de una sucursal).
+export function topProductosVendidos(items: { sku_id: string; cantidad: number }[], limite = 10): ProductoVendido[] {
+  const porSku = new Map<string, number>();
+  for (const item of items) porSku.set(item.sku_id, (porSku.get(item.sku_id) ?? 0) + item.cantidad);
+  return [...porSku.entries()]
+    .map(([sku_id, unidades]) => ({ sku_id, unidades }))
+    .sort((a, b) => b.unidades - a.unidades)
+    .slice(0, limite);
+}

@@ -6,18 +6,17 @@ import {
 import { TIPO_MOVIMIENTO_LABEL, motivoLegible } from "@/lib/movimientos";
 import { formatoFechaHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
-import { calcularCostosQueSubieron } from "./lib";
-import { AutoRefresh } from "../auto-refresh";
 import {
-  AlertRow,
-  BarRow,
-  Card,
-  EmptyState,
-  Kpi,
-  KpiGrid,
-  SectionHeader,
-  StatRow,
-} from "./ui";
+  calcularCostosQueSubieron,
+  calcularProductosPorVencer,
+  calcularResumenVentas,
+  topProductosVendidos,
+  type ProductoPorVencer,
+  type ProductoVendido,
+  type ResumenVentas,
+} from "./lib";
+import { AutoRefresh } from "../auto-refresh";
+import { AlertRow, Badge, BarRow, Card, EmptyState, Kpi, KpiGrid, SectionHeader, StatRow } from "./ui";
 
 type Sucursal = { id: string; nombre: string; es_central: boolean };
 
@@ -30,7 +29,7 @@ type SkuInfo = {
   volumen: number;
   unidad_volumen: string;
   unidades_contenidas: number;
-  producto: { nombre: string; categoria: { nombre: string } | null } | null;
+  producto: { nombre: string; marca: { nombre: string } | null; categoria: { nombre: string } | null } | null;
 };
 
 type PrecioBaseFila = {
@@ -70,6 +69,126 @@ type MovimientoReciente = {
   sku: { nombre: string; producto: { nombre: string } | null } | null;
 };
 
+function nombreSku(sku: SkuInfo | undefined) {
+  return sku?.producto?.nombre ?? sku?.nombre ?? "SKU eliminado";
+}
+
+// Bloque por sucursal: ventas, top vendidos, stock y vencimientos. Es lo
+// que reemplaza al panel "igual que el del encargado con algunos datos
+// más" (pedido del usuario 2026-09-22) -- acá el dueño ve cada sucursal
+// por separado, sin accesos a tareas operativas (eso vive en los paneles
+// de cada encargado).
+function BloqueSucursal({
+  nombre,
+  caja,
+  resumenVentas,
+  topVendidos,
+  skuPorId,
+  stockTotal,
+  sinStock,
+  bajoMinimo,
+  porVencer,
+}: {
+  nombre: string;
+  caja: { estado: "abierta" | "cerrada" } | undefined;
+  resumenVentas: ResumenVentas;
+  topVendidos: ProductoVendido[];
+  skuPorId: Map<string, SkuInfo>;
+  stockTotal: number;
+  sinStock: number;
+  bajoMinimo: number;
+  porVencer: ProductoPorVencer[];
+}) {
+  return (
+    <div className="flex flex-col gap-[14px]">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[14px] font-semibold text-text">{nombre}</h3>
+        <span
+          className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${
+            caja?.estado === "abierta" ? "bg-ok-bg text-ok" : "bg-bg-2 text-text-2"
+          }`}
+        >
+          Caja {caja ? (caja.estado === "abierta" ? "abierta" : "cerrada") : "sin abrir"}
+        </span>
+      </div>
+
+      <Card title="Ventas">
+        <div className="flex flex-col divide-y divide-[#F1F1F3]">
+          <StatRow label="Vendido hoy" value={formatoMoneda.format(resumenVentas.vendidoHoy)} />
+          <StatRow label="Vendido este mes" value={formatoMoneda.format(resumenVentas.vendidoMes)} />
+          <StatRow
+            label="Ticket promedio"
+            value={formatoMoneda.format(resumenVentas.ticketPromedio)}
+            sub={`${resumenVentas.cantidadTickets} ticket${resumenVentas.cantidadTickets === 1 ? "" : "s"} · últimos 30 días`}
+          />
+        </div>
+      </Card>
+
+      <Card title="Más vendidos · últimos 30 días">
+        {topVendidos.length === 0 ? (
+          <EmptyState title="Sin ventas registradas" sub="Todavía no hay ventas en los últimos 30 días." />
+        ) : (
+          <div className="flex flex-col">
+            {topVendidos.map((p, i) => {
+              const sku = skuPorId.get(p.sku_id);
+              return (
+                <div
+                  key={p.sku_id}
+                  className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[9px] last:border-b-0"
+                >
+                  <div className="flex min-w-0 items-center gap-[9px]">
+                    <span className="w-[16px] shrink-0 text-[11.5px] tabular-nums text-text-3">{i + 1}</span>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-text">{nombreSku(sku)}</p>
+                      <p className="truncate text-[11.5px] text-text-3">
+                        {sku ? [sku.producto?.marca?.nombre, presentacionLabel(sku)].filter(Boolean).join(" — ") : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="shrink-0 text-[13px] font-medium tabular-nums text-text">{p.unidades} u.</p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
+        <Card title="Stock">
+          <div className="flex flex-col divide-y divide-[#F1F1F3]">
+            <StatRow label="Total" value={`${stockTotal} u.`} />
+            <StatRow label="Sin stock" value={sinStock} />
+            <StatRow label="Bajo mínimo" value={bajoMinimo} />
+          </div>
+        </Card>
+
+        <Card title="Próximos a vencer · 30 días">
+          {porVencer.length === 0 ? (
+            <EmptyState title="Sin vencimientos" sub="Nada vence en los próximos 30 días." />
+          ) : (
+            <div className="flex flex-col">
+              {porVencer.slice(0, 6).map((v) => {
+                const sku = skuPorId.get(v.sku_id);
+                return (
+                  <div
+                    key={v.sku_id}
+                    className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[8px] last:border-b-0"
+                  >
+                    <p className="min-w-0 truncate text-[12.5px] text-text">{nombreSku(sku)}</p>
+                    <Badge color={v.dias_restantes < 0 ? "err" : v.dias_restantes <= 7 ? "warn" : "info"}>
+                      {v.dias_restantes < 0 ? "Vencido" : v.dias_restantes === 0 ? "Hoy" : `${v.dias_restantes} d.`}
+                    </Badge>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 export async function DuenoDashboard() {
   const supabase = await createClient();
 
@@ -81,6 +200,8 @@ export async function DuenoDashboard() {
   const cutoff7 = new Date(ahora - 7 * 86_400_000).toISOString();
   const cutoffInmovilizado = ahora - 90 * 86_400_000;
   const hoy = new Date().toISOString().slice(0, 10);
+  const inicioHoy = new Date();
+  inicioHoy.setHours(0, 0, 0, 0);
 
   const [
     { data: sucursales },
@@ -96,13 +217,16 @@ export async function DuenoDashboard() {
     { data: cajasHoy },
     { data: preciosRecientes },
     { data: preciosSucursalRecientes },
+    { data: ventasHoy },
+    { data: ventasMes },
+    { data: ventas30 },
   ] = await Promise.all([
     supabase.from("sucursales").select("id, nombre, es_central").eq("activo", true).order("es_central", { ascending: false }),
     supabase
       .from("skus")
       .select(
         `id, nombre, stock_minimo, costo_actual, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-         producto:productos ( nombre, categoria:categorias ( nombre ) )`,
+         producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
       )
       .eq("activo", true),
     supabase.from("stock_sucursal").select("sku_id, sucursal_id, cantidad"),
@@ -114,7 +238,10 @@ export async function DuenoDashboard() {
          sku:skus ( nombre, producto:productos ( nombre ) )`,
       )
       .order("fecha", { ascending: false }),
-    supabase.from("historial_costos").select("sku_id, costo_unitario, fecha").order("fecha", { ascending: false }),
+    supabase
+      .from("historial_costos")
+      .select("sku_id, costo_unitario, fecha, fecha_vencimiento")
+      .order("fecha", { ascending: false }),
     // Sin filtro de fecha acá: fecha_factura es opcional (compra-form.tsx la
     // manda null si no se cargó) y un gte() contra una columna null la
     // descarta en silencio. El recorte por mes se hace después, en JS, con
@@ -138,6 +265,9 @@ export async function DuenoDashboard() {
       .select("sku_id, sucursal_id, precio_override, actualizado_en, usuario:usuarios ( nombre )")
       .gte("actualizado_en", cutoff7)
       .order("actualizado_en", { ascending: false }),
+    supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioHoy.toISOString()),
+    supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioMes.toISOString()),
+    supabase.from("ventas").select("id, sucursal_id, total").eq("estado", "confirmada").gte("fecha", cutoff30),
   ]);
 
   const sucursalesList = (sucursales ?? []) as Sucursal[];
@@ -148,8 +278,18 @@ export async function DuenoDashboard() {
   const sucursalNombrePorId = new Map(sucursalesList.map((s) => [s.id, s.nombre]));
   const sucursalCentral = sucursalesList.find((s) => s.es_central);
 
-  // Caja del día por sucursal, para el panel "Caja del día" (lado a lado
-  // Olavarría/Laprida) del Inicio.
+  // Items vendidos en los últimos 30 días, para "más vendidos" por
+  // sucursal -- se busca aparte porque depende de los ids de ventas30.
+  const ventas30List = (ventas30 ?? []) as { id: string; sucursal_id: string; total: number }[];
+  const ventaIds = ventas30List.map((v) => v.id);
+  const { data: itemsVendidos } = ventaIds.length
+    ? await supabase.from("venta_items").select("venta_id, sku_id, cantidad").in("venta_id", ventaIds)
+    : { data: [] as { venta_id: string; sku_id: string; cantidad: number }[] };
+
+  const sucursalPorVentaId = new Map(ventas30List.map((v) => [v.id, v.sucursal_id]));
+  const itemsVendidosList = (itemsVendidos ?? []) as { venta_id: string; sku_id: string; cantidad: number }[];
+
+  // Caja del día + vendido hoy/mes/ticket promedio, por sucursal.
   type CajaFila = {
     sucursal_id: string;
     estado: "abierta" | "cerrada";
@@ -158,16 +298,11 @@ export async function DuenoDashboard() {
     ventas: { total: number }[];
   };
   const cajaPorSucursal = new Map(
-    ((cajasHoy ?? []) as unknown as CajaFila[]).map((c) => [
-      c.sucursal_id,
-      {
-        estado: c.estado,
-        montoApertura: c.monto_apertura,
-        totalVendido: c.ventas.reduce((acc, v) => acc + v.total, 0),
-        cantidadTickets: c.cantidad_tickets ?? c.ventas.length,
-      },
-    ]),
+    ((cajasHoy ?? []) as unknown as CajaFila[]).map((c) => [c.sucursal_id, { estado: c.estado }]),
   );
+
+  const ventasHoyList = (ventasHoy ?? []) as { sucursal_id: string; total: number }[];
+  const ventasMesList = (ventasMes ?? []) as { sucursal_id: string; total: number }[];
 
   // Precios cargados en los últimos 7 días: base (Olavarría) + excepciones
   // por sucursal, en una sola lista ordenada por fecha. Control detectivo
@@ -226,7 +361,6 @@ export async function DuenoDashboard() {
   // Bajo mínimo / sin stock, con desglose por sucursal.
   const bajoMinimoPorSucursal: Record<string, number> = {};
   const sinStockPorSucursal: Record<string, number> = {};
-  const skusBajoMinimo = new Set<string>();
   const skusSinStock = new Set<string>();
   for (const sucursal of sucursalesList) {
     bajoMinimoPorSucursal[sucursal.id] = 0;
@@ -242,7 +376,6 @@ export async function DuenoDashboard() {
       }
       if (sku.stock_minimo > 0 && cantidad < sku.stock_minimo) {
         bajoMinimoPorSucursal[sucursal.id] += 1;
-        skusBajoMinimo.add(sku.id);
       }
     }
   }
@@ -267,8 +400,7 @@ export async function DuenoDashboard() {
     }
   }
 
-  // Stock a costo de compra, por categoría (no es precio de venta: el
-  // módulo de precios todavía no existe).
+  // Stock a costo de compra, por categoría (no es precio de venta).
   const costoPorCategoria = new Map<string, number>();
   for (const sku of skusList) {
     if (sku.costo_actual == null) continue;
@@ -285,12 +417,16 @@ export async function DuenoDashboard() {
     (historial ?? []) as { sku_id: string; costo_unitario: number; fecha: string }[],
   );
 
+  const historialConVencimiento = (historial ?? []) as {
+    sku_id: string;
+    fecha_vencimiento: string | null;
+    fecha: string;
+  }[];
+  const porVencerGlobal = calcularProductosPorVencer(historialConVencimiento);
+
   // "Compras del mes": confirmadas + cerradas cuya fecha efectiva cae en el
   // mes en curso. fecha_factura manda cuando está cargada; si no, se usa la
   // fecha de la primera recepción (siempre tiene valor, es default now()).
-  // Una compra confirmada que todavía no tiene ni factura ni recepción no
-  // se puede ubicar en el tiempo con los datos actuales, así que queda
-  // afuera del total (no se inventa una fecha).
   const primeraRecepcionPorCompra = new Map<string, string>();
   for (const r of (recepcionesCompra ?? []) as { compra_id: string; fecha: string }[]) {
     const actual = primeraRecepcionPorCompra.get(r.compra_id);
@@ -333,18 +469,20 @@ export async function DuenoDashboard() {
 
   const movimientosRecientes = movimientosList.slice(0, 8);
 
+  const vendidoHoyTotal = ventasHoyList.reduce((acc, v) => acc + v.total, 0);
+
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       <AutoRefresh />
+
       <div>
-        <SectionHeader title="Hoy" />
+        <SectionHeader title="Resumen" />
         <KpiGrid>
+          <Kpi label="Vendido hoy" value={formatoMoneda.format(vendidoHoyTotal)} />
           <Kpi
             label="Stock total (unidades)"
             value={stockTotal}
-            sub={sucursalesList
-              .map((s) => `${s.nombre} ${stockTotalPorSucursal[s.id] ?? 0}`)
-              .join(" · ")}
+            sub={sucursalesList.map((s) => `${s.nombre} ${stockTotalPorSucursal[s.id] ?? 0}`).join(" · ")}
           />
           <Kpi
             label="Productos sin stock"
@@ -358,326 +496,174 @@ export async function DuenoDashboard() {
           />
         </KpiGrid>
 
-        <div className="mt-3 grid grid-cols-1 gap-[14px] sm:grid-cols-2">
+        {((transferenciasEnTransito ?? []).length > 0 || costosSubieron.length > 0) && (
+          <div className="mt-3 flex flex-col gap-[8px]">
+            {(transferenciasEnTransito ?? []).length > 0 && (
+              <AlertRow
+                color="info"
+                title={`${(transferenciasEnTransito ?? []).length} transferencia${(transferenciasEnTransito ?? []).length === 1 ? "" : "s"} en tránsito`}
+                href="/pedidos"
+              />
+            )}
+            {costosSubieron.length > 0 && (
+              <AlertRow
+                color="orange"
+                title={`${costosSubieron.length} costo${costosSubieron.length === 1 ? "" : "s"} aumentaron`}
+                sub="Últimos 30 días — revisar precios de venta"
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <SectionHeader title="Por sucursal" />
+        <div className="grid grid-cols-1 gap-[20px] lg:grid-cols-2">
           {sucursalesList.map((s) => {
-            const caja = cajaPorSucursal.get(s.id);
-            const bajoMinimo = bajoMinimoPorSucursal[s.id] ?? 0;
+            const itemsSucursal = itemsVendidosList.filter((it) => sucursalPorVentaId.get(it.venta_id) === s.id);
             return (
-              <div key={s.id} className="rounded-card border border-border bg-bg p-[15px]">
-                <div className="mb-2 flex items-center justify-between">
-                  <h3 className="text-[13px] font-semibold text-text">Caja del día · {s.nombre}</h3>
-                  <span
-                    className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${
-                      caja?.estado === "abierta"
-                        ? "bg-ok-bg text-ok"
-                        : caja?.estado === "cerrada"
-                          ? "bg-bg-2 text-text-2"
-                          : "bg-warn-bg text-warn"
-                    }`}
-                  >
-                    {caja ? (caja.estado === "abierta" ? "Abierta" : "Cerrada") : "Sin abrir"}
-                  </span>
-                </div>
-
-                {caja ? (
-                  <>
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-[12px] text-text-2">Vendido hoy</span>
-                      <span className="text-[20px] font-semibold tabular-nums text-text">
-                        {formatoMoneda.format(caja.totalVendido)}
-                      </span>
-                    </div>
-                    <p className="mt-[3px] text-[12px] text-text-3">
-                      {caja.cantidadTickets} ticket{caja.cantidadTickets === 1 ? "" : "s"} · apertura{" "}
-                      {formatoMoneda.format(caja.montoApertura)}
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-[12.5px] text-text-3">Todavía no se abrió la caja hoy.</p>
+              <BloqueSucursal
+                key={s.id}
+                nombre={s.nombre}
+                caja={cajaPorSucursal.get(s.id)}
+                resumenVentas={calcularResumenVentas(
+                  ventasHoyList.filter((v) => v.sucursal_id === s.id),
+                  ventasMesList.filter((v) => v.sucursal_id === s.id),
+                  ventas30List.filter((v) => v.sucursal_id === s.id),
                 )}
-
-                <div className="mt-3 flex items-center justify-between border-t border-border pt-[9px] text-[12.5px]">
-                  <span className="text-text-2">Productos bajo mínimo</span>
-                  <span className={`font-medium tabular-nums ${bajoMinimo > 0 ? "text-warn" : "text-text-2"}`}>
-                    {bajoMinimo}
-                  </span>
-                </div>
-              </div>
+                topVendidos={topProductosVendidos(itemsSucursal)}
+                skuPorId={skuPorId}
+                stockTotal={stockTotalPorSucursal[s.id] ?? 0}
+                sinStock={sinStockPorSucursal[s.id] ?? 0}
+                bajoMinimo={bajoMinimoPorSucursal[s.id] ?? 0}
+                porVencer={porVencerGlobal.filter((v) => (stockPorSku.get(v.sku_id)?.[s.id] ?? 0) > 0)}
+              />
             );
           })}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[1.55fr_1fr]">
-        <Card title="Dónde está la plata · a costo de compra">
-          {barsCategorias.length === 0 ? (
-            <EmptyState
-              title="Todavía no hay costos cargados"
-              sub="Se completa a medida que se reciben compras y se carga costo_actual por SKU."
-            />
-          ) : (
-            <div className="flex flex-col gap-[9px] p-[14px]">
-              {barsCategorias.map(([categoria, valor]) => (
-                <BarRow
-                  key={categoria}
-                  label={categoria}
-                  value={valor}
-                  max={maxCategoria}
-                  display={formatoMoneda.format(valor)}
-                />
-              ))}
-              <p className="pt-[4px] text-[11.5px] text-text-3">
-                Costo de compra (costo_actual × stock), no precio de venta.
-              </p>
-            </div>
-          )}
-        </Card>
+      <div>
+        <SectionHeader title="Auditoría y costos" meta="Solo vos ves esta sección" />
 
-        <Card title="Necesita atención">
-          <div className="flex flex-col gap-[8px] p-[10px]">
-            {skusBajoMinimo.size === 0 &&
-            skusSinStock.size === 0 &&
-            (transferenciasEnTransito ?? []).length === 0 &&
-            costosSubieron.length === 0 ? (
-              <EmptyState title="Todo al día" sub="No hay alertas activas en este momento." />
+        <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[1.55fr_1fr]">
+          <Card title="Dónde está la plata · a costo de compra">
+            {barsCategorias.length === 0 ? (
+              <EmptyState
+                title="Todavía no hay costos cargados"
+                sub="Se completa a medida que se reciben compras y se carga costo_actual por SKU."
+              />
             ) : (
-              <>
-                {skusSinStock.size > 0 && (
-                  <AlertRow
-                    color="err"
-                    title={`${skusSinStock.size} producto${skusSinStock.size === 1 ? "" : "s"} sin stock`}
-                    sub={sucursalesList.map((s) => `${s.nombre} ${sinStockPorSucursal[s.id] ?? 0}`).join(" · ")}
+              <div className="flex flex-col gap-[9px] p-[14px]">
+                {barsCategorias.map(([categoria, valor]) => (
+                  <BarRow
+                    key={categoria}
+                    label={categoria}
+                    value={valor}
+                    max={maxCategoria}
+                    display={formatoMoneda.format(valor)}
                   />
-                )}
-                {skusBajoMinimo.size > 0 && (
-                  <AlertRow
-                    color="warn"
-                    title={`${skusBajoMinimo.size} producto${skusBajoMinimo.size === 1 ? "" : "s"} bajo el mínimo`}
-                    sub="Revisar antes del pedido semanal"
-                  />
-                )}
-                {(transferenciasEnTransito ?? []).length > 0 && (
-                  <AlertRow
-                    color="info"
-                    title={`${(transferenciasEnTransito ?? []).length} transferencia${(transferenciasEnTransito ?? []).length === 1 ? "" : "s"} en tránsito`}
-                    href="/pedidos"
-                  />
-                )}
-                {costosSubieron.length > 0 && (
-                  <AlertRow
-                    color="orange"
-                    title={`${costosSubieron.length} costo${costosSubieron.length === 1 ? "" : "s"} aumentaron`}
-                    sub="Últimos 30 días"
-                  />
-                )}
-              </>
+                ))}
+                <p className="pt-[4px] text-[11.5px] text-text-3">
+                  Costo de compra (costo_actual × stock), no precio de venta.
+                </p>
+              </div>
             )}
-          </div>
-        </Card>
-      </div>
+          </Card>
 
-      <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-2">
-        <Card title="Diferencias de inventario por motivo · últimos 30 días">
-          {barsMotivos.length === 0 ? (
-            <EmptyState
-              title="Sin diferencias en los últimos 30 días"
-              sub="Los inventarios cerrados en este período no encontraron faltantes ni sobrantes."
-            />
-          ) : (
-            <div className="flex flex-col gap-[9px] p-[14px]">
-              {barsMotivos.map(([motivo, datos]) => (
-                <BarRow
-                  key={motivo}
-                  tone="loss"
-                  label={MOTIVO_INVENTARIO_LABEL[motivo as MotivoInventario] ?? motivo}
-                  value={datos.unidades}
-                  max={maxMotivo}
-                  display={`${datos.unidades} u. · ${datos.count} ajuste${datos.count === 1 ? "" : "s"}`}
-                />
-              ))}
+          <Card title="Actividad">
+            <div className="flex flex-col divide-y divide-[#F1F1F3]">
+              <StatRow
+                label="Compras del mes"
+                value={formatoMoneda.format(comprasMesTotal)}
+                sub={`${comprasMesCount} compra${comprasMesCount === 1 ? "" : "s"}`}
+              />
+              <StatRow label="Pedidos abiertos" value={(pedidosAbiertos ?? []).length} />
+              <StatRow label="Transferencias en tránsito" value={(transferenciasEnTransito ?? []).length} />
             </div>
-          )}
-        </Card>
+          </Card>
+        </div>
 
-        <Card title="Actividad">
-          <div className="flex flex-col divide-y divide-[#F1F1F3]">
-            <StatRow
-              label="Compras del mes"
-              value={formatoMoneda.format(comprasMesTotal)}
-              sub={`${comprasMesCount} compra${comprasMesCount === 1 ? "" : "s"}`}
-            />
-            <StatRow label="Pedidos abiertos" value={(pedidosAbiertos ?? []).length} />
-            <StatRow label="Transferencias en tránsito" value={(transferenciasEnTransito ?? []).length} />
-          </div>
-        </Card>
-      </div>
+        <div className="mt-[14px] grid grid-cols-1 gap-[14px] lg:grid-cols-2">
+          <Card title="Diferencias de inventario por motivo · últimos 30 días">
+            {barsMotivos.length === 0 ? (
+              <EmptyState
+                title="Sin diferencias en los últimos 30 días"
+                sub="Los inventarios cerrados en este período no encontraron faltantes ni sobrantes."
+              />
+            ) : (
+              <div className="flex flex-col gap-[9px] p-[14px]">
+                {barsMotivos.map(([motivo, datos]) => (
+                  <BarRow
+                    key={motivo}
+                    tone="loss"
+                    label={MOTIVO_INVENTARIO_LABEL[motivo as MotivoInventario] ?? motivo}
+                    value={datos.unidades}
+                    max={maxMotivo}
+                    display={`${datos.unidades} u. · ${datos.count} ajuste${datos.count === 1 ? "" : "s"}`}
+                  />
+                ))}
+              </div>
+            )}
+          </Card>
 
-      <Card title="Precios cargados · últimos 7 días">
-        {preciosCargados.length === 0 ? (
-          <EmptyState
-            title="Sin precios cargados en los últimos 7 días"
-            sub="Control detectivo: acá aparece quién cargó cada precio, para revisar sin tener que aprobar antes."
-          />
-        ) : (
-          <>
-            {/* Celular: tarjetas apiladas en vez de comprimir la tabla
-                (docs/identidad-visual.md: "las tablas complejas se
-                adaptan, no se comprimen"). */}
-            <div className="flex flex-col divide-y divide-[#F1F1F3] sm:hidden">
-              {preciosCargados.map((p) => {
-                const sku = skuPorId.get(p.skuId);
-                return (
-                  <div key={p.key} className="flex flex-col gap-[3px] px-[14px] py-[10px]">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <p className="min-w-0 truncate font-medium text-text">
-                        {sku?.producto?.nombre ?? sku?.nombre ?? "—"}
-                      </p>
-                      <p className="shrink-0 tabular-nums text-text">{formatoMoneda.format(p.precio)}</p>
-                    </div>
-                    <p className="text-[11.5px] text-text-3">
-                      {sku ? presentacionLabel(sku) : ""}
-                      {p.tipo === "excepción" ? " · excepción manual" : ""}
-                    </p>
-                    <p className="text-[11.5px] text-text-3">
-                      {p.sucursalNombre} · Margen {p.margenPct == null ? "—" : `${p.margenPct.toFixed(0)}%`}
-                    </p>
-                    <p className="text-[11.5px] text-text-3">
-                      {p.usuarioNombre} · {formatoFechaHora.format(new Date(p.actualizadoEn))}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="hidden overflow-x-auto sm:block">
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
-                    Producto
-                  </th>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
-                    Sucursal
-                  </th>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
-                    Precio
-                  </th>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
-                    Margen
-                  </th>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
-                    Cargado por
-                  </th>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
-                    Cuándo
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {preciosCargados.map((p) => {
+          <Card title="Precios cargados · últimos 7 días">
+            {preciosCargados.length === 0 ? (
+              <EmptyState
+                title="Sin precios cargados en los últimos 7 días"
+                sub="Control detectivo: acá aparece quién cargó cada precio, para revisar sin tener que aprobar antes."
+              />
+            ) : (
+              <div className="flex flex-col divide-y divide-[#F1F1F3]">
+                {preciosCargados.slice(0, 8).map((p) => {
                   const sku = skuPorId.get(p.skuId);
                   return (
-                    <tr key={p.key} className="border-b border-[#F1F1F3] last:border-b-0">
-                      <td className="px-[14px] py-[9px] align-middle">
-                        <p className="font-medium text-text">{sku?.producto?.nombre ?? sku?.nombre ?? "—"}</p>
-                        <p className="text-[11.5px] text-text-3">
-                          {sku ? presentacionLabel(sku) : ""}
-                          {p.tipo === "excepción" ? " · excepción manual" : ""}
-                        </p>
-                      </td>
-                      <td className="px-[14px] py-[9px] align-middle text-text-2">{p.sucursalNombre}</td>
-                      <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text">
-                        {formatoMoneda.format(p.precio)}
-                      </td>
-                      <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
-                        {p.margenPct == null ? "—" : `${p.margenPct.toFixed(0)}%`}
-                      </td>
-                      <td className="px-[14px] py-[9px] align-middle text-text-2">{p.usuarioNombre}</td>
-                      <td className="px-[14px] py-[9px] text-right align-middle text-text-3">
-                        {formatoFechaHora.format(new Date(p.actualizadoEn))}
-                      </td>
-                    </tr>
+                    <div key={p.key} className="flex flex-col gap-[3px] px-[14px] py-[9px]">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="min-w-0 truncate text-[13px] font-medium text-text">{nombreSku(sku)}</p>
+                        <p className="shrink-0 tabular-nums text-text">{formatoMoneda.format(p.precio)}</p>
+                      </div>
+                      <p className="text-[11.5px] text-text-3">
+                        {p.sucursalNombre}
+                        {p.tipo === "excepción" ? " · excepción manual" : ""} · Margen{" "}
+                        {p.margenPct == null ? "—" : `${p.margenPct.toFixed(0)}%`} · {p.usuarioNombre}
+                      </p>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-            </div>
-          </>
-        )}
-      </Card>
+              </div>
+            )}
+          </Card>
+        </div>
 
-      <Card title="Últimos movimientos del sistema">
-        {movimientosRecientes.length === 0 ? (
-          <EmptyState title="Todavía no hay movimientos" sub="Van a aparecer acá a medida que se opere el sistema." />
-        ) : (
-          <>
-            <div className="flex flex-col divide-y divide-[#F1F1F3] sm:hidden">
-              {movimientosRecientes.map((m) => (
-                <div key={m.id} className="flex flex-col gap-[3px] px-[14px] py-[10px]">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="font-medium text-text">{TIPO_MOVIMIENTO_LABEL[m.tipo] ?? m.tipo}</p>
-                    <p className="shrink-0 text-[11.5px] text-text-3">
-                      {formatoFechaHora.format(new Date(m.fecha))}
-                    </p>
-                  </div>
-                  <p className="text-[11.5px] text-text-3">
-                    {m.sku?.producto?.nombre ?? m.sku?.nombre}
-                    {" · "}
-                    {m.cantidad > 0 ? "+" : ""}
-                    {m.cantidad}
-                    {motivoLegible(m.motivo, m.tipo) ? ` — ${motivoLegible(m.motivo, m.tipo)}` : ""}
-                  </p>
-                  <p className="text-[11.5px] text-text-3">
-                    {m.sucursal?.nombre} · {m.usuario?.nombre}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="hidden overflow-x-auto sm:block">
-            <table className="w-full border-collapse text-[13px]">
-              <thead>
-                <tr>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
-                    Movimiento
-                  </th>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
-                    Sucursal
-                  </th>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
-                    Usuario
-                  </th>
-                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
-                    Cuándo
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+        <div className="mt-[14px]">
+          <Card title="Últimos movimientos del sistema">
+            {movimientosRecientes.length === 0 ? (
+              <EmptyState title="Todavía no hay movimientos" sub="Van a aparecer acá a medida que se opere el sistema." />
+            ) : (
+              <div className="flex flex-col divide-y divide-[#F1F1F3]">
                 {movimientosRecientes.map((m) => (
-                  <tr key={m.id} className="border-b border-[#F1F1F3] last:border-b-0">
-                    <td className="px-[14px] py-[9px] align-middle">
-                      <p className="font-medium text-text">{TIPO_MOVIMIENTO_LABEL[m.tipo] ?? m.tipo}</p>
-                      <p className="text-[11.5px] text-text-3">
+                  <div key={m.id} className="flex flex-col gap-[3px] px-[14px] py-[9px] sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-medium text-text">{TIPO_MOVIMIENTO_LABEL[m.tipo] ?? m.tipo}</p>
+                      <p className="truncate text-[11.5px] text-text-3">
                         {m.sku?.producto?.nombre ?? m.sku?.nombre}
                         {" · "}
                         {m.cantidad > 0 ? "+" : ""}
                         {m.cantidad}
                         {motivoLegible(m.motivo, m.tipo) ? ` — ${motivoLegible(m.motivo, m.tipo)}` : ""}
+                        {" · "}
+                        {m.sucursal?.nombre} · {m.usuario?.nombre}
                       </p>
-                    </td>
-                    <td className="px-[14px] py-[9px] align-middle text-text-2">{m.sucursal?.nombre}</td>
-                    <td className="px-[14px] py-[9px] align-middle text-text-2">{m.usuario?.nombre}</td>
-                    <td className="px-[14px] py-[9px] text-right align-middle text-text-3">
-                      {formatoFechaHora.format(new Date(m.fecha))}
-                    </td>
-                  </tr>
+                    </div>
+                    <p className="shrink-0 text-[11.5px] text-text-3">{formatoFechaHora.format(new Date(m.fecha))}</p>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-            </div>
-          </>
-        )}
-      </Card>
+              </div>
+            )}
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
