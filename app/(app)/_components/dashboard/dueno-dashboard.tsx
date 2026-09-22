@@ -4,10 +4,11 @@ import {
   type MotivoInventario,
 } from "@/app/(app)/inventarios/_components/estado-inventario-badge";
 import { TIPO_MOVIMIENTO_LABEL, motivoLegible } from "@/lib/movimientos";
-import { formatoFechaHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
+import { formatoFecha, formatoFechaHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import {
   calcularCostosQueSubieron,
+  calcularMercaderiaInmovilizada,
   calcularProductosPorVencer,
   calcularResumenVentas,
   topProductosVendidos,
@@ -198,7 +199,6 @@ export async function DuenoDashboard() {
   const ahora = new Date().getTime();
   const cutoff30 = new Date(ahora - 30 * 86_400_000).toISOString();
   const cutoff7 = new Date(ahora - 7 * 86_400_000).toISOString();
-  const cutoffInmovilizado = ahora - 90 * 86_400_000;
   const hoy = new Date().toISOString().slice(0, 10);
   const inicioHoy = new Date();
   inicioHoy.setHours(0, 0, 0, 0);
@@ -380,25 +380,19 @@ export async function DuenoDashboard() {
     }
   }
 
-  // Inmovilizado: SKU con stock hoy cuyo último movimiento tiene 90+ días.
-  // Se deriva de movimientos_stock (mismo criterio que sugerir_conteo_puntual
-  // en el bloque 8: no hay flag aparte, se lee del historial real).
-  const ultimoMovimientoPorSku = new Map<string, string>();
-  for (const fila of movimientosList) {
-    if (!ultimoMovimientoPorSku.has(fila.sku_id)) ultimoMovimientoPorSku.set(fila.sku_id, fila.fecha);
-  }
-  let inmovilizadosCount = 0;
-  let inmovilizadosUnidades = 0;
-  for (const sku of skusList) {
+  // Mercadería inmovilizada: SKU con stock hoy y hace cuánto no se venden
+  // (no "último movimiento" en general -- ver lib.ts, pedido del usuario
+  // 2026-09-22). 90+ días sin venta (o nunca vendido) es el umbral para el
+  // KPI resumen; la lista completa (30-40 productos) se muestra abajo.
+  const ventasParaInmovilizado = movimientosList.filter((m) => m.tipo === "venta");
+  const stockTotalPorSkuList = skusList.map((sku) => {
     const porSucursal = stockPorSku.get(sku.id) ?? {};
-    const total = Object.values(porSucursal).reduce((a, b) => a + b, 0);
-    if (total <= 0) continue;
-    const ultimo = ultimoMovimientoPorSku.get(sku.id);
-    if (!ultimo || new Date(ultimo).getTime() < cutoffInmovilizado) {
-      inmovilizadosCount += 1;
-      inmovilizadosUnidades += total;
-    }
-  }
+    return { sku_id: sku.id, stock: Object.values(porSucursal).reduce((a, b) => a + b, 0) };
+  });
+  const mercaderiaInmovilizada = calcularMercaderiaInmovilizada(stockTotalPorSkuList, ventasParaInmovilizado);
+  const inmovilizados90d = mercaderiaInmovilizada.filter((p) => p.dias_sin_venta == null || p.dias_sin_venta >= 90);
+  const inmovilizadosCount = inmovilizados90d.length;
+  const inmovilizadosUnidades = inmovilizados90d.reduce((acc, p) => acc + p.stock, 0);
 
   // Stock a costo de compra, por categoría (no es precio de venta).
   const costoPorCategoria = new Map<string, number>();
@@ -492,7 +486,7 @@ export async function DuenoDashboard() {
           <Kpi
             label="Mercadería inmovilizada"
             value={inmovilizadosCount}
-            sub={`${inmovilizadosUnidades} unidades sin movimiento hace 90+ días`}
+            sub={`${inmovilizadosUnidades} unidades · 90+ días sin venderse`}
           />
         </KpiGrid>
 
@@ -514,6 +508,64 @@ export async function DuenoDashboard() {
             )}
           </div>
         )}
+      </div>
+
+      <div>
+        <SectionHeader title="Mercadería inmovilizada" meta="Ordenado por hace cuánto no se vende" />
+        <Card title={`${mercaderiaInmovilizada.length} productos con stock`}>
+          {mercaderiaInmovilizada.length === 0 ? (
+            <EmptyState title="Sin productos inmovilizados" sub="Todo el stock activo tuvo ventas recientes." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-[13px]">
+                <thead>
+                  <tr>
+                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
+                      Producto
+                    </th>
+                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                      Stock
+                    </th>
+                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
+                      Última venta
+                    </th>
+                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                      Sin venderse
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mercaderiaInmovilizada.map((p) => {
+                    const sku = skuPorId.get(p.sku_id);
+                    return (
+                      <tr key={p.sku_id} className="border-b border-[#F1F1F3] last:border-b-0">
+                        <td className="px-[14px] py-[8px] align-middle">
+                          <p className="font-medium text-text">{nombreSku(sku)}</p>
+                          <p className="text-[11.5px] text-text-3">
+                            {sku
+                              ? [sku.producto?.marca?.nombre, presentacionLabel(sku)].filter(Boolean).join(" — ")
+                              : ""}
+                          </p>
+                        </td>
+                        <td className="px-[14px] py-[8px] text-right align-middle tabular-nums text-text-2">
+                          {p.stock}
+                        </td>
+                        <td className="px-[14px] py-[8px] align-middle text-text-2">
+                          {p.ultima_venta ? formatoFecha.format(new Date(p.ultima_venta)) : "Nunca se vendió"}
+                        </td>
+                        <td className="px-[14px] py-[8px] text-right align-middle">
+                          <Badge color={p.dias_sin_venta == null || p.dias_sin_venta >= 90 ? "err" : "warn"}>
+                            {p.dias_sin_venta == null ? "—" : `${p.dias_sin_venta} días`}
+                          </Badge>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       </div>
 
       <div>

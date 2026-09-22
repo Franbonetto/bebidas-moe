@@ -125,6 +125,52 @@ export function calcularResumenVentas(
   };
 }
 
+export type ProductoInmovilizado = {
+  sku_id: string;
+  stock: number;
+  ultima_venta: string | null;
+  dias_sin_venta: number | null;
+};
+
+// Productos con stock hoy ordenados por hace cuánto no se venden (pedido
+// del usuario 2026-09-22: "los 30, 40 productos que no se venden, y cada
+// uno la última vez que se vendió" -- a diferencia del criterio anterior
+// de "último movimiento" (cualquier tipo: compra, ajuste, etc.), acá es
+// específicamente venta). `ventasPorSku` tiene que venir ordenado por
+// fecha descendente y ya filtrado a movimientos tipo = 'venta' -- así el
+// primer registro de cada SKU es la venta más reciente. dias_sin_venta
+// null = nunca se vendió (peor caso, va primero).
+export function calcularMercaderiaInmovilizada(
+  stockPorSku: { sku_id: string; stock: number }[],
+  ventasPorSku: { sku_id: string; fecha: string }[],
+  limite = 40,
+): ProductoInmovilizado[] {
+  const ultimaVentaPorSku = new Map<string, string>();
+  for (const v of ventasPorSku) {
+    if (!ultimaVentaPorSku.has(v.sku_id)) ultimaVentaPorSku.set(v.sku_id, v.fecha);
+  }
+
+  const hoy = Date.now();
+  return stockPorSku
+    .filter((f) => f.stock > 0)
+    .map((f) => {
+      const ultimaVenta = ultimaVentaPorSku.get(f.sku_id) ?? null;
+      return {
+        sku_id: f.sku_id,
+        stock: f.stock,
+        ultima_venta: ultimaVenta,
+        dias_sin_venta: ultimaVenta ? Math.floor((hoy - new Date(ultimaVenta).getTime()) / 86_400_000) : null,
+      };
+    })
+    .sort((a, b) => {
+      if (a.dias_sin_venta == null && b.dias_sin_venta == null) return 0;
+      if (a.dias_sin_venta == null) return -1;
+      if (b.dias_sin_venta == null) return 1;
+      return b.dias_sin_venta - a.dias_sin_venta;
+    })
+    .slice(0, limite);
+}
+
 export type ProductoVendido = { sku_id: string; unidades: number };
 
 // Top de SKU por unidades vendidas dentro de la ventana ya filtrada en
