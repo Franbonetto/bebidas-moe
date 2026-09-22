@@ -9,11 +9,13 @@ export function AppShell({
   nombre,
   rol,
   puedeVerCostos,
+  pedidosCompraSinVer,
   children,
 }: {
   nombre: string;
   rol: string;
   puedeVerCostos: boolean;
+  pedidosCompraSinVer?: number;
   children: ReactNode;
 }) {
   const [menuAbierto, setMenuAbierto] = useState(false);
@@ -28,6 +30,7 @@ export function AppShell({
         nombre={nombre}
         rol={rol}
         puedeVerCostos={puedeVerCostos}
+        pedidosCompraSinVer={pedidosCompraSinVer}
         abierto={menuAbierto}
         onCerrar={() => setMenuAbierto(false)}
       />

@@ -37,6 +37,15 @@ export default async function PedidoCompraDetallePage({
 
   if (!pedidoCompra) notFound();
 
+  const soloLectura = await esDueno(supabase);
+  // Marca el pedido como visto la primera vez que el dueño abre su
+  // detalle -- de eso vive el badge rojo en "Pedidos" del sidebar (pedido
+  // del usuario 2026-09-22). Función acotada (ver migración
+  // 20260922150000): no reabre el update general que le sacamos al dueño.
+  if (soloLectura) {
+    await supabase.rpc("marcar_pedido_compra_visto", { p_id: id });
+  }
+
   const skuIds = pedidoCompra.pedidos_compra_items.map((i) => i.sku_id);
   const { data: proveedorSkus } = await supabase
     .from("proveedor_skus")
@@ -62,7 +71,7 @@ export default async function PedidoCompraDetallePage({
     <PedidoCompraDetalle
       pedido={pedidoCompra as unknown as PedidoCompraDetalleData}
       proveedoresPorSku={proveedoresPorSku}
-      soloLectura={await esDueno(supabase)}
+      soloLectura={soloLectura}
     />
   );
 }

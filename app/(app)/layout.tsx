@@ -31,8 +31,25 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   const puedeVerCostos = await veCostos(supabase);
 
+  // Badge rojo en "Pedidos" para el dueño: pedidos de compra pendientes
+  // que todavía no abrió (pedido del usuario 2026-09-22).
+  let pedidosCompraSinVer = 0;
+  if (usuario.rol === "dueno") {
+    const { count } = await supabase
+      .from("pedidos_compra")
+      .select("id", { count: "exact", head: true })
+      .eq("estado", "pendiente")
+      .is("visto_en", null);
+    pedidosCompraSinVer = count ?? 0;
+  }
+
   return (
-    <AppShell nombre={usuario.nombre} rol={usuario.rol} puedeVerCostos={puedeVerCostos}>
+    <AppShell
+      nombre={usuario.nombre}
+      rol={usuario.rol}
+      puedeVerCostos={puedeVerCostos}
+      pedidosCompraSinVer={pedidosCompraSinVer}
+    >
       {children}
     </AppShell>
   );

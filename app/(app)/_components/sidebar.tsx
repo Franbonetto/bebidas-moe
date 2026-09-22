@@ -47,17 +47,19 @@ const NAV: NavItem[] = [
     icon: "M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11",
   },
   {
+    label: "Pedidos",
+    href: "/pedidos",
+    seccion: "operacion",
+    // Orden pedido por el usuario 2026-09-22: primero para el dueño (antes
+    // que Compras), porque es lo que más necesita revisar seguido.
+    icon: "M16 3h5v5M4 20L20.5 3.5M21 16v5h-5M15 15l5.5 5.5M4 4l5 5",
+  },
+  {
     label: "Compras",
     href: "/compras",
     seccion: "operacion",
     restringido: true,
     icon: "M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0",
-  },
-  {
-    label: "Pedidos",
-    href: "/pedidos",
-    seccion: "operacion",
-    icon: "M16 3h5v5M4 20L20.5 3.5M21 16v5h-5M15 15l5.5 5.5M4 4l5 5",
   },
   {
     label: "Envíos",
@@ -121,7 +123,7 @@ const ROL_LABEL: Record<string, string> = {
   encargado: "Encargado",
 };
 
-function renderNavItem(item: NavItem, pathname: string, onCerrar?: () => void) {
+function renderNavItem(item: NavItem, pathname: string, onCerrar?: () => void, badge?: number) {
   const active = item.href
     ? item.href === "/"
       ? pathname === "/"
@@ -133,6 +135,11 @@ function renderNavItem(item: NavItem, pathname: string, onCerrar?: () => void) {
         <path d={item.icon} />
       </svg>
       {item.label}
+      {!!badge && (
+        <span className="ml-auto grid h-[17px] min-w-[17px] place-items-center rounded-full bg-err px-1 text-[10.5px] font-semibold leading-none text-white">
+          {badge > 9 ? "9+" : badge}
+        </span>
+      )}
     </>
   );
   const base =
@@ -166,12 +173,17 @@ export function Sidebar({
   nombre,
   rol,
   puedeVerCostos,
+  pedidosCompraSinVer = 0,
   abierto = false,
   onCerrar,
 }: {
   nombre: string;
   rol: string;
   puedeVerCostos: boolean;
+  // Cantidad de pedidos de compra pendientes que el dueño todavía no abrió
+  // (pedidos_compra.visto_en null) -- se muestra como badge rojo en
+  // "Pedidos" (pedido del usuario 2026-09-22). Siempre 0 para encargados.
+  pedidosCompraSinVer?: number;
   // En celular la sidebar es un drawer que arranca oculto (fixed +
   // -translate-x-full) y se muestra con este flag; en desktop (lg:)
   // siempre está visible y fija en el flujo normal, sin importar
@@ -213,7 +225,14 @@ export function Sidebar({
               <p className="px-2 pb-1 text-[10.5px] font-semibold tracking-wide text-text-3">
                 {SECCION_LABEL[seccion]}
               </p>
-              {items.map((item) => renderNavItem(item, pathname, onCerrar))}
+              {items.map((item) =>
+                renderNavItem(
+                  item,
+                  pathname,
+                  onCerrar,
+                  item.label === "Pedidos" ? pedidosCompraSinVer : undefined,
+                ),
+              )}
             </div>
           ))}
         </nav>
