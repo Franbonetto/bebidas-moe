@@ -11,6 +11,7 @@ import {
   calcularMercaderiaInmovilizada,
   calcularProductosPorVencer,
   calcularResumenVentas,
+  inicioDeSemana,
   topProductosVendidos,
   type ProductoPorVencer,
   type ProductoVendido,
@@ -116,6 +117,11 @@ function BloqueSucursal({
       <Card title="Ventas">
         <div className="flex flex-col divide-y divide-[#F1F1F3]">
           <StatRow label="Vendido hoy" value={formatoMoneda.format(resumenVentas.vendidoHoy)} />
+          <StatRow
+            label="Vendido esta semana"
+            value={formatoMoneda.format(resumenVentas.vendidoSemana)}
+            sub="Lunes a hoy"
+          />
           <StatRow label="Vendido este mes" value={formatoMoneda.format(resumenVentas.vendidoMes)} />
           <StatRow
             label="Ticket promedio"
@@ -202,6 +208,7 @@ export async function DuenoDashboard() {
   const hoy = new Date().toISOString().slice(0, 10);
   const inicioHoy = new Date();
   inicioHoy.setHours(0, 0, 0, 0);
+  const inicioSemana = inicioDeSemana(new Date());
 
   const [
     { data: sucursales },
@@ -218,6 +225,7 @@ export async function DuenoDashboard() {
     { data: preciosRecientes },
     { data: preciosSucursalRecientes },
     { data: ventasHoy },
+    { data: ventasSemana },
     { data: ventasMes },
     { data: ventas30 },
   ] = await Promise.all([
@@ -266,6 +274,7 @@ export async function DuenoDashboard() {
       .gte("actualizado_en", cutoff7)
       .order("actualizado_en", { ascending: false }),
     supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioHoy.toISOString()),
+    supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioSemana.toISOString()),
     supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioMes.toISOString()),
     supabase.from("ventas").select("id, sucursal_id, total").eq("estado", "confirmada").gte("fecha", cutoff30),
   ]);
@@ -302,6 +311,7 @@ export async function DuenoDashboard() {
   );
 
   const ventasHoyList = (ventasHoy ?? []) as { sucursal_id: string; total: number }[];
+  const ventasSemanaList = (ventasSemana ?? []) as { sucursal_id: string; total: number }[];
   const ventasMesList = (ventasMes ?? []) as { sucursal_id: string; total: number }[];
 
   // Precios cargados en los últimos 7 días: base (Olavarría) + excepciones
@@ -580,6 +590,7 @@ export async function DuenoDashboard() {
                 caja={cajaPorSucursal.get(s.id)}
                 resumenVentas={calcularResumenVentas(
                   ventasHoyList.filter((v) => v.sucursal_id === s.id),
+                  ventasSemanaList.filter((v) => v.sucursal_id === s.id),
                   ventasMesList.filter((v) => v.sucursal_id === s.id),
                   ventas30List.filter((v) => v.sucursal_id === s.id),
                 )}

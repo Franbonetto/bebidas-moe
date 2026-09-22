@@ -98,27 +98,46 @@ export function calcularProductosPorVencer(
 
 export type ResumenVentas = {
   vendidoHoy: number;
+  vendidoSemana: number;
   vendidoMes: number;
   ticketPromedio: number;
   cantidadTickets: number;
 };
 
+// Lunes 00:00 de la semana que contiene `fecha` (pedido del usuario
+// 2026-09-22: "lunes a domingo... al cierre hasta las 22 horas" -- el
+// local cierra a las 22, así que una semana corrida de lunes 00:00 a
+// domingo ya cubre toda venta del día sin necesidad de un corte especial
+// a las 22, esa hora nunca queda afuera de "hoy"). getDay(): 0 = domingo.
+export function inicioDeSemana(fecha: Date): Date {
+  const resultado = new Date(fecha);
+  const dia = resultado.getDay();
+  const diasDesdeLunes = dia === 0 ? 6 : dia - 1;
+  resultado.setDate(resultado.getDate() - diasDesdeLunes);
+  resultado.setHours(0, 0, 0, 0);
+  return resultado;
+}
+
 // Resumen de ventas de una sucursal para el panel del dueño (pedido del
 // usuario 2026-09-22: "ticket promedio, cuáles son los productos que más
-// se venden"). `ventasHoy`/`ventasMes`/`ventasVentana` ya vienen filtradas
-// por sucursal y estado = 'confirmada' -- esta función solo suma/promedia,
-// no filtra (mismo criterio que el resto de los helpers de este archivo).
+// se venden" + "vendido esta semana"). `ventasHoy`/`ventasSemana`/
+// `ventasMes`/`ventasVentana` ya vienen filtradas por sucursal y estado =
+// 'confirmada' -- esta función solo suma/promedia, no filtra (mismo
+// criterio que el resto de los helpers de este archivo).
 export function calcularResumenVentas(
   ventasHoy: { total: number }[],
+  ventasSemana: { total: number }[],
   ventasMes: { total: number }[],
   ventasVentana: { total: number }[],
 ): ResumenVentas {
   const vendidoHoy = ventasHoy.reduce((acc, v) => acc + v.total, 0);
+  const vendidoSemana = ventasSemana.reduce((acc, v) => acc + v.total, 0);
   const vendidoMes = ventasMes.reduce((acc, v) => acc + v.total, 0);
   const totalVentana = ventasVentana.reduce((acc, v) => acc + v.total, 0);
   const cantidadTickets = ventasVentana.length;
   return {
     vendidoHoy,
+    vendidoSemana,
     vendidoMes,
     ticketPromedio: cantidadTickets > 0 ? totalVentana / cantidadTickets : 0,
     cantidadTickets,
