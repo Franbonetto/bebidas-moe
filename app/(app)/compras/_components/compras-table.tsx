@@ -35,7 +35,7 @@ export function EstadoCompraBadge({ estado }: { estado: Compra["estado"] }) {
   );
 }
 
-export function ComprasTable({ compras }: { compras: Compra[] }) {
+export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; puedeCargar: boolean }) {
   const [query, setQuery] = useState("");
 
   const filtradas = useMemo(() => {
@@ -63,12 +63,14 @@ export function ComprasTable({ compras }: { compras: Compra[] }) {
           <span className="whitespace-nowrap text-[12px] text-text-3">
             {filtradas.length} de {compras.length}
           </span>
-          <Link
-            href="/compras/directa"
-            className="whitespace-nowrap rounded-[6px] bg-moe px-[12px] py-[6px] text-[13px] font-medium text-white hover:bg-moe/90"
-          >
-            Cargar mercadería
-          </Link>
+          {puedeCargar && (
+            <Link
+              href="/compras/directa"
+              className="whitespace-nowrap rounded-[6px] bg-moe px-[12px] py-[6px] text-[13px] font-medium text-white hover:bg-moe/90"
+            >
+              Cargar mercadería
+            </Link>
+          )}
         </div>
       </div>
 
