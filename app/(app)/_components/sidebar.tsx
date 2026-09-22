@@ -33,8 +33,8 @@ const SECCION_LABEL: Record<Seccion, string> = {
 // siquiera se muestran inertes para el resto -- no deben saber que existen.
 // Agrupación pedida por el usuario (ref. Tiqora/Minimercado Abigail):
 // Inicio suelto arriba, después Operación (punto de venta, compras,
-// pedidos, en ese orden), Catálogo (productos y el resto del catálogo) y
-// Personas (proveedores).
+// pedidos, envíos, en ese orden -- pedido del usuario 2026-09-22),
+// Catálogo (productos y el resto del catálogo) y Personas (proveedores).
 const NAV: NavItem[] = [
   { label: "Inicio", href: "/", icon: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" },
   {
@@ -45,15 +45,6 @@ const NAV: NavItem[] = [
     // stock, movimientos), el POS lo operan los encargados.
     ocultoParaDueno: true,
     icon: "M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11",
-  },
-  {
-    label: "Envíos",
-    href: "/envios",
-    seccion: "operacion",
-    // A diferencia de Punto de venta, acá el dueño SÍ entra -- ve el
-    // historial de envíos de las dos sucursales en modo lectura, no arma
-    // pedidos (misma pantalla, /envios/page.tsx decide qué mostrarle).
-    icon: "M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10",
   },
   {
     label: "Compras",
@@ -67,6 +58,17 @@ const NAV: NavItem[] = [
     href: "/pedidos",
     seccion: "operacion",
     icon: "M16 3h5v5M4 20L20.5 3.5M21 16v5h-5M15 15l5.5 5.5M4 4l5 5",
+  },
+  {
+    label: "Envíos",
+    href: "/envios",
+    seccion: "operacion",
+    // A diferencia de Punto de venta, acá el dueño SÍ entra -- ve el
+    // historial de envíos de las dos sucursales en modo lectura, no arma
+    // pedidos (misma pantalla, /envios/page.tsx decide qué mostrarle).
+    // Orden pedido por el usuario 2026-09-22: en el panel del dueño (donde
+    // Punto de venta queda oculto) Envíos tiene que quedar tercero.
+    icon: "M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10",
   },
   {
     label: "Productos",
