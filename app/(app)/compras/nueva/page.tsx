@@ -14,7 +14,7 @@ export default async function NuevaCompraPage() {
     supabase
       .from("skus")
       .select(
-        `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+        `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
          producto:productos ( nombre, marca:marcas ( nombre ) )`,
       )
       .eq("activo", true),

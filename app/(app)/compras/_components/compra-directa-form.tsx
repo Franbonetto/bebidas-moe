@@ -52,11 +52,19 @@ export function CompraDirectaForm({
     return referencia?.costo_referencia ?? 0;
   }
 
+  // Reescanear un código de barras ya cargado suma 1 a esa línea en vez de
+  // duplicarla (el picker deja pasar el match aunque esté en excluirIds,
+  // justamente para este caso).
   function agregarLinea(sku: SkuCatalogo) {
-    setLineas((prev) => [
-      ...prev,
-      { sku, cantidad: 1, costoUnitario: costoSugerido(sku.id), precioVenta: null },
-    ]);
+    setLineas((prev) => {
+      const idx = prev.findIndex((l) => l.sku.id === sku.id);
+      if (idx >= 0) {
+        const copia = [...prev];
+        copia[idx] = { ...copia[idx], cantidad: copia[idx].cantidad + 1 };
+        return copia;
+      }
+      return [...prev, { sku, cantidad: 1, costoUnitario: costoSugerido(sku.id), precioVenta: null }];
+    });
   }
 
   function actualizarLinea(

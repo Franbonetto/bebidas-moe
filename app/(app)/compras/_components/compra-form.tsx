@@ -31,8 +31,19 @@ export function CompraForm({ proveedores, skus }: { proveedores: Proveedor[]; sk
   const excluirIds = useMemo(() => new Set(lineas.map((l) => l.sku.id)), [lineas]);
   const total = lineas.reduce((acc, l) => acc + l.cantidad * l.costoUnitario, 0);
 
+  // Reescanear un código de barras ya cargado suma 1 a esa línea en vez de
+  // duplicarla (el picker deja pasar el match aunque esté en excluirIds,
+  // justamente para este caso).
   function agregarLinea(sku: SkuCatalogo) {
-    setLineas((prev) => [...prev, { sku, cantidad: 1, costoUnitario: 0 }]);
+    setLineas((prev) => {
+      const idx = prev.findIndex((l) => l.sku.id === sku.id);
+      if (idx >= 0) {
+        const copia = [...prev];
+        copia[idx] = { ...copia[idx], cantidad: copia[idx].cantidad + 1 };
+        return copia;
+      }
+      return [...prev, { sku, cantidad: 1, costoUnitario: 0 }];
+    });
   }
 
   function actualizarLinea(index: number, campo: "cantidad" | "costoUnitario", valor: number) {

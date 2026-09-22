@@ -13,6 +13,7 @@ type SkuFila = {
   id: string;
   nombre: string;
   codigo_interno: string;
+  codigo_barras: string | null;
   tipo_presentacion: "unidad" | "pack" | "cajon" | "estuche";
   volumen: number;
   unidad_volumen: string;
@@ -48,7 +49,7 @@ export default async function PreciosPage() {
       supabase
         .from("skus")
         .select(
-          `id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+          `id, nombre, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
            cascada_cerveza_lata, costo_actual,
            producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
         )
@@ -160,6 +161,7 @@ export default async function PreciosPage() {
   const skusParaPromo: PromocionSkuOpcion[] = skusList.map((s) => ({
     id: s.id,
     codigo_interno: s.codigo_interno,
+    codigo_barras: s.codigo_barras,
     tipo_presentacion: s.tipo_presentacion,
     volumen: s.volumen,
     unidad_volumen: s.unidad_volumen,

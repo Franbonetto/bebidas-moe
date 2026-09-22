@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import {
   presentacionLabel,
   type SkuPresentacion,
@@ -9,6 +9,7 @@ import {
 export type SkuCatalogo = SkuPresentacion & {
   id: string;
   codigo_interno: string;
+  codigo_barras: string | null;
   producto: {
     nombre: string;
     marca: { nombre: string } | null;
@@ -40,13 +41,31 @@ export function SkuPicker({
       .slice(0, 8);
   }, [skus, excluirIds, query]);
 
+  // Pistola lectora: escanea y manda el código seguido de Enter. Busca por
+  // codigo_barras exacto en TODO el catálogo (no solo excluirIds, porque
+  // reescanear un SKU que ya está en la lista tiene que sumarle cantidad,
+  // no perderse el evento) -- el padre (agregarLinea) decide si suma a una
+  // línea existente o crea una nueva.
+  function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    const q = query.trim();
+    if (!q) return;
+    const porCodigoBarras = skus.find((s) => s.codigo_barras === q);
+    if (porCodigoBarras) {
+      e.preventDefault();
+      onSelect(porCodigoBarras);
+      setQuery("");
+    }
+  }
+
   return (
     <div className="relative">
       <input
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Buscar SKU por producto, marca o código…"
+        onKeyDown={onKeyDown}
+        placeholder="Escaneá el código de barras o buscá por producto, marca o código…"
         className="w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe"
       />
       {resultados.length > 0 && (
