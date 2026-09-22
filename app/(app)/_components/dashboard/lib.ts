@@ -55,3 +55,43 @@ export function calcularCostosQueSubieron(
 
   return resultado.sort((a, b) => b.variacion_pct - a.variacion_pct);
 }
+
+export type ProductoPorVencer = {
+  sku_id: string;
+  fecha_vencimiento: string;
+  dias_restantes: number;
+};
+
+// Del último lote recibido por SKU con fecha_vencimiento cargada
+// (historial_costos.fecha_vencimiento, opcional -- no todo vence, ver
+// migración 20260922110000), se queda con los que vencen dentro de la
+// ventana (incluye los ya vencidos, dias_restantes negativo). `historial`
+// viene ordenado por fecha descendente, así el primer registro de cada SKU
+// es el último lote -- mismo criterio que calcularCostosQueSubieron.
+export function calcularProductosPorVencer(
+  historial: { sku_id: string; fecha_vencimiento: string | null; fecha: string }[],
+  ventanaDias = 30,
+): ProductoPorVencer[] {
+  const vistos = new Set<string>();
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const limite = hoy.getTime() + ventanaDias * 86_400_000;
+
+  const resultado: ProductoPorVencer[] = [];
+  for (const fila of historial) {
+    if (vistos.has(fila.sku_id)) continue;
+    vistos.add(fila.sku_id);
+    if (!fila.fecha_vencimiento) continue;
+
+    const vencimiento = new Date(`${fila.fecha_vencimiento}T00:00:00`).getTime();
+    if (vencimiento > limite) continue;
+
+    resultado.push({
+      sku_id: fila.sku_id,
+      fecha_vencimiento: fila.fecha_vencimiento,
+      dias_restantes: Math.round((vencimiento - hoy.getTime()) / 86_400_000),
+    });
+  }
+
+  return resultado.sort((a, b) => a.dias_restantes - b.dias_restantes);
+}

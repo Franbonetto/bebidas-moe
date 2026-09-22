@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
-import { haceDias } from "./lib";
+import { calcularProductosPorVencer, haceDias } from "./lib";
 import {
   AlertRow,
+  Badge,
   Card,
   EmptyState,
-  PlaceholderCard,
   QuickAction,
   QuickActions,
   SectionHeader,
@@ -43,6 +43,7 @@ export async function LapridaDashboard() {
     { data: pedidoBorrador },
     { data: sugerencias },
     { data: transferenciasEnTransito },
+    { data: historial },
   ] = await Promise.all([
     supabase
       .from("skus")
@@ -71,9 +72,14 @@ export async function LapridaDashboard() {
       .eq("sucursal_destino_id", laprida.id)
       .eq("estado", "en_transito")
       .order("fecha_despacho", { ascending: true }),
+    supabase
+      .from("historial_costos")
+      .select("sku_id, fecha, fecha_vencimiento")
+      .order("fecha", { ascending: false }),
   ]);
 
   const skusList = (skus ?? []) as unknown as SkuInfo[];
+  const skuPorId = new Map(skusList.map((s) => [s.id, s]));
   const stockPorSku = new Map((stockLaprida ?? []).map((f) => [f.sku_id, f.cantidad as number]));
 
   const faltantes = skusList
@@ -96,6 +102,15 @@ export async function LapridaDashboard() {
     transferencia_items: { cantidad_despachada: number }[];
   };
   const transferenciasList = (transferenciasEnTransito ?? []) as unknown as Transferencia[];
+
+  // Productos próximos a vencer con stock hoy en Laprida (pedido del
+  // usuario 2026-09-22). El vencimiento se carga al recibir en Olavarría
+  // (única sucursal que compra), pero se muestra acá igual porque es el
+  // mismo SKU del catálogo global -- el stock no rastrea de qué lote sale
+  // cada unidad, así que es la misma aproximación que ya usa costo_actual.
+  const productosPorVencer = calcularProductosPorVencer(
+    (historial ?? []) as { sku_id: string; fecha_vencimiento: string | null; fecha: string }[],
+  ).filter((v) => (stockPorSku.get(v.sku_id) ?? 0) > 0);
 
   const pedidoBorradorData = pedidoBorrador as unknown as {
     id: string;
@@ -255,10 +270,37 @@ export async function LapridaDashboard() {
         )}
       </Card>
 
-      <PlaceholderCard
-        title="Envases"
-        nota="El circuito de envases retornables (bloque 9 de arquitectura.md) todavía no está implementado. Cuando exista, acá va a aparecer qué vacíos hay para mandar con la próxima transferencia."
-      />
+      <Card title="Productos próximos a vencer · 30 días">
+        {productosPorVencer.length === 0 ? (
+          <EmptyState title="Sin vencimientos próximos" sub="Ningún producto con vencimiento cargado vence en los próximos 30 días." />
+        ) : (
+          <div className="flex flex-col">
+            {productosPorVencer.map((v) => {
+              const sku = skuPorId.get(v.sku_id);
+              return (
+                <div
+                  key={v.sku_id}
+                  className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[10px] last:border-b-0"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-text">{sku?.producto?.nombre ?? sku?.nombre ?? "—"}</p>
+                    <p className="text-[11.5px] text-text-3">
+                      {sku ? presentacionLabel(sku) : ""} · vence {v.fecha_vencimiento.split("-").reverse().join("/")}
+                    </p>
+                  </div>
+                  <Badge color={v.dias_restantes < 0 ? "err" : v.dias_restantes <= 7 ? "warn" : "info"}>
+                    {v.dias_restantes < 0
+                      ? "Vencido"
+                      : v.dias_restantes === 0
+                        ? "Vence hoy"
+                        : `${v.dias_restantes} días`}
+                  </Badge>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

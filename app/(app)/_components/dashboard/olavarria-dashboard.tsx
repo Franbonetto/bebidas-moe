@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { EstadoPedidoBadge, type EstadoPedido } from "@/app/(app)/pedidos/_components/estado-pedido-badge";
 import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
-import { calcularCostosQueSubieron, haceDias } from "./lib";
+import { calcularCostosQueSubieron, calcularProductosPorVencer, haceDias } from "./lib";
 import {
   AlertRow,
   Badge,
@@ -51,7 +51,6 @@ export async function OlavarriaDashboard() {
     { data: stockOlavarria },
     { data: proveedorSkusActivos },
     { data: historial },
-    { data: recepcionesPendientes },
   ] = await Promise.all([
     supabase
       .from("pedidos")
@@ -69,14 +68,10 @@ export async function OlavarriaDashboard() {
       .gt("stock_minimo", 0),
     supabase.from("stock_sucursal").select("sku_id, cantidad").eq("sucursal_id", olavarria.id),
     supabase.from("proveedor_skus").select("sku_id").eq("activo", true),
-    supabase.from("historial_costos").select("sku_id, costo_unitario, fecha").order("fecha", { ascending: false }),
     supabase
-      .from("recepciones_compra")
-      .select(
-        `id, fecha, compra:compras ( id, proveedor:proveedores ( razon_social, nombre_comercial ) )`,
-      )
-      .eq("estado", "pendiente")
-      .order("fecha", { ascending: true }),
+      .from("historial_costos")
+      .select("sku_id, costo_unitario, fecha, fecha_vencimiento")
+      .order("fecha", { ascending: false }),
   ]);
 
   const pedidosList = (pedidos ?? []) as unknown as PedidoRow[];
@@ -102,12 +97,13 @@ export async function OlavarriaDashboard() {
   );
   const skuPorId = new Map(skusList.map((s) => [s.id, s]));
 
-  type RecepcionPendiente = {
-    id: string;
-    fecha: string;
-    compra: { id: string; proveedor: { razon_social: string; nombre_comercial: string | null } | null } | null;
-  };
-  const recepcionesList = (recepcionesPendientes ?? []) as unknown as RecepcionPendiente[];
+  // Productos próximos a vencer con stock hoy en Olavarría (pedido del
+  // usuario 2026-09-22: reemplaza la tarjeta de "Recepciones de compra
+  // pendientes", que con cargar_compra_directa() ya no tiene sentido --
+  // toda compra se recibe completa en el momento, nunca queda pendiente).
+  const productosPorVencer = calcularProductosPorVencer(
+    (historial ?? []) as { sku_id: string; fecha_vencimiento: string | null; fecha: string }[],
+  ).filter((v) => (stockPorSku.get(v.sku_id) ?? 0) > 0);
 
   return (
     <div className="flex flex-col gap-5">
@@ -148,7 +144,7 @@ export async function OlavarriaDashboard() {
       <div>
         <SectionHeader title="Acciones rápidas" />
         <QuickActions>
-          <QuickAction href="/compras/nueva" label="Cargar compra" sub="Nueva factura de proveedor" />
+          <QuickAction href="/compras/directa" label="Cargar mercadería" sub="Nueva factura de proveedor" />
           <QuickAction href="/pedidos" label="Ver pedidos de Laprida" sub={`${enCurso.length} en curso`} />
           <QuickAction href="/inventarios/nuevo" label="Hacer inventario" sub="General, por categoría o puntual" />
         </QuickActions>
@@ -182,26 +178,34 @@ export async function OlavarriaDashboard() {
           )}
         </Card>
 
-        <Card title="Recepciones de compra pendientes">
-          {recepcionesList.length === 0 ? (
-            <EmptyState title="Sin recepciones pendientes" sub="Las compras confirmadas que esperan mercadería van a aparecer acá." />
+        <Card title="Productos próximos a vencer · 30 días">
+          {productosPorVencer.length === 0 ? (
+            <EmptyState title="Sin vencimientos próximos" sub="Ningún producto con vencimiento cargado vence en los próximos 30 días." />
           ) : (
             <div className="flex flex-col">
-              {recepcionesList.map((r) => (
-                <Link
-                  key={r.id}
-                  href={`/compras/${r.compra?.id}`}
-                  className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[10px] last:border-b-0 hover:bg-[#FAFAFB]"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-text">
-                      {r.compra?.proveedor?.nombre_comercial ?? r.compra?.proveedor?.razon_social ?? "—"}
-                    </p>
-                    <p className="text-[11.5px] text-text-3">Pendiente {haceDias(r.fecha)}</p>
+              {productosPorVencer.map((v) => {
+                const sku = skuPorId.get(v.sku_id);
+                return (
+                  <div
+                    key={v.sku_id}
+                    className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[10px] last:border-b-0"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-text">{sku?.producto?.nombre ?? sku?.nombre ?? "—"}</p>
+                      <p className="text-[11.5px] text-text-3">
+                        {sku ? presentacionLabel(sku) : ""} · vence {v.fecha_vencimiento.split("-").reverse().join("/")}
+                      </p>
+                    </div>
+                    <Badge color={v.dias_restantes < 0 ? "err" : v.dias_restantes <= 7 ? "warn" : "info"}>
+                      {v.dias_restantes < 0
+                        ? "Vencido"
+                        : v.dias_restantes === 0
+                          ? "Vence hoy"
+                          : `${v.dias_restantes} días`}
+                    </Badge>
                   </div>
-                  <Badge color="info">Pendiente</Badge>
-                </Link>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>
