@@ -144,8 +144,9 @@ export function CompraDirectaForm({
       if (l.costoUnitario < 0) return "El costo unitario no puede ser negativo.";
     }
     for (const l of lineas) {
-      if (l.precioVenta !== null && l.precioVenta < 0)
-        return "El precio de venta no puede ser negativo.";
+      if (l.precioVenta === null)
+        return `Cargá el precio de venta de ${l.sku.producto?.nombre ?? l.sku.codigo_interno} — ${presentacionLabel(l.sku)}.`;
+      if (l.precioVenta < 0) return "El precio de venta no puede ser negativo.";
     }
     return null;
   }
@@ -210,11 +211,10 @@ export function CompraDirectaForm({
     <div className="mx-auto max-w-[880px] rounded-card border border-border bg-bg p-5">
       <h2 className="mb-1 text-[14px] font-semibold text-text">Cargar mercadería</h2>
       <p className="mb-4 text-[12.5px] text-text-3">
-        Elegí el proveedor, cargá lo que entró, el costo y —si corresponde definirlo ahora— el
-        precio de venta, y queda todo actualizado (compra, stock, costo y precio) en un solo paso.
-        Cada presentación (x24, x6, unidad) tiene su propio precio, siempre cargado a mano. Si
-        agregás un pack que se desarma, el resto de la familia aparece abajo para poder cargarle el
-        precio ahí mismo, aunque no haya llegado stock nuevo de esa presentación hoy.
+        Elegí el proveedor, cargá lo que entró, el costo y el precio de venta, y queda todo
+        actualizado (compra, stock, costo y precio) en un solo paso. Cada presentación (x24, x6,
+        unidad) tiene su propio precio, siempre cargado a mano y obligatorio. Si agregás un pack
+        que se desarma, el resto de la familia aparece abajo para cargarle el precio ahí mismo.
       </p>
 
       {avisoPrecio && (
@@ -316,7 +316,6 @@ export function CompraDirectaForm({
                     <p className="font-medium text-text">{l.sku.producto?.nombre}</p>
                     <p className="text-[11.5px] text-text-3">
                       {l.sku.producto?.marca?.nombre} — {presentacionLabel(l.sku)}
-                      {l.soloPrecio && " · no llegó hoy, solo precio"}
                     </p>
                   </td>
                   <td className="px-[12px] py-[7px] align-middle">
@@ -351,8 +350,10 @@ export function CompraDirectaForm({
                       type="number"
                       min={0}
                       step="0.01"
-                      placeholder="Opcional"
-                      className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
+                      placeholder="Obligatorio"
+                      className={`w-full rounded-[6px] border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe ${
+                        l.precioVenta === null ? "border-warn/50" : "border-border"
+                      }`}
                       value={l.precioVenta ?? ""}
                       onChange={(e) =>
                         actualizarLinea(
