@@ -12,7 +12,7 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
       `id, numero_factura, fecha_factura, estado, total,
        proveedor:proveedores ( id, razon_social, nombre_comercial ),
        compra_items (
-         id, sku_id, cantidad, costo_unitario, subtotal,
+         id, sku_id, cantidad, costo_unitario, subtotal, fecha_vencimiento,
          sku:skus ( nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
                     producto:productos ( nombre, marca:marcas ( nombre ) ) )
        )`,

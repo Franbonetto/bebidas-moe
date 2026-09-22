@@ -7,6 +7,9 @@ export type LineaCompra = {
   sku_id: string;
   cantidad: number;
   costo_unitario: number;
+  // Opcional: no todos los productos vencen (ej. vinos), otros sí (ej.
+  // gaseosa) -- se carga si corresponde, nunca es obligatorio.
+  fecha_vencimiento: string | null;
 };
 
 function validarLineas(lineas: LineaCompra[]): string | null {

@@ -20,6 +20,7 @@ export type ItemCompraDetalle = {
   cantidad: number;
   costo_unitario: number;
   subtotal: number;
+  fecha_vencimiento: string | null;
   recibido_previo: number;
   pendiente: number;
   sku: SkuInfo | null;
@@ -106,6 +107,9 @@ export function CompraDetalle({
                   Subtotal
                 </th>
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                  Vencimiento
+                </th>
+                <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                   Recibido
                 </th>
               </tr>
@@ -113,7 +117,7 @@ export function CompraDetalle({
             <tbody>
               {compra.items.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-[14px] py-[16px] text-center text-[12.5px] text-text-3">
+                  <td colSpan={6} className="px-[14px] py-[16px] text-center text-[12.5px] text-text-3">
                     Todavía no hay líneas en esta compra.
                   </td>
                 </tr>
@@ -132,6 +136,9 @@ export function CompraDetalle({
                     </td>
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text">
                       {formatoMoneda.format(item.subtotal)}
+                    </td>
+                    <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
+                      {item.fecha_vencimiento ?? "—"}
                     </td>
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
                       {item.recibido_previo}

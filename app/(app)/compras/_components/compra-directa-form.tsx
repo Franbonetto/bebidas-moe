@@ -17,6 +17,9 @@ type Linea = {
   cantidad: number;
   costoUnitario: number;
   precioVenta: number | null;
+  // Opcional: no todos los productos vencen (ej. vinos), otros sí (ej.
+  // gaseosa) -- pedido del usuario 2026-09-22.
+  fechaVencimiento: string;
   // Familia (x24 -> x6 -> unidad, ver desarma_en_sku_id): al agregar un
   // pack, el resto de su familia aparece acá solo para cargarle el precio
   // de venta ahí mismo -- no entra como línea de compra real (nada de eso
@@ -111,14 +114,28 @@ export function CompraDirectaForm({
       } else {
         siguiente = [
           ...prev,
-          { sku, cantidad: 1, costoUnitario: costoSugerido(sku.id), precioVenta: null, soloPrecio: false },
+          {
+            sku,
+            cantidad: 1,
+            costoUnitario: costoSugerido(sku.id),
+            precioVenta: null,
+            fechaVencimiento: "",
+            soloPrecio: false,
+          },
         ];
       }
 
       const idsPresentes = new Set(siguiente.map((l) => l.sku.id));
       for (const familiar of familiaCompleta(sku.id)) {
         if (!idsPresentes.has(familiar.id)) {
-          siguiente.push({ sku: familiar, cantidad: 0, costoUnitario: 0, precioVenta: null, soloPrecio: true });
+          siguiente.push({
+            sku: familiar,
+            cantidad: 0,
+            costoUnitario: 0,
+            precioVenta: null,
+            fechaVencimiento: "",
+            soloPrecio: true,
+          });
           idsPresentes.add(familiar.id);
         }
       }
@@ -132,6 +149,10 @@ export function CompraDirectaForm({
     valor: number | null,
   ) {
     setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, [campo]: valor } : l)));
+  }
+
+  function actualizarFechaVencimiento(index: number, valor: string) {
+    setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, fechaVencimiento: valor } : l)));
   }
 
   function quitarLinea(index: number) {
@@ -204,6 +225,7 @@ export function CompraDirectaForm({
             sku_id: l.sku.id,
             cantidad: l.cantidad,
             costo_unitario: l.costoUnitario,
+            fecha_vencimiento: l.fechaVencimiento || null,
           })),
       });
 
@@ -248,7 +270,8 @@ export function CompraDirectaForm({
         Elegí el proveedor, cargá lo que entró, el costo y el precio de venta, y queda todo
         actualizado (compra, stock, costo y precio) en un solo paso. Cada presentación (x24, x6,
         unidad) tiene su propio precio, siempre cargado a mano y obligatorio. Si agregás un pack
-        que se desarma, el resto de la familia aparece abajo para cargarle el precio ahí mismo.
+        que se desarma, el resto de la familia aparece abajo para cargarle el precio ahí mismo. El
+        vencimiento es opcional: cargalo solo si el producto lo tiene.
       </p>
 
       {avisoPrecio && (
@@ -327,6 +350,9 @@ export function CompraDirectaForm({
               <th className="w-[140px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                 Precio de venta
               </th>
+              <th className="w-[150px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                Vencimiento
+              </th>
               <th className="w-[120px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                 Subtotal
               </th>
@@ -336,7 +362,7 @@ export function CompraDirectaForm({
           <tbody>
             {lineas.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-[12px] py-[16px] text-center text-[12.5px] text-text-3">
+                <td colSpan={7} className="px-[12px] py-[16px] text-center text-[12.5px] text-text-3">
                   Todavía no agregaste productos.
                 </td>
               </tr>
@@ -436,6 +462,19 @@ export function CompraDirectaForm({
                         )
                       }
                     />
+                  </td>
+                  <td className="px-[12px] py-[7px] align-middle">
+                    {l.soloPrecio ? (
+                      <span className="block text-right text-[12.5px] text-text-3">—</span>
+                    ) : (
+                      <input
+                        type="date"
+                        title="Opcional — solo si el producto vence"
+                        className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[12.5px] tabular-nums outline-none focus:border-moe"
+                        value={l.fechaVencimiento}
+                        onChange={(e) => actualizarFechaVencimiento(i, e.target.value)}
+                      />
+                    )}
                   </td>
                   <td className="px-[12px] py-[7px] text-right align-middle tabular-nums text-text">
                     {l.soloPrecio ? "—" : formatoMoneda.format(l.cantidad * l.costoUnitario)}
