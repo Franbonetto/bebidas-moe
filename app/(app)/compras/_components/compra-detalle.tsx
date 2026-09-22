@@ -53,6 +53,12 @@ function presentacionSku(sku: SkuInfo | null) {
   return [sku.producto?.marca?.nombre, presentacionLabel(sku)].filter(Boolean).join(" — ");
 }
 
+function formatoVencimiento(fecha: string | null) {
+  if (!fecha) return "—";
+  const [aaaa, mm, dd] = fecha.split("-");
+  return `${dd}/${mm}/${aaaa}`;
+}
+
 // Solo lectura: toda compra se carga y recibe en un solo paso desde
 // "Cargar mercadería" (cargar_compra_directa()), así que para cuando esta
 // pantalla existe la compra ya está cerrada -- no hay borrador para editar
@@ -138,7 +144,7 @@ export function CompraDetalle({
                       {formatoMoneda.format(item.subtotal)}
                     </td>
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
-                      {item.fecha_vencimiento ?? "—"}
+                      {formatoVencimiento(item.fecha_vencimiento)}
                     </td>
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
                       {item.recibido_previo}

@@ -31,6 +31,30 @@ const inputClass =
   "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe";
 const labelClass = "mb-[4px] block text-[12px] font-medium text-text-2";
 
+// El <input type="date"> nativo muestra mm/dd/aaaa o dd/mm/aaaa según el
+// idioma configurado en el navegador del que carga, no algo que controlemos
+// desde el HTML (el atributo lang no lo cambia) -- para garantizar
+// dd/mm/aaaa siempre, sin importar esa configuración, se usa un campo de
+// texto con formato controlado (pedido del usuario 2026-09-22).
+function formatearFechaVencimiento(valor: string): string {
+  const digitos = valor.replace(/\D/g, "").slice(0, 8);
+  const dd = digitos.slice(0, 2);
+  const mm = digitos.slice(2, 4);
+  const aaaa = digitos.slice(4, 8);
+  return [dd, mm, aaaa].filter(Boolean).join("/");
+}
+
+function fechaVencimientoValida(valor: string): boolean {
+  return valor === "" || /^\d{2}\/\d{2}\/\d{4}$/.test(valor);
+}
+
+function fechaVencimientoAIso(valor: string): string | null {
+  const m = valor.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  const [, dd, mm, aaaa] = m;
+  return `${aaaa}-${mm}-${dd}`;
+}
+
 export function CompraDirectaForm({
   proveedores,
   skus,
@@ -152,7 +176,8 @@ export function CompraDirectaForm({
   }
 
   function actualizarFechaVencimiento(index: number, valor: string) {
-    setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, fechaVencimiento: valor } : l)));
+    const formateado = formatearFechaVencimiento(valor);
+    setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, fechaVencimiento: formateado } : l)));
   }
 
   function quitarLinea(index: number) {
@@ -202,6 +227,8 @@ export function CompraDirectaForm({
       if (l.precioVenta === null)
         return `Cargá el precio de venta de ${l.sku.producto?.nombre ?? l.sku.codigo_interno} — ${presentacionLabel(l.sku)}.`;
       if (l.precioVenta < 0) return "El precio de venta no puede ser negativo.";
+      if (!fechaVencimientoValida(l.fechaVencimiento))
+        return `La fecha de vencimiento de ${l.sku.producto?.nombre ?? l.sku.codigo_interno} no es válida (dd/mm/aaaa).`;
     }
     return null;
   }
@@ -225,7 +252,7 @@ export function CompraDirectaForm({
             sku_id: l.sku.id,
             cantidad: l.cantidad,
             costo_unitario: l.costoUnitario,
-            fecha_vencimiento: l.fechaVencimiento || null,
+            fecha_vencimiento: fechaVencimientoAIso(l.fechaVencimiento),
           })),
       });
 
@@ -468,9 +495,12 @@ export function CompraDirectaForm({
                       <span className="block text-right text-[12.5px] text-text-3">—</span>
                     ) : (
                       <input
-                        type="date"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="dd/mm/aaaa"
                         title="Opcional — solo si el producto vence"
-                        className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[12.5px] tabular-nums outline-none focus:border-moe"
+                        maxLength={10}
+                        className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[12.5px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
                         value={l.fechaVencimiento}
                         onChange={(e) => actualizarFechaVencimiento(i, e.target.value)}
                       />
