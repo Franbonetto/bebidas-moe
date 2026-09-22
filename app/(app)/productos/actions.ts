@@ -169,6 +169,50 @@ export async function actualizarCodigoBarras(
   return { ok: true };
 }
 
+// Activa "cascada_cerveza_lata" en toda la familia de desarme a partir del
+// pack x24 (x24 -> x6 -> unidad, siguiendo desarma_en_sku_id -- ver
+// 28_fix_direccion_cascada_desarme.sql). Deliberadamente NO usa
+// producto_id: un mismo producto puede tener además presentaciones
+// retornables (ej. "Imperial Lager 1000 ml" + "Cajón x12") que no son parte
+// de la cascada de lata y no tienen que activarse. Pensado para usarse
+// desde Cargar mercadería en el momento de cargar el costo del x24 (pedido
+// del usuario 2026-09-21: "te debe solicitar activar cascada").
+async function buscarSiguienteDesarme(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  skuId: string,
+): Promise<{ error: string } | { siguienteId: string | null }> {
+  const { data, error } = await supabase
+    .from("skus")
+    .select("desarma_en_sku_id")
+    .eq("id", skuId)
+    .maybeSingle();
+  if (error) return { error: error.message };
+  return { siguienteId: data?.desarma_en_sku_id ?? null };
+}
+
+export async function activarCascadaCerveza(skuX24Id: string): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  const ids: string[] = [skuX24Id];
+  let siguienteId: string | null = skuX24Id;
+
+  for (let nivel = 0; nivel < 3 && siguienteId; nivel++) {
+    const resultado = await buscarSiguienteDesarme(supabase, siguienteId);
+    if ("error" in resultado) return resultado;
+    siguienteId = resultado.siguienteId;
+    if (siguienteId) ids.push(siguienteId);
+  }
+
+  const { error } = await supabase.from("skus").update({ cascada_cerveza_lata: true }).in("id", ids);
+  if (error) return { error: error.message };
+
+  revalidatePath("/precios");
+  revalidatePath("/compras");
+  revalidatePath("/vender");
+  revalidatePath("/envios");
+  return { ok: true };
+}
+
 export type MovimientoSku = {
   id: string;
   tipo: string;

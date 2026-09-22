@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { presentacionLabel } from "@/app/(app)/productos/_components/productos-table";
 import { cargarCompraDirecta } from "../actions";
 import { guardarPrecioBase } from "@/app/(app)/precios/actions";
-import { actualizarCodigoBarras } from "@/app/(app)/productos/actions";
+import { actualizarCodigoBarras, activarCascadaCerveza } from "@/app/(app)/productos/actions";
+import { calcularCascadaCerveza } from "@/lib/precios";
 import { formatoMoneda } from "../_lib/formato";
 import { SkuPicker, type SkuCatalogo } from "./sku-picker";
 
@@ -17,6 +18,7 @@ type Linea = {
   cantidad: number;
   costoUnitario: number;
   precioVenta: number | null;
+  activarCascada: boolean;
 };
 
 const inputClass =
@@ -27,11 +29,17 @@ export function CompraDirectaForm({
   proveedores,
   skus,
   costosReferencia,
+  skusConCascadaOfrecida,
 }: {
   proveedores: Proveedor[];
   skus: SkuCatalogo[];
   costosReferencia: CostoReferencia[];
+  // Pack x24 de una familia de cerveza en lata que todavía no tiene la
+  // cascada activada (ver compras/directa/page.tsx) -- ahí se ofrece
+  // activarla con vista previa en vivo del precio del x6 y la unidad.
+  skusConCascadaOfrecida: string[];
 }) {
+  const cascadaOfrecidaIds = useMemo(() => new Set(skusConCascadaOfrecida), [skusConCascadaOfrecida]);
   const router = useRouter();
   const [proveedorId, setProveedorId] = useState("");
   const [numeroFactura, setNumeroFactura] = useState("");
@@ -64,7 +72,10 @@ export function CompraDirectaForm({
         copia[idx] = { ...copia[idx], cantidad: copia[idx].cantidad + 1 };
         return copia;
       }
-      return [...prev, { sku, cantidad: 1, costoUnitario: costoSugerido(sku.id), precioVenta: null }];
+      return [
+        ...prev,
+        { sku, cantidad: 1, costoUnitario: costoSugerido(sku.id), precioVenta: null, activarCascada: false },
+      ];
     });
   }
 
@@ -74,6 +85,12 @@ export function CompraDirectaForm({
     valor: number | null,
   ) {
     setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, [campo]: valor } : l)));
+  }
+
+  function alternarCascada(index: number, activar: boolean) {
+    setLineas((prev) =>
+      prev.map((l, i) => (i === index ? { ...l, activarCascada: activar, precioVenta: activar ? null : l.precioVenta } : l)),
+    );
   }
 
   function quitarLinea(index: number) {
@@ -121,11 +138,18 @@ export function CompraDirectaForm({
       const lineasConPrecio = lineas.filter(
         (l): l is Linea & { precioVenta: number } => l.precioVenta !== null,
       );
-      const resultadosPrecio = await Promise.all(
-        lineasConPrecio.map((l) => guardarPrecioBase(l.sku.id, l.precioVenta)),
-      );
-      const fallos = lineasConPrecio
+      const lineasConCascada = lineas.filter((l) => l.activarCascada);
+
+      const [resultadosPrecio, resultadosCascada] = await Promise.all([
+        Promise.all(lineasConPrecio.map((l) => guardarPrecioBase(l.sku.id, l.precioVenta))),
+        Promise.all(lineasConCascada.map((l) => activarCascadaCerveza(l.sku.id))),
+      ]);
+
+      const fallosPrecio = lineasConPrecio
         .map((l, i) => ({ linea: l, resultado: resultadosPrecio[i] }))
+        .filter((f) => "error" in f.resultado);
+      const fallosCascada = lineasConCascada
+        .map((l, i) => ({ linea: l, resultado: resultadosCascada[i] }))
         .filter((f) => "error" in f.resultado);
 
       setLineas([]);
@@ -133,13 +157,24 @@ export function CompraDirectaForm({
       setFechaFactura("");
       setProveedorId("");
 
-      if (fallos.length > 0) {
+      if (fallosPrecio.length > 0 || fallosCascada.length > 0) {
         setCompraCreadaId(resultado.id);
-        setAvisoPrecio(
-          `La compra se registró bien, pero no se pudo guardar el precio de: ${fallos
-            .map((f) => f.linea.sku.producto?.nombre ?? f.linea.sku.codigo_interno)
-            .join(", ")}. Cargalo desde Precios.`,
-        );
+        const partes: string[] = [];
+        if (fallosPrecio.length > 0) {
+          partes.push(
+            `no se pudo guardar el precio de: ${fallosPrecio
+              .map((f) => f.linea.sku.producto?.nombre ?? f.linea.sku.codigo_interno)
+              .join(", ")}`,
+          );
+        }
+        if (fallosCascada.length > 0) {
+          partes.push(
+            `no se pudo activar la cascada de: ${fallosCascada
+              .map((f) => f.linea.sku.producto?.nombre ?? f.linea.sku.codigo_interno)
+              .join(", ")}`,
+          );
+        }
+        setAvisoPrecio(`La compra se registró bien, pero ${partes.join("; ")}. Revisalo desde Precios.`);
         return;
       }
 
@@ -248,64 +283,100 @@ export function CompraDirectaForm({
                 </td>
               </tr>
             ) : (
-              lineas.map((l, i) => (
-                <tr key={l.sku.id} className="border-b border-[#F1F1F3] last:border-b-0">
-                  <td className="px-[12px] py-[7px] align-middle">
-                    <p className="font-medium text-text">{l.sku.producto?.nombre}</p>
-                    <p className="text-[11.5px] text-text-3">
-                      {l.sku.producto?.marca?.nombre} — {presentacionLabel(l.sku)}
-                    </p>
-                  </td>
-                  <td className="px-[12px] py-[7px] align-middle">
-                    <input
-                      type="number"
-                      min={1}
-                      className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                      value={l.cantidad}
-                      onChange={(e) => actualizarLinea(i, "cantidad", Number(e.target.value))}
-                    />
-                  </td>
-                  <td className="px-[12px] py-[7px] align-middle">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                      value={l.costoUnitario}
-                      onChange={(e) => actualizarLinea(i, "costoUnitario", Number(e.target.value))}
-                    />
-                  </td>
-                  <td className="px-[12px] py-[7px] align-middle">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      placeholder="Opcional"
-                      className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
-                      value={l.precioVenta ?? ""}
-                      onChange={(e) =>
-                        actualizarLinea(
-                          i,
-                          "precioVenta",
-                          e.target.value === "" ? null : Number(e.target.value),
-                        )
-                      }
-                    />
-                  </td>
-                  <td className="px-[12px] py-[7px] text-right align-middle tabular-nums text-text">
-                    {formatoMoneda.format(l.cantidad * l.costoUnitario)}
-                  </td>
-                  <td className="px-[12px] py-[7px] text-right align-middle">
-                    <button
-                      type="button"
-                      onClick={() => quitarLinea(i)}
-                      className="text-[12px] text-text-3 hover:text-err"
-                    >
-                      Quitar
-                    </button>
-                  </td>
-                </tr>
-              ))
+              lineas.map((l, i) => {
+                const ofreceCascada = cascadaOfrecidaIds.has(l.sku.id);
+                const preview = ofreceCascada ? calcularCascadaCerveza(l.costoUnitario || 0) : null;
+                return (
+                  <Fragment key={l.sku.id}>
+                    <tr className="border-b border-[#F1F1F3] last:border-b-0">
+                      <td className="px-[12px] py-[7px] align-middle">
+                        <p className="font-medium text-text">{l.sku.producto?.nombre}</p>
+                        <p className="text-[11.5px] text-text-3">
+                          {l.sku.producto?.marca?.nombre} — {presentacionLabel(l.sku)}
+                        </p>
+                      </td>
+                      <td className="px-[12px] py-[7px] align-middle">
+                        <input
+                          type="number"
+                          min={1}
+                          className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
+                          value={l.cantidad}
+                          onChange={(e) => actualizarLinea(i, "cantidad", Number(e.target.value))}
+                        />
+                      </td>
+                      <td className="px-[12px] py-[7px] align-middle">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
+                          value={l.costoUnitario}
+                          onChange={(e) => actualizarLinea(i, "costoUnitario", Number(e.target.value))}
+                        />
+                      </td>
+                      <td className="px-[12px] py-[7px] align-middle">
+                        {l.activarCascada ? (
+                          <span className="block text-right text-[12px] text-text-3">Automático</span>
+                        ) : (
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            placeholder="Opcional"
+                            className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
+                            value={l.precioVenta ?? ""}
+                            onChange={(e) =>
+                              actualizarLinea(
+                                i,
+                                "precioVenta",
+                                e.target.value === "" ? null : Number(e.target.value),
+                              )
+                            }
+                          />
+                        )}
+                      </td>
+                      <td className="px-[12px] py-[7px] text-right align-middle tabular-nums text-text">
+                        {formatoMoneda.format(l.cantidad * l.costoUnitario)}
+                      </td>
+                      <td className="px-[12px] py-[7px] text-right align-middle">
+                        <button
+                          type="button"
+                          onClick={() => quitarLinea(i)}
+                          className="text-[12px] text-text-3 hover:text-err"
+                        >
+                          Quitar
+                        </button>
+                      </td>
+                    </tr>
+                    {ofreceCascada && (
+                      <tr className="border-b border-[#F1F1F3] bg-info-bg/40 last:border-b-0">
+                        <td colSpan={6} className="px-[12px] py-[8px]">
+                          <label className="flex flex-wrap items-center gap-2 text-[12px] text-text-2">
+                            <input
+                              type="checkbox"
+                              checked={l.activarCascada}
+                              onChange={(e) => alternarCascada(i, e.target.checked)}
+                            />
+                            <span>
+                              Activar cascada de cerveza en lata para esta familia — con este costo, el x6 y
+                              la unidad van a quedar en:
+                            </span>
+                            {preview && (
+                              <span className="font-medium text-text">
+                                Olavarría x24 {formatoMoneda.format(preview.x24Olavarria)} · x6{" "}
+                                {formatoMoneda.format(preview.x6Olavarria)} · unidad{" "}
+                                {formatoMoneda.format(preview.unidadOlavarria)} — Laprida x6{" "}
+                                {formatoMoneda.format(preview.x6Laprida)} · unidad{" "}
+                                {formatoMoneda.format(preview.unidadLaprida)}
+                              </span>
+                            )}
+                          </label>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })
             )}
           </tbody>
         </table>
