@@ -38,6 +38,13 @@ export function PrecioSkuForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // El x24 (tope de la cascada) SÍ carga precio a mano aunque cascada esté
+  // tildado -- es la base de la que se calculan el x6 y la unidad hacia
+  // abajo (2026-09-22). El x6/unidad de una familia con cascada activa
+  // nunca cargan precio manual.
+  const esX24 = fila.presentacion.unidades_contenidas === 24;
+  const puedeCargarPrecioBase = !cascada || esX24;
+
   function guardar() {
     setError(null);
     startTransition(async () => {
@@ -49,7 +56,7 @@ export function PrecioSkuForm({
         }
       }
 
-      if (!cascada) {
+      if (puedeCargarPrecioBase) {
         const valor = precioBase.trim() === "" ? null : Number(precioBase);
         if (valor != null) {
           const resultado = await guardarPrecioBase(fila.id, valor);
@@ -101,13 +108,16 @@ export function PrecioSkuForm({
             Participa de la cascada de cerveza en lata
           </label>
           <p className="-mt-2 text-[11.5px] text-text-3">
-            Si está tildado, el precio de Olavarría y Laprida se calcula solo a partir del costo del
-            pack x24 (no se carga a mano).
+            Si está tildado, el precio de Olavarría y Laprida se calcula a partir del precio de venta
+            que cargues acá para el pack x24 (el x6 y la unidad de esta familia dejan de tener precio
+            manual).
           </p>
 
-          {!cascada && (
+          {puedeCargarPrecioBase ? (
             <div>
-              <label className={labelClass}>Precio base Olavarría</label>
+              <label className={labelClass}>
+                Precio de venta {cascada ? "del pack x24 (base de la cascada)" : "Olavarría"}
+              </label>
               <input
                 type="number"
                 min={0}
@@ -118,6 +128,11 @@ export function PrecioSkuForm({
                 placeholder="Sin precio cargado"
               />
             </div>
+          ) : (
+            <p className="text-[12px] text-text-3">
+              Este SKU no es el pack x24: su precio se calcula solo a partir del precio de venta que se
+              cargue en el x24 de esta familia.
+            </p>
           )}
 
           <div className="border-t border-border pt-3">
@@ -125,7 +140,7 @@ export function PrecioSkuForm({
               Excepción manual (pisa el precio calculado o el recargo)
             </p>
             {sucursales.map((s) => {
-              const bloqueada = s.es_central && !cascada;
+              const bloqueada = s.es_central && puedeCargarPrecioBase;
               return (
                 <div key={s.id} className="mb-2">
                   <label className={labelClass}>{s.nombre}</label>

@@ -92,12 +92,15 @@ export default async function PreciosPage() {
   const descuentoPorClave = new Map<string, number>();
   for (const d of descuentosEfectivo ?? []) descuentoPorClave.set(`${d.sucursal_id}:${d.categoria_id}`, d.porcentaje);
 
-  // Costo del x24 por familia (producto_id): unica fuente de costo para
-  // toda la cascada de cerveza en lata, tanto Olavarria como Laprida.
+  // Costo del x24 por familia (producto_id): solo para el aviso de "por
+  // debajo de costo" -- la base real de la cascada es el precio de venta
+  // cargado a mano (2026-09-22, ver lib/precios.ts).
   const costoX24PorProducto = new Map<string, number | null>();
+  const precioVentaX24PorProducto = new Map<string, number | null>();
   for (const s of skusList) {
     if (s.cascada_cerveza_lata && s.unidades_contenidas === 24 && s.producto) {
       costoX24PorProducto.set(s.producto.id, s.costo_actual);
+      precioVentaX24PorProducto.set(s.producto.id, precioBasePorSku.get(s.id) ?? null);
     }
   }
 
@@ -114,6 +117,7 @@ export default async function PreciosPage() {
     return calcularPrecioVenta(skuParaPrecio, sucursalParaPrecio, {
       costoActualPropio: sku.costo_actual,
       costoActualX24Familia: sku.producto ? (costoX24PorProducto.get(sku.producto.id) ?? null) : null,
+      precioVentaX24Familia: sku.producto ? (precioVentaX24PorProducto.get(sku.producto.id) ?? null) : null,
       overridePrecio: overridePorClave.get(`${sucursal.id}:${sku.id}`) ?? null,
       precioBaseManual: precioBasePorSku.get(sku.id) ?? null,
       recargoSkuMonto: recargoSkuPorClave.get(`${sucursal.id}:${sku.id}`) ?? null,

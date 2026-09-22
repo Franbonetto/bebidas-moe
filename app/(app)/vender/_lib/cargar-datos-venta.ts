@@ -139,9 +139,14 @@ export async function cargarDatosVenta(
   const sucursalParaPrecio: SucursalParaPrecio = { id: sucursal.id, esCentral: sucursal.es_central };
 
   const costoX24PorProducto = new Map<string, number | null>();
+  // Precio de venta cargado a mano para el x24 (base real de la cascada
+  // desde 2026-09-22, ver lib/precios.ts) -- distinto del costo, que solo
+  // sirve para el aviso de "por debajo de costo".
+  const precioVentaX24PorProducto = new Map<string, number | null>();
   for (const s of skusList) {
     if (s.cascada_cerveza_lata && s.unidades_contenidas === 24 && s.producto) {
       costoX24PorProducto.set(s.producto.id, s.costo_actual);
+      precioVentaX24PorProducto.set(s.producto.id, precioBasePorSku.get(s.id) ?? null);
     }
   }
 
@@ -173,6 +178,7 @@ export async function cargarDatosVenta(
     const precio = calcularPrecioVenta(skuParaPrecio, sucursalParaPrecio, {
       costoActualPropio: s.costo_actual,
       costoActualX24Familia: s.producto ? (costoX24PorProducto.get(s.producto.id) ?? null) : null,
+      precioVentaX24Familia: s.producto ? (precioVentaX24PorProducto.get(s.producto.id) ?? null) : null,
       overridePrecio: overridePorSku.get(s.id) ?? null,
       precioBaseManual: precioBasePorSku.get(s.id) ?? null,
       recargoSkuMonto: recargoSkuPorId.get(s.id) ?? null,

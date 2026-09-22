@@ -284,11 +284,14 @@ export default async function AlertasPage() {
       descuentoPorClave.set(`${d.sucursal_id}:${d.categoria_id}`, d.porcentaje);
 
     // Costo del x24 por familia (producto_id), igual que /precios/page.tsx:
-    // unica fuente de costo para toda la cascada de cerveza en lata.
+    // solo para el aviso de "por debajo de costo" -- la base real de la
+    // cascada es el precio de venta cargado a mano (2026-09-22).
     const costoX24PorProducto = new Map<string, number | null>();
+    const precioVentaX24PorProducto = new Map<string, number | null>();
     for (const sku of skusList) {
       if (sku.cascada_cerveza_lata && sku.unidades_contenidas === 24 && sku.producto) {
         costoX24PorProducto.set(sku.producto.id, sku.costo_actual);
+        precioVentaX24PorProducto.set(sku.producto.id, precioBasePorSku.get(sku.id) ?? null);
       }
     }
 
@@ -309,6 +312,8 @@ export default async function AlertasPage() {
           costoActualPropio: sku.costo_actual,
           costoActualX24Familia:
             sku.cascada_cerveza_lata && sku.producto ? costoX24PorProducto.get(sku.producto.id) ?? null : null,
+          precioVentaX24Familia:
+            sku.cascada_cerveza_lata && sku.producto ? precioVentaX24PorProducto.get(sku.producto.id) ?? null : null,
           overridePrecio: overridePorClave.get(`${sucursal.id}:${sku.id}`) ?? null,
           precioBaseManual: precioBasePorSku.get(sku.id) ?? null,
           recargoSkuMonto: recargoSkuPorClave.get(`${sucursal.id}:${sku.id}`) ?? null,

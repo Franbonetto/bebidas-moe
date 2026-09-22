@@ -30,6 +30,7 @@ export function CompraDirectaForm({
   skus,
   costosReferencia,
   skusConCascadaOfrecida,
+  skusConCascadaActiva,
 }: {
   proveedores: Proveedor[];
   skus: SkuCatalogo[];
@@ -38,8 +39,13 @@ export function CompraDirectaForm({
   // cascada activada (ver compras/directa/page.tsx) -- ahí se ofrece
   // activarla con vista previa en vivo del precio del x6 y la unidad.
   skusConCascadaOfrecida: string[];
+  // Pack x24 que YA tiene la cascada activada: acá el precio de venta no
+  // es opcional -- es la base de la que bajan el x6 y la unidad, se vuelve
+  // a definir en cada compra (2026-09-22).
+  skusConCascadaActiva: string[];
 }) {
   const cascadaOfrecidaIds = useMemo(() => new Set(skusConCascadaOfrecida), [skusConCascadaOfrecida]);
+  const cascadaActivaIds = useMemo(() => new Set(skusConCascadaActiva), [skusConCascadaActiva]);
   const router = useRouter();
   const [proveedorId, setProveedorId] = useState("");
   const [numeroFactura, setNumeroFactura] = useState("");
@@ -88,13 +94,18 @@ export function CompraDirectaForm({
   }
 
   function alternarCascada(index: number, activar: boolean) {
-    setLineas((prev) =>
-      prev.map((l, i) => (i === index ? { ...l, activarCascada: activar, precioVenta: activar ? null : l.precioVenta } : l)),
-    );
+    setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, activarCascada: activar } : l)));
   }
 
   function quitarLinea(index: number) {
     setLineas((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  // El precio de venta del x24 es la base de la cascada (2026-09-22): no es
+  // opcional para un x24 que ya tiene la cascada activada, ni para uno que
+  // se está activando ahora en esta misma compra.
+  function requierePrecioVenta(l: Linea): boolean {
+    return cascadaActivaIds.has(l.sku.id) || (cascadaOfrecidaIds.has(l.sku.id) && l.activarCascada);
   }
 
   function validar(): string | null {
@@ -106,6 +117,9 @@ export function CompraDirectaForm({
       if (l.costoUnitario < 0) return "El costo unitario no puede ser negativo.";
       if (l.precioVenta !== null && l.precioVenta < 0)
         return "El precio de venta no puede ser negativo.";
+      if (requierePrecioVenta(l) && (l.precioVenta == null || l.precioVenta <= 0)) {
+        return `Cargá el precio de venta del pack x24 de ${l.sku.producto?.nombre ?? l.sku.codigo_interno} — es la base de la cascada.`;
+      }
     }
     return null;
   }
@@ -189,8 +203,9 @@ export function CompraDirectaForm({
         Para cuando llega todo junto: elegí el proveedor, cargá lo que entró, el costo y —si
         corresponde definirlo ahora— el precio de venta, y queda todo actualizado (compra, stock,
         costo y precio) en un solo paso. Si el proveedor va a mandar el resto más adelante, usá
-        &quot;Nueva compra&quot; en cambio. Los SKU con cascada de cerveza en lata calculan su
-        precio solos: si cargás uno acá, el precio de venta se ignora.
+        &quot;Nueva compra&quot; en cambio. En un pack x24 con la cascada de cerveza en lata activada,
+        el precio de venta que cargues acá es la base: de ahí bajan el x6 y la unidad, así que no es
+        opcional.
       </p>
 
       {avisoPrecio && (
@@ -285,7 +300,11 @@ export function CompraDirectaForm({
             ) : (
               lineas.map((l, i) => {
                 const ofreceCascada = cascadaOfrecidaIds.has(l.sku.id);
-                const preview = ofreceCascada ? calcularCascadaCerveza(l.costoUnitario || 0) : null;
+                const yaActiva = cascadaActivaIds.has(l.sku.id);
+                const esBaseCascada = yaActiva || ofreceCascada;
+                const precioRequerido = requierePrecioVenta(l);
+                const preview =
+                  precioRequerido && l.precioVenta != null ? calcularCascadaCerveza(l.precioVenta) : null;
                 return (
                   <Fragment key={l.sku.id}>
                     <tr className="border-b border-[#F1F1F3] last:border-b-0">
@@ -315,25 +334,23 @@ export function CompraDirectaForm({
                         />
                       </td>
                       <td className="px-[12px] py-[7px] align-middle">
-                        {l.activarCascada ? (
-                          <span className="block text-right text-[12px] text-text-3">Automático</span>
-                        ) : (
-                          <input
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            placeholder="Opcional"
-                            className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
-                            value={l.precioVenta ?? ""}
-                            onChange={(e) =>
-                              actualizarLinea(
-                                i,
-                                "precioVenta",
-                                e.target.value === "" ? null : Number(e.target.value),
-                              )
-                            }
-                          />
-                        )}
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          placeholder={precioRequerido ? "Obligatorio" : "Opcional"}
+                          className={`w-full rounded-[6px] border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe ${
+                            precioRequerido && l.precioVenta == null ? "border-warn" : "border-border"
+                          }`}
+                          value={l.precioVenta ?? ""}
+                          onChange={(e) =>
+                            actualizarLinea(
+                              i,
+                              "precioVenta",
+                              e.target.value === "" ? null : Number(e.target.value),
+                            )
+                          }
+                        />
                       </td>
                       <td className="px-[12px] py-[7px] text-right align-middle tabular-nums text-text">
                         {formatoMoneda.format(l.cantidad * l.costoUnitario)}
@@ -348,20 +365,29 @@ export function CompraDirectaForm({
                         </button>
                       </td>
                     </tr>
-                    {ofreceCascada && (
+                    {esBaseCascada && (
                       <tr className="border-b border-[#F1F1F3] bg-info-bg/40 last:border-b-0">
                         <td colSpan={6} className="px-[12px] py-[8px]">
-                          <label className="flex flex-wrap items-center gap-2 text-[12px] text-text-2">
-                            <input
-                              type="checkbox"
-                              checked={l.activarCascada}
-                              onChange={(e) => alternarCascada(i, e.target.checked)}
-                            />
-                            <span>
-                              Activar cascada de cerveza en lata para esta familia — con este costo, el x6 y
-                              la unidad van a quedar en:
-                            </span>
-                            {preview && (
+                          <div className="flex flex-wrap items-center gap-2 text-[12px] text-text-2">
+                            {ofreceCascada ? (
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={l.activarCascada}
+                                  onChange={(e) => alternarCascada(i, e.target.checked)}
+                                />
+                                <span>
+                                  Activar cascada de cerveza en lata para esta familia — el precio de venta
+                                  de acá arriba va a ser la base del x6 y la unidad:
+                                </span>
+                              </label>
+                            ) : (
+                              <span>
+                                Esta familia ya tiene la cascada activada: el precio de venta de acá arriba
+                                es la base del x6 y la unidad —
+                              </span>
+                            )}
+                            {preview ? (
                               <span className="font-medium text-text">
                                 Olavarría x24 {formatoMoneda.format(preview.x24Olavarria)} · x6{" "}
                                 {formatoMoneda.format(preview.x6Olavarria)} · unidad{" "}
@@ -369,8 +395,10 @@ export function CompraDirectaForm({
                                 {formatoMoneda.format(preview.x6Laprida)} · unidad{" "}
                                 {formatoMoneda.format(preview.unidadLaprida)}
                               </span>
+                            ) : (
+                              precioRequerido && <span className="text-warn">Cargá el precio de venta arriba.</span>
                             )}
-                          </label>
+                          </div>
                         </td>
                       </tr>
                     )}

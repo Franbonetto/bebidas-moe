@@ -37,12 +37,21 @@ export default async function CompraDirectaPage() {
     .filter((s) => s.unidades_contenidas === 24 && !s.cascada_cerveza_lata && s.desarma_en_sku_id)
     .map((s) => s.id);
 
+  // x24 que YA tiene la cascada activada: cada compra siguiente vuelve a
+  // pedir el precio de venta (es la base de la que bajan x6 y unidad, no
+  // hay un valor "de siempre" que reusar solo -- la encargada define el
+  // precio en el momento, arquitectura.md 1.11).
+  const skusConCascadaActiva = skusList
+    .filter((s) => s.unidades_contenidas === 24 && s.cascada_cerveza_lata)
+    .map((s) => s.id);
+
   return (
     <CompraDirectaForm
       proveedores={proveedores ?? []}
       skus={skusList as unknown as SkuCatalogo[]}
       costosReferencia={costosReferencia ?? []}
       skusConCascadaOfrecida={skusConCascadaOfrecida}
+      skusConCascadaActiva={skusConCascadaActiva}
     />
   );
 }
