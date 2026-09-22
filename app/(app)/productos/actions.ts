@@ -139,6 +139,36 @@ export async function crearProductoYSku(
   return { id: sku.id };
 }
 
+// Asignar código de barras a un SKU que ya existe (alta progresiva,
+// arquitectura.md 1.9: "puede hacerse progresivamente, los más vendidos
+// primero"). Pensado para usarse desde el buscador de Cargar mercadería:
+// se escanea un código que no matchea ningún SKU, se busca el producto por
+// nombre y se le asigna ahí mismo, sin salir de la pantalla. RLS exige
+// ve_costos() para el update igual que crearProductoYSku(); codigo_barras
+// es unique, así que un código repetido vuelve como error legible.
+export async function actualizarCodigoBarras(
+  skuId: string,
+  codigoBarras: string,
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  const codigo = codigoBarras.trim();
+  if (!codigo) return { error: "El código de barras no puede estar vacío." };
+
+  const { error } = await supabase.from("skus").update({ codigo_barras: codigo }).eq("id", skuId);
+
+  if (error) {
+    if (error.code === "23505") return { error: "Ese código de barras ya está asignado a otro producto." };
+    return { error: error.message };
+  }
+
+  revalidatePath("/productos");
+  revalidatePath("/compras");
+  revalidatePath("/vender");
+  revalidatePath("/envios");
+  return { ok: true };
+}
+
 export type MovimientoSku = {
   id: string;
   tipo: string;

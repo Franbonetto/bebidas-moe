@@ -6,6 +6,7 @@ import { presentacionLabel } from "@/app/(app)/productos/_components/productos-t
 import { crearCompra } from "../actions";
 import { formatoMoneda } from "../_lib/formato";
 import { SkuPicker, type SkuCatalogo } from "./sku-picker";
+import { actualizarCodigoBarras } from "@/app/(app)/productos/actions";
 
 type Proveedor = { id: string; razon_social: string; nombre_comercial: string | null };
 
@@ -134,7 +135,12 @@ export function CompraForm({ proveedores, skus }: { proveedores: Proveedor[]; sk
 
       <div className="mt-5">
         <label className={labelClass}>Agregar línea</label>
-        <SkuPicker skus={skus} excluirIds={excluirIds} onSelect={agregarLinea} />
+        <SkuPicker
+          skus={skus}
+          excluirIds={excluirIds}
+          onSelect={agregarLinea}
+          onAsignarCodigoBarras={actualizarCodigoBarras}
+        />
       </div>
 
       <div className="mt-4 overflow-hidden rounded-[6px] border border-border">

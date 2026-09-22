@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { presentacionLabel } from "@/app/(app)/productos/_components/productos-table";
 import { cargarCompraDirecta } from "../actions";
 import { guardarPrecioBase } from "@/app/(app)/precios/actions";
+import { actualizarCodigoBarras } from "@/app/(app)/productos/actions";
 import { formatoMoneda } from "../_lib/formato";
 import { SkuPicker, type SkuCatalogo } from "./sku-picker";
 
@@ -209,7 +210,12 @@ export function CompraDirectaForm({
 
       <div className="mt-5">
         <label className={labelClass}>Agregar producto</label>
-        <SkuPicker skus={skus} excluirIds={excluirIds} onSelect={agregarLinea} />
+        <SkuPicker
+          skus={skus}
+          excluirIds={excluirIds}
+          onSelect={agregarLinea}
+          onAsignarCodigoBarras={actualizarCodigoBarras}
+        />
       </div>
 
       <div className="mt-4 overflow-hidden rounded-[6px] border border-border">
