@@ -17,6 +17,11 @@ type Linea = {
   cantidad: number;
   costoUnitario: number;
   precioVenta: number | null;
+  // Familia (x24 -> x6 -> unidad, ver desarma_en_sku_id): al agregar un
+  // pack, el resto de su familia aparece acá solo para cargarle el precio
+  // de venta ahí mismo -- no entra como línea de compra real (nada de eso
+  // se contó físicamente hoy), así que no tiene cantidad ni costo.
+  soloPrecio: boolean;
 };
 
 const inputClass =
@@ -45,6 +50,37 @@ export function CompraDirectaForm({
   const excluirIds = useMemo(() => new Set(lineas.map((l) => l.sku.id)), [lineas]);
   const total = lineas.reduce((acc, l) => acc + l.cantidad * l.costoUnitario, 0);
 
+  // Mapa completo de la cadena de desarme (x24 -> x6 -> unidad) para poder
+  // encontrar TODA la familia de un SKU sin importar por cuál se entra --
+  // hijoId -> padreId es la inversa de desarma_en_sku_id (que va de grande
+  // a chico).
+  const skuPorId = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
+  const padrePorHijoId = useMemo(() => {
+    const mapa = new Map<string, string>();
+    for (const s of skus) {
+      if (s.desarma_en_sku_id) mapa.set(s.desarma_en_sku_id, s.id);
+    }
+    return mapa;
+  }, [skus]);
+
+  // Sube hasta el tope de la cadena (el x24) y despues baja recolectando
+  // todos los niveles -- así da lo mismo agregar por el x24, el x6 o la
+  // unidad, siempre aparece la familia completa.
+  function familiaCompleta(skuId: string): SkuCatalogo[] {
+    let tope = skuId;
+    while (padrePorHijoId.has(tope)) tope = padrePorHijoId.get(tope)!;
+
+    const familia: SkuCatalogo[] = [];
+    let actualId: string | null = tope;
+    while (actualId) {
+      const actual = skuPorId.get(actualId);
+      if (!actual) break;
+      familia.push(actual);
+      actualId = actual.desarma_en_sku_id ?? null;
+    }
+    return familia;
+  }
+
   function costoSugerido(skuId: string): number {
     if (!proveedorId) return 0;
     const referencia = costosReferencia.find(
@@ -55,16 +91,34 @@ export function CompraDirectaForm({
 
   // Reescanear un código de barras ya cargado suma 1 a esa línea en vez de
   // duplicarla (el picker deja pasar el match aunque esté en excluirIds,
-  // justamente para este caso).
+  // justamente para este caso). Si el SKU es parte de una cascada de
+  // desarme, el resto de la familia (ej. al cargar el x24, también el x6 y
+  // la unidad) aparece junto para poder cargarle el precio de venta ahí
+  // mismo, sin tener que buscarlos aparte (pedido del usuario 2026-09-22).
   function agregarLinea(sku: SkuCatalogo) {
     setLineas((prev) => {
       const idx = prev.findIndex((l) => l.sku.id === sku.id);
+      let siguiente: Linea[];
       if (idx >= 0) {
-        const copia = [...prev];
-        copia[idx] = { ...copia[idx], cantidad: copia[idx].cantidad + 1 };
-        return copia;
+        siguiente = [...prev];
+        siguiente[idx] = siguiente[idx].soloPrecio
+          ? { ...siguiente[idx], soloPrecio: false, cantidad: 1, costoUnitario: costoSugerido(sku.id) }
+          : { ...siguiente[idx], cantidad: siguiente[idx].cantidad + 1 };
+      } else {
+        siguiente = [
+          ...prev,
+          { sku, cantidad: 1, costoUnitario: costoSugerido(sku.id), precioVenta: null, soloPrecio: false },
+        ];
       }
-      return [...prev, { sku, cantidad: 1, costoUnitario: costoSugerido(sku.id), precioVenta: null }];
+
+      const idsPresentes = new Set(siguiente.map((l) => l.sku.id));
+      for (const familiar of familiaCompleta(sku.id)) {
+        if (!idsPresentes.has(familiar.id)) {
+          siguiente.push({ sku: familiar, cantidad: 0, costoUnitario: 0, precioVenta: null, soloPrecio: true });
+          idsPresentes.add(familiar.id);
+        }
+      }
+      return siguiente;
     });
   }
 
@@ -82,11 +136,14 @@ export function CompraDirectaForm({
 
   function validar(): string | null {
     if (!proveedorId) return "Elegí un proveedor.";
-    if (lineas.length === 0) return "Agregá al menos una línea.";
-    for (const l of lineas) {
+    const lineasReales = lineas.filter((l) => !l.soloPrecio);
+    if (lineasReales.length === 0) return "Agregá al menos una línea.";
+    for (const l of lineasReales) {
       if (!Number.isInteger(l.cantidad) || l.cantidad <= 0)
         return "La cantidad tiene que ser un entero mayor a cero.";
       if (l.costoUnitario < 0) return "El costo unitario no puede ser negativo.";
+    }
+    for (const l of lineas) {
       if (l.precioVenta !== null && l.precioVenta < 0)
         return "El precio de venta no puede ser negativo.";
     }
@@ -106,11 +163,13 @@ export function CompraDirectaForm({
         proveedor_id: proveedorId,
         numero_factura: numeroFactura.trim() || null,
         fecha_factura: fechaFactura || null,
-        lineas: lineas.map((l) => ({
-          sku_id: l.sku.id,
-          cantidad: l.cantidad,
-          costo_unitario: l.costoUnitario,
-        })),
+        lineas: lineas
+          .filter((l) => !l.soloPrecio)
+          .map((l) => ({
+            sku_id: l.sku.id,
+            cantidad: l.cantidad,
+            costo_unitario: l.costoUnitario,
+          })),
       });
 
       if ("error" in resultado) {
@@ -153,7 +212,9 @@ export function CompraDirectaForm({
       <p className="mb-4 text-[12.5px] text-text-3">
         Elegí el proveedor, cargá lo que entró, el costo y —si corresponde definirlo ahora— el
         precio de venta, y queda todo actualizado (compra, stock, costo y precio) en un solo paso.
-        Cada presentación (x24, x6, unidad) tiene su propio precio, siempre cargado a mano.
+        Cada presentación (x24, x6, unidad) tiene su propio precio, siempre cargado a mano. Si
+        agregás un pack que se desarma, el resto de la familia aparece abajo para poder cargarle el
+        precio ahí mismo, aunque no haya llegado stock nuevo de esa presentación hoy.
       </p>
 
       {avisoPrecio && (
@@ -247,31 +308,43 @@ export function CompraDirectaForm({
               </tr>
             ) : (
               lineas.map((l, i) => (
-                <tr key={l.sku.id} className="border-b border-[#F1F1F3] last:border-b-0">
+                <tr
+                  key={l.sku.id}
+                  className={`border-b border-[#F1F1F3] last:border-b-0 ${l.soloPrecio ? "bg-bg-2/40" : ""}`}
+                >
                   <td className="px-[12px] py-[7px] align-middle">
                     <p className="font-medium text-text">{l.sku.producto?.nombre}</p>
                     <p className="text-[11.5px] text-text-3">
                       {l.sku.producto?.marca?.nombre} — {presentacionLabel(l.sku)}
+                      {l.soloPrecio && " · no llegó hoy, solo precio"}
                     </p>
                   </td>
                   <td className="px-[12px] py-[7px] align-middle">
-                    <input
-                      type="number"
-                      min={1}
-                      className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                      value={l.cantidad}
-                      onChange={(e) => actualizarLinea(i, "cantidad", Number(e.target.value))}
-                    />
+                    {l.soloPrecio ? (
+                      <span className="block text-right text-[12.5px] text-text-3">—</span>
+                    ) : (
+                      <input
+                        type="number"
+                        min={1}
+                        className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
+                        value={l.cantidad}
+                        onChange={(e) => actualizarLinea(i, "cantidad", Number(e.target.value))}
+                      />
+                    )}
                   </td>
                   <td className="px-[12px] py-[7px] align-middle">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                      value={l.costoUnitario}
-                      onChange={(e) => actualizarLinea(i, "costoUnitario", Number(e.target.value))}
-                    />
+                    {l.soloPrecio ? (
+                      <span className="block text-right text-[12.5px] text-text-3">—</span>
+                    ) : (
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
+                        value={l.costoUnitario}
+                        onChange={(e) => actualizarLinea(i, "costoUnitario", Number(e.target.value))}
+                      />
+                    )}
                   </td>
                   <td className="px-[12px] py-[7px] align-middle">
                     <input
@@ -291,7 +364,7 @@ export function CompraDirectaForm({
                     />
                   </td>
                   <td className="px-[12px] py-[7px] text-right align-middle tabular-nums text-text">
-                    {formatoMoneda.format(l.cantidad * l.costoUnitario)}
+                    {l.soloPrecio ? "—" : formatoMoneda.format(l.cantidad * l.costoUnitario)}
                   </td>
                   <td className="px-[12px] py-[7px] text-right align-middle">
                     <button

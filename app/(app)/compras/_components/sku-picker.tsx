@@ -10,6 +10,11 @@ export type SkuCatalogo = SkuPresentacion & {
   id: string;
   codigo_interno: string;
   codigo_barras: string | null;
+  // Opcional: solo lo necesita Cargar mercadería para mostrar el resto de
+  // la familia (x24 -> x6 -> unidad) al agregar un pack. El resto de los
+  // usos de SkuCatalogo (buscador de "Nueva compra", combos de promoción)
+  // no lo necesitan.
+  desarma_en_sku_id?: string | null;
   producto: {
     nombre: string;
     marca: { nombre: string } | null;
