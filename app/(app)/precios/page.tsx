@@ -18,7 +18,6 @@ type SkuFila = {
   volumen: number;
   unidad_volumen: string;
   unidades_contenidas: number;
-  cascada_cerveza_lata: boolean;
   costo_actual: number | null;
   producto: {
     id: string;
@@ -50,7 +49,7 @@ export default async function PreciosPage() {
         .from("skus")
         .select(
           `id, nombre, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           cascada_cerveza_lata, costo_actual,
+           costo_actual,
            producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
         )
         .eq("activo", true),
@@ -92,32 +91,17 @@ export default async function PreciosPage() {
   const descuentoPorClave = new Map<string, number>();
   for (const d of descuentosEfectivo ?? []) descuentoPorClave.set(`${d.sucursal_id}:${d.categoria_id}`, d.porcentaje);
 
-  // Costo del x24 por familia (producto_id): solo para el aviso de "por
-  // debajo de costo" -- la base real de la cascada es el precio de venta
-  // cargado a mano (2026-09-22, ver lib/precios.ts).
-  const costoX24PorProducto = new Map<string, number | null>();
-  const precioVentaX24PorProducto = new Map<string, number | null>();
-  for (const s of skusList) {
-    if (s.cascada_cerveza_lata && s.unidades_contenidas === 24 && s.producto) {
-      costoX24PorProducto.set(s.producto.id, s.costo_actual);
-      precioVentaX24PorProducto.set(s.producto.id, precioBasePorSku.get(s.id) ?? null);
-    }
-  }
-
   function calcularParaSucursal(sku: SkuFila, sucursal: Sucursal) {
     const categoriaId = sku.producto?.categoria_id ?? "";
     const skuParaPrecio: SkuParaPrecio = {
       id: sku.id,
       categoriaId,
       unidadesContenidas: sku.unidades_contenidas,
-      cascadaCervezaLata: sku.cascada_cerveza_lata,
     };
     const sucursalParaPrecio: SucursalParaPrecio = { id: sucursal.id, esCentral: sucursal.es_central };
 
     return calcularPrecioVenta(skuParaPrecio, sucursalParaPrecio, {
       costoActualPropio: sku.costo_actual,
-      costoActualX24Familia: sku.producto ? (costoX24PorProducto.get(sku.producto.id) ?? null) : null,
-      precioVentaX24Familia: sku.producto ? (precioVentaX24PorProducto.get(sku.producto.id) ?? null) : null,
       overridePrecio: overridePorClave.get(`${sucursal.id}:${sku.id}`) ?? null,
       precioBaseManual: precioBasePorSku.get(sku.id) ?? null,
       recargoSkuMonto: recargoSkuPorClave.get(`${sucursal.id}:${sku.id}`) ?? null,
@@ -145,7 +129,6 @@ export default async function PreciosPage() {
       marcaNombre: sku.producto?.marca?.nombre ?? null,
       categoriaId: sku.producto?.categoria_id ?? "",
       categoriaNombre: sku.producto?.categoria?.nombre ?? null,
-      cascadaCervezaLata: sku.cascada_cerveza_lata,
       precioBaseManual: precioBasePorSku.get(sku.id) ?? null,
       costoActual: puedeVerCostos ? sku.costo_actual : null,
       porSucursal,
@@ -210,18 +193,16 @@ export default async function PreciosPage() {
 
           <RecargosSkuPanel
             sucursalLaprida={sucursalesList.find((s) => !s.es_central) ?? sucursalesList[0]}
-            skus={skusList
-              .filter((s) => !s.cascada_cerveza_lata)
-              .map((s) => ({
-                id: s.id,
-                nombre: s.producto?.nombre ?? s.nombre,
-                presentacion: {
-                  tipo_presentacion: s.tipo_presentacion,
-                  volumen: s.volumen,
-                  unidad_volumen: s.unidad_volumen,
-                  unidades_contenidas: s.unidades_contenidas,
-                },
-              }))}
+            skus={skusList.map((s) => ({
+              id: s.id,
+              nombre: s.producto?.nombre ?? s.nombre,
+              presentacion: {
+                tipo_presentacion: s.tipo_presentacion,
+                volumen: s.volumen,
+                unidad_volumen: s.unidad_volumen,
+                unidades_contenidas: s.unidades_contenidas,
+              },
+            }))}
             recargos={(recargosSku ?? []) as {
               sucursal_id: string;
               sku_id: string;

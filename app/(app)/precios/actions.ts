@@ -66,16 +66,6 @@ export async function eliminarOverride(sucursalId: string, skuId: string): Promi
   return { ok: true };
 }
 
-export async function marcarCascadaCerveza(skuId: string, valor: boolean): Promise<Resultado> {
-  const supabase = await createClient();
-
-  const { error } = await supabase.from("skus").update({ cascada_cerveza_lata: valor }).eq("id", skuId);
-  if (error) return { error: error.message };
-
-  revalidatePath("/precios");
-  return { ok: true };
-}
-
 export async function guardarRecargoCategoria(
   sucursalId: string,
   categoriaId: string,

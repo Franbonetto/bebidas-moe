@@ -35,7 +35,7 @@ export async function cargarDatosVenta(
       .from("skus")
       .select(
         `id, nombre, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen,
-         unidades_contenidas, cascada_cerveza_lata, costo_actual, es_retornable, tipo_envase_id,
+         unidades_contenidas, costo_actual, es_retornable, tipo_envase_id,
          desarma_en_sku_id, desarma_en_cantidad,
          producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ) ),
          tipo_envase:tipos_envase ( valor_deposito )`,
@@ -125,7 +125,6 @@ export async function cargarDatosVenta(
     volumen: number;
     unidad_volumen: string;
     unidades_contenidas: number;
-    cascada_cerveza_lata: boolean;
     costo_actual: number | null;
     es_retornable: boolean;
     tipo_envase_id: string | null;
@@ -137,18 +136,6 @@ export async function cargarDatosVenta(
 
   const skusList = (skusRaw ?? []) as unknown as SkuFila[];
   const sucursalParaPrecio: SucursalParaPrecio = { id: sucursal.id, esCentral: sucursal.es_central };
-
-  const costoX24PorProducto = new Map<string, number | null>();
-  // Precio de venta cargado a mano para el x24 (base real de la cascada
-  // desde 2026-09-22, ver lib/precios.ts) -- distinto del costo, que solo
-  // sirve para el aviso de "por debajo de costo".
-  const precioVentaX24PorProducto = new Map<string, number | null>();
-  for (const s of skusList) {
-    if (s.cascada_cerveza_lata && s.unidades_contenidas === 24 && s.producto) {
-      costoX24PorProducto.set(s.producto.id, s.costo_actual);
-      precioVentaX24PorProducto.set(s.producto.id, precioBasePorSku.get(s.id) ?? null);
-    }
-  }
 
   // Para el atajo de desarme (arquitectura.md 1.3): dado un SKU sin stock
   // suficiente, encontrar el SKU "padre" (el que se desarma EN este) dentro
@@ -172,13 +159,10 @@ export async function cargarDatosVenta(
       id: s.id,
       categoriaId,
       unidadesContenidas: s.unidades_contenidas,
-      cascadaCervezaLata: s.cascada_cerveza_lata,
     };
 
     const precio = calcularPrecioVenta(skuParaPrecio, sucursalParaPrecio, {
       costoActualPropio: s.costo_actual,
-      costoActualX24Familia: s.producto ? (costoX24PorProducto.get(s.producto.id) ?? null) : null,
-      precioVentaX24Familia: s.producto ? (precioVentaX24PorProducto.get(s.producto.id) ?? null) : null,
       overridePrecio: overridePorSku.get(s.id) ?? null,
       precioBaseManual: precioBasePorSku.get(s.id) ?? null,
       recargoSkuMonto: recargoSkuPorId.get(s.id) ?? null,

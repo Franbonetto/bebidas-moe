@@ -24,7 +24,6 @@ type SkuInfo = SkuPresentacion & {
   nombre: string;
   stock_minimo: number;
   costo_actual: number | null;
-  cascada_cerveza_lata: boolean;
   producto: { id: string; nombre: string; categoria_id: string; marca: { nombre: string } | null } | null;
 };
 
@@ -98,7 +97,7 @@ export default async function AlertasPage() {
       .from("skus")
       .select(
         `id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
-         costo_actual, cascada_cerveza_lata,
+         costo_actual,
          producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ) )`,
       )
       .eq("activo", true),
@@ -283,20 +282,8 @@ export default async function AlertasPage() {
     for (const d of (descuentosEfectivo ?? []) as { sucursal_id: string; categoria_id: string; porcentaje: number }[])
       descuentoPorClave.set(`${d.sucursal_id}:${d.categoria_id}`, d.porcentaje);
 
-    // Costo del x24 por familia (producto_id), igual que /precios/page.tsx:
-    // solo para el aviso de "por debajo de costo" -- la base real de la
-    // cascada es el precio de venta cargado a mano (2026-09-22).
-    const costoX24PorProducto = new Map<string, number | null>();
-    const precioVentaX24PorProducto = new Map<string, number | null>();
     for (const sku of skusList) {
-      if (sku.cascada_cerveza_lata && sku.unidades_contenidas === 24 && sku.producto) {
-        costoX24PorProducto.set(sku.producto.id, sku.costo_actual);
-        precioVentaX24PorProducto.set(sku.producto.id, precioBasePorSku.get(sku.id) ?? null);
-      }
-    }
-
-    for (const sku of skusList) {
-      if (sku.costo_actual == null && !sku.cascada_cerveza_lata) continue;
+      if (sku.costo_actual == null) continue;
       const categoriaId = sku.producto?.categoria_id ?? "";
 
       for (const sucursal of sucursalesList) {
@@ -304,16 +291,11 @@ export default async function AlertasPage() {
           id: sku.id,
           categoriaId,
           unidadesContenidas: sku.unidades_contenidas,
-          cascadaCervezaLata: sku.cascada_cerveza_lata,
         };
         const sucursalParaPrecio: SucursalParaPrecio = { id: sucursal.id, esCentral: sucursal.es_central };
 
         const precioVenta = calcularPrecioVenta(skuParaPrecio, sucursalParaPrecio, {
           costoActualPropio: sku.costo_actual,
-          costoActualX24Familia:
-            sku.cascada_cerveza_lata && sku.producto ? costoX24PorProducto.get(sku.producto.id) ?? null : null,
-          precioVentaX24Familia:
-            sku.cascada_cerveza_lata && sku.producto ? precioVentaX24PorProducto.get(sku.producto.id) ?? null : null,
           overridePrecio: overridePorClave.get(`${sucursal.id}:${sku.id}`) ?? null,
           precioBaseManual: precioBasePorSku.get(sku.id) ?? null,
           recargoSkuMonto: recargoSkuPorClave.get(`${sucursal.id}:${sku.id}`) ?? null,

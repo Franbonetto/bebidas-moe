@@ -1,81 +1,22 @@
 // Calculo de precios de venta. Deliberadamente NO vive en la base de datos:
-// el precio se resuelve al vuelo a partir de costo_actual + las tablas de
-// recargo/descuento (ver supabase/migrations/20260901120000_bloque5_precios.sql),
-// nunca se guarda ni se cachea. Asi evitamos el problema de precios
-// desactualizados cuando entra una compra nueva y costo_actual cambia.
+// el precio se resuelve al vuelo a partir de precios/recargos/descuentos
+// (ver supabase/migrations/20260901120000_bloque5_precios.sql), nunca se
+// guarda ni se cachea.
 //
 // Pensado para reusarse tal cual desde el POS (bloque 6) ademas de la
 // pantalla de Precios: por eso no depende de nada de React/Next.
-
-export type RolCascadaCerveza = "x24" | "x6" | "unidad";
-
-export function rolCascadaCerveza(unidadesContenidas: number): RolCascadaCerveza | null {
-  if (unidadesContenidas === 24) return "x24";
-  if (unidadesContenidas === 6) return "x6";
-  if (unidadesContenidas === 1) return "unidad";
-  return null;
-}
-
-export type CascadaCerveza = {
-  x24Olavarria: number;
-  x6Olavarria: number;
-  unidadOlavarria: number;
-  x24Laprida: number;
-  x6Laprida: number;
-  unidadLaprida: number;
-};
-
-// Redondea hacia arriba al proximo multiplo de `paso` (ej. 2483 -> 2500,
-// 2510 -> 2550 con paso=50).
-function redondearArribaMultiplo(valor: number, paso: number): number {
-  return Math.ceil(valor / paso) * paso;
-}
-
-// Cascada real confirmada por el cliente (bloque 5, corregida 2026-09-22:
-// la base es el PRECIO DE VENTA que la encargada carga a mano para el x24
-// al recibir la mercadería -- no un costo×1,20 automático):
 //
-// Olavarria (baja desde el precio de venta cargado a mano para el x24):
-//   x24    = precio de venta cargado para el pack x24
-//   x6     = precio_x24 / 4 + 1000
-//   unidad = ceil((precio_x6 + 300) / 6)              -- redondeo a peso entero
-//
-// Laprida (parte del x6/x24 de Olavarria, NO usa el recargo por categoria):
-//   x6     = precio_x6 Olavarria + 1000
-//   x24    = precio_x24 Olavarria + 1000
-//   unidad = redondear hacia arriba a multiplo de 50 de (precio_x6 Laprida / 6)
-export function calcularCascadaCerveza(precioVentaX24: number): CascadaCerveza {
-  const x24Olavarria = precioVentaX24;
-  const x6Olavarria = x24Olavarria / 4 + 1000;
-  const unidadOlavarria = Math.ceil((x6Olavarria + 300) / 6);
-
-  const x6Laprida = x6Olavarria + 1000;
-  const x24Laprida = x24Olavarria + 1000;
-  const unidadLaprida = redondearArribaMultiplo(x6Laprida / 6, 50);
-
-  return { x24Olavarria, x6Olavarria, unidadOlavarria, x24Laprida, x6Laprida, unidadLaprida };
-}
-
-function precioCascadaPara(
-  cascada: CascadaCerveza,
-  rol: RolCascadaCerveza,
-  esCentral: boolean,
-): number {
-  if (esCentral) {
-    if (rol === "x24") return cascada.x24Olavarria;
-    if (rol === "x6") return cascada.x6Olavarria;
-    return cascada.unidadOlavarria;
-  }
-  if (rol === "x24") return cascada.x24Laprida;
-  if (rol === "x6") return cascada.x6Laprida;
-  return cascada.unidadLaprida;
-}
+// 2026-09-22: se eliminó la cascada automática de cerveza en lata (x24 ->
+// x6 -> unidad calculados solos a partir de un precio base). Cada SKU
+// carga su propio precio de venta siempre a mano, sin excepción -- distintas
+// cervezas se manejan con márgenes distintos, no hay una fórmula única que
+// sirva para todas. El desarme físico de stock (otro archivo,
+// desarmar_sku()) no tiene relación con esto y sigue igual.
 
 export type SkuParaPrecio = {
   id: string;
   categoriaId: string;
   unidadesContenidas: number;
-  cascadaCervezaLata: boolean;
 };
 
 export type SucursalParaPrecio = {
@@ -85,22 +26,12 @@ export type SucursalParaPrecio = {
 
 export type ContextoPrecio = {
   // costo_actual del propio SKU (skus.costo_actual). Null si nunca se
-  // recibio una compra de este SKU puntual.
+  // recibio una compra de este SKU puntual. Solo se usa para el aviso de
+  // "precio por debajo del costo".
   costoActualPropio: number | null;
-  // costo_actual del SKU x24 de la misma familia de cascada. Solo se usa
-  // para el aviso de "precio por debajo del costo" (costoReferencia mas
-  // abajo) -- el precio en si ya NO se calcula del costo, ver
-  // precioVentaX24Familia.
-  costoActualX24Familia: number | null;
-  // precios.precio_base cargado a mano para el SKU x24 de la misma familia
-  // de cascada (2026-09-22: la base de la cascada es el precio de venta
-  // que la encargada carga al recibir el x24, no un costo x1.20
-  // automatico). Solo aplica a SKU con cascadaCervezaLata = true; en los
-  // demas, null.
-  precioVentaX24Familia: number | null;
   // precios_sucursal.precio_override para (sucursal, sku), si existe.
   overridePrecio: number | null;
-  // precios.precio_base (manual, solo tiene sentido para SKU sin cascada).
+  // precios.precio_base, cargado a mano.
   precioBaseManual: number | null;
   // recargos_sku.monto_fijo para (sucursal, sku), si existe.
   recargoSkuMonto: number | null;
@@ -110,7 +41,7 @@ export type ContextoPrecio = {
   descuentoEfectivoPct: number | null;
 };
 
-export type Origen = "excepcion" | "cascada" | "manual" | "recargo" | "sin_precio" | "sin_costo";
+export type Origen = "excepcion" | "manual" | "recargo" | "sin_precio";
 
 export type PrecioVenta = {
   origen: Origen;
@@ -138,17 +69,6 @@ export function calcularPrecioVenta(
   if (esExcepcion) {
     precioBase = ctx.overridePrecio;
     origen = "excepcion";
-  } else if (sku.cascadaCervezaLata) {
-    if (ctx.precioVentaX24Familia == null) {
-      origen = "sin_precio";
-    } else {
-      const rol = rolCascadaCerveza(sku.unidadesContenidas);
-      if (rol) {
-        const cascada = calcularCascadaCerveza(ctx.precioVentaX24Familia);
-        precioBase = precioCascadaPara(cascada, rol, sucursal.esCentral);
-        origen = "cascada";
-      }
-    }
   } else if (sucursal.esCentral) {
     precioBase = ctx.precioBaseManual;
     origen = precioBase == null ? "sin_precio" : "manual";
@@ -166,11 +86,7 @@ export function calcularPrecioVenta(
     precioEfectivo = precioBase * (1 - ctx.descuentoEfectivoPct / 100);
   }
 
-  const costoReferencia = sku.cascadaCervezaLata
-    ? ctx.costoActualX24Familia == null
-      ? null
-      : (ctx.costoActualX24Familia * sku.unidadesContenidas) / 24
-    : ctx.costoActualPropio;
+  const costoReferencia = ctx.costoActualPropio;
 
   const bajoCostoEfectivo =
     precioEfectivo != null && costoReferencia != null && precioEfectivo < costoReferencia;

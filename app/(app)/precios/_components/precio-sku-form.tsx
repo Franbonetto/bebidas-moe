@@ -1,12 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import {
-  guardarPrecioBase,
-  guardarOverride,
-  eliminarOverride,
-  marcarCascadaCerveza,
-} from "../actions";
+import { guardarPrecioBase, guardarOverride, eliminarOverride } from "../actions";
 import type { PrecioSkuRow, Sucursal } from "./precios-table";
 import { presentacionLabel } from "../../productos/_lib/presentacion";
 
@@ -23,7 +18,6 @@ export function PrecioSkuForm({
   fila: PrecioSkuRow;
   onClose: () => void;
 }) {
-  const [cascada, setCascada] = useState(fila.cascadaCervezaLata);
   const [precioBase, setPrecioBase] = useState(
     fila.precioBaseManual != null ? String(fila.precioBaseManual) : "",
   );
@@ -38,38 +32,20 @@ export function PrecioSkuForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  // El x24 (tope de la cascada) SÍ carga precio a mano aunque cascada esté
-  // tildado -- es la base de la que se calculan el x6 y la unidad hacia
-  // abajo (2026-09-22). El x6/unidad de una familia con cascada activa
-  // nunca cargan precio manual.
-  const esX24 = fila.presentacion.unidades_contenidas === 24;
-  const puedeCargarPrecioBase = !cascada || esX24;
-
   function guardar() {
     setError(null);
     startTransition(async () => {
-      if (cascada !== fila.cascadaCervezaLata) {
-        const resultado = await marcarCascadaCerveza(fila.id, cascada);
+      const valor = precioBase.trim() === "" ? null : Number(precioBase);
+      if (valor != null) {
+        const resultado = await guardarPrecioBase(fila.id, valor);
         if ("error" in resultado) {
           setError(resultado.error);
           return;
         }
       }
 
-      if (puedeCargarPrecioBase) {
-        const valor = precioBase.trim() === "" ? null : Number(precioBase);
-        if (valor != null) {
-          const resultado = await guardarPrecioBase(fila.id, valor);
-          if ("error" in resultado) {
-            setError(resultado.error);
-            return;
-          }
-        }
-      }
-
       for (const s of sucursales) {
-        const esCentralSinCascada = s.es_central && !cascada;
-        if (esCentralSinCascada) continue;
+        if (s.es_central) continue; // Olavarría edita directo el precio base, sin excepción aparte.
 
         const texto = overrides[s.id]?.trim() ?? "";
         const teniaOverride = fila.porSucursal[s.id]?.esExcepcion ?? false;
@@ -103,60 +79,39 @@ export function PrecioSkuForm({
         <p className="mb-4 text-[12px] text-text-3">{presentacionLabel(fila.presentacion)}</p>
 
         <div className="flex flex-col gap-3">
-          <label className="flex items-center gap-2 text-[13px] text-text">
-            <input type="checkbox" checked={cascada} onChange={(e) => setCascada(e.target.checked)} />
-            Participa de la cascada de cerveza en lata
-          </label>
-          <p className="-mt-2 text-[11.5px] text-text-3">
-            Si está tildado, el precio de Olavarría y Laprida se calcula a partir del precio de venta
-            que cargues acá para el pack x24 (el x6 y la unidad de esta familia dejan de tener precio
-            manual).
-          </p>
-
-          {puedeCargarPrecioBase ? (
-            <div>
-              <label className={labelClass}>
-                Precio de venta {cascada ? "del pack x24 (base de la cascada)" : "Olavarría"}
-              </label>
-              <input
-                type="number"
-                min={0}
-                step="1"
-                className={inputClass}
-                value={precioBase}
-                onChange={(e) => setPrecioBase(e.target.value)}
-                placeholder="Sin precio cargado"
-              />
-            </div>
-          ) : (
-            <p className="text-[12px] text-text-3">
-              Este SKU no es el pack x24: su precio se calcula solo a partir del precio de venta que se
-              cargue en el x24 de esta familia.
-            </p>
-          )}
+          <div>
+            <label className={labelClass}>Precio de venta Olavarría</label>
+            <input
+              type="number"
+              min={0}
+              step="1"
+              className={inputClass}
+              value={precioBase}
+              onChange={(e) => setPrecioBase(e.target.value)}
+              placeholder="Sin precio cargado"
+            />
+          </div>
 
           <div className="border-t border-border pt-3">
             <p className="mb-2 text-[12px] font-medium text-text-2">
               Excepción manual (pisa el precio calculado o el recargo)
             </p>
-            {sucursales.map((s) => {
-              const bloqueada = s.es_central && puedeCargarPrecioBase;
-              return (
+            {sucursales
+              .filter((s) => !s.es_central)
+              .map((s) => (
                 <div key={s.id} className="mb-2">
                   <label className={labelClass}>{s.nombre}</label>
                   <input
                     type="number"
                     min={0}
                     step="1"
-                    disabled={bloqueada}
-                    className={`${inputClass} ${bloqueada ? "opacity-50" : ""}`}
+                    className={inputClass}
                     value={overrides[s.id] ?? ""}
                     onChange={(e) => setOverrides((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                    placeholder={bloqueada ? "Editá el precio base directamente" : "Sin excepción"}
+                    placeholder="Sin excepción"
                   />
                 </div>
-              );
-            })}
+              ))}
           </div>
         </div>
 

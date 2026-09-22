@@ -37,7 +37,7 @@ export type SkuPos = {
   stock: number;
   precioEfectivo: number | null;
   precioOtroMedio: number | null;
-  origen: "excepcion" | "cascada" | "manual" | "recargo" | "sin_precio" | "sin_costo";
+  origen: "excepcion" | "manual" | "recargo" | "sin_precio";
   bajoCostoEfectivo: boolean;
   vendidosUltimos30Dias: number;
 };
@@ -85,11 +85,9 @@ const ORIGEN_LABEL: Record<Tramo["origen"], string> = {
   combo: "Promo combo",
   cantidad: "Promo cantidad",
   excepcion: "Precio excepción",
-  cascada: "",
   manual: "",
   recargo: "",
   sin_precio: "Sin precio cargado",
-  sin_costo: "Sin costo cargado",
 };
 
 function textoBusqueda(sku: SkuPos) {

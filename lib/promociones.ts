@@ -35,7 +35,7 @@ export type PromoCantidadDef = {
   bajoCosto: boolean;
 };
 
-export type OrigenTramo = "combo" | "cantidad" | "excepcion" | "cascada" | "manual" | "recargo" | "sin_precio" | "sin_costo";
+export type OrigenTramo = "combo" | "cantidad" | "excepcion" | "manual" | "recargo" | "sin_precio";
 
 export type Tramo = {
   cantidad: number;

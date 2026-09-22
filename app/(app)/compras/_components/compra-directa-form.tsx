@@ -1,12 +1,11 @@
 "use client";
 
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { presentacionLabel } from "@/app/(app)/productos/_components/productos-table";
 import { cargarCompraDirecta } from "../actions";
 import { guardarPrecioBase } from "@/app/(app)/precios/actions";
-import { actualizarCodigoBarras, activarCascadaCerveza } from "@/app/(app)/productos/actions";
-import { calcularCascadaCerveza } from "@/lib/precios";
+import { actualizarCodigoBarras } from "@/app/(app)/productos/actions";
 import { formatoMoneda } from "../_lib/formato";
 import { SkuPicker, type SkuCatalogo } from "./sku-picker";
 
@@ -18,7 +17,6 @@ type Linea = {
   cantidad: number;
   costoUnitario: number;
   precioVenta: number | null;
-  activarCascada: boolean;
 };
 
 const inputClass =
@@ -29,23 +27,11 @@ export function CompraDirectaForm({
   proveedores,
   skus,
   costosReferencia,
-  skusConCascadaOfrecida,
-  skusConCascadaActiva,
 }: {
   proveedores: Proveedor[];
   skus: SkuCatalogo[];
   costosReferencia: CostoReferencia[];
-  // Pack x24 de una familia de cerveza en lata que todavía no tiene la
-  // cascada activada (ver compras/directa/page.tsx) -- ahí se ofrece
-  // activarla con vista previa en vivo del precio del x6 y la unidad.
-  skusConCascadaOfrecida: string[];
-  // Pack x24 que YA tiene la cascada activada: acá el precio de venta no
-  // es opcional -- es la base de la que bajan el x6 y la unidad, se vuelve
-  // a definir en cada compra (2026-09-22).
-  skusConCascadaActiva: string[];
 }) {
-  const cascadaOfrecidaIds = useMemo(() => new Set(skusConCascadaOfrecida), [skusConCascadaOfrecida]);
-  const cascadaActivaIds = useMemo(() => new Set(skusConCascadaActiva), [skusConCascadaActiva]);
   const router = useRouter();
   const [proveedorId, setProveedorId] = useState("");
   const [numeroFactura, setNumeroFactura] = useState("");
@@ -78,10 +64,7 @@ export function CompraDirectaForm({
         copia[idx] = { ...copia[idx], cantidad: copia[idx].cantidad + 1 };
         return copia;
       }
-      return [
-        ...prev,
-        { sku, cantidad: 1, costoUnitario: costoSugerido(sku.id), precioVenta: null, activarCascada: false },
-      ];
+      return [...prev, { sku, cantidad: 1, costoUnitario: costoSugerido(sku.id), precioVenta: null }];
     });
   }
 
@@ -93,19 +76,8 @@ export function CompraDirectaForm({
     setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, [campo]: valor } : l)));
   }
 
-  function alternarCascada(index: number, activar: boolean) {
-    setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, activarCascada: activar } : l)));
-  }
-
   function quitarLinea(index: number) {
     setLineas((prev) => prev.filter((_, i) => i !== index));
-  }
-
-  // El precio de venta del x24 es la base de la cascada (2026-09-22): no es
-  // opcional para un x24 que ya tiene la cascada activada, ni para uno que
-  // se está activando ahora en esta misma compra.
-  function requierePrecioVenta(l: Linea): boolean {
-    return cascadaActivaIds.has(l.sku.id) || (cascadaOfrecidaIds.has(l.sku.id) && l.activarCascada);
   }
 
   function validar(): string | null {
@@ -117,9 +89,6 @@ export function CompraDirectaForm({
       if (l.costoUnitario < 0) return "El costo unitario no puede ser negativo.";
       if (l.precioVenta !== null && l.precioVenta < 0)
         return "El precio de venta no puede ser negativo.";
-      if (requierePrecioVenta(l) && (l.precioVenta == null || l.precioVenta <= 0)) {
-        return `Cargá el precio de venta del pack x24 de ${l.sku.producto?.nombre ?? l.sku.codigo_interno} — es la base de la cascada.`;
-      }
     }
     return null;
   }
@@ -152,18 +121,11 @@ export function CompraDirectaForm({
       const lineasConPrecio = lineas.filter(
         (l): l is Linea & { precioVenta: number } => l.precioVenta !== null,
       );
-      const lineasConCascada = lineas.filter((l) => l.activarCascada);
-
-      const [resultadosPrecio, resultadosCascada] = await Promise.all([
-        Promise.all(lineasConPrecio.map((l) => guardarPrecioBase(l.sku.id, l.precioVenta))),
-        Promise.all(lineasConCascada.map((l) => activarCascadaCerveza(l.sku.id))),
-      ]);
-
-      const fallosPrecio = lineasConPrecio
+      const resultadosPrecio = await Promise.all(
+        lineasConPrecio.map((l) => guardarPrecioBase(l.sku.id, l.precioVenta)),
+      );
+      const fallos = lineasConPrecio
         .map((l, i) => ({ linea: l, resultado: resultadosPrecio[i] }))
-        .filter((f) => "error" in f.resultado);
-      const fallosCascada = lineasConCascada
-        .map((l, i) => ({ linea: l, resultado: resultadosCascada[i] }))
         .filter((f) => "error" in f.resultado);
 
       setLineas([]);
@@ -171,24 +133,13 @@ export function CompraDirectaForm({
       setFechaFactura("");
       setProveedorId("");
 
-      if (fallosPrecio.length > 0 || fallosCascada.length > 0) {
+      if (fallos.length > 0) {
         setCompraCreadaId(resultado.id);
-        const partes: string[] = [];
-        if (fallosPrecio.length > 0) {
-          partes.push(
-            `no se pudo guardar el precio de: ${fallosPrecio
-              .map((f) => f.linea.sku.producto?.nombre ?? f.linea.sku.codigo_interno)
-              .join(", ")}`,
-          );
-        }
-        if (fallosCascada.length > 0) {
-          partes.push(
-            `no se pudo activar la cascada de: ${fallosCascada
-              .map((f) => f.linea.sku.producto?.nombre ?? f.linea.sku.codigo_interno)
-              .join(", ")}`,
-          );
-        }
-        setAvisoPrecio(`La compra se registró bien, pero ${partes.join("; ")}. Revisalo desde Precios.`);
+        setAvisoPrecio(
+          `La compra se registró bien, pero no se pudo guardar el precio de: ${fallos
+            .map((f) => f.linea.sku.producto?.nombre ?? f.linea.sku.codigo_interno)
+            .join(", ")}. Cargalo desde Precios.`,
+        );
         return;
       }
 
@@ -200,12 +151,9 @@ export function CompraDirectaForm({
     <div className="mx-auto max-w-[880px] rounded-card border border-border bg-bg p-5">
       <h2 className="mb-1 text-[14px] font-semibold text-text">Cargar mercadería</h2>
       <p className="mb-4 text-[12.5px] text-text-3">
-        Para cuando llega todo junto: elegí el proveedor, cargá lo que entró, el costo y —si
-        corresponde definirlo ahora— el precio de venta, y queda todo actualizado (compra, stock,
-        costo y precio) en un solo paso. Si el proveedor va a mandar el resto más adelante, usá
-        &quot;Nueva compra&quot; en cambio. En un pack x24 con la cascada de cerveza en lata activada,
-        el precio de venta que cargues acá es la base: de ahí bajan el x6 y la unidad, así que no es
-        opcional.
+        Elegí el proveedor, cargá lo que entró, el costo y —si corresponde definirlo ahora— el
+        precio de venta, y queda todo actualizado (compra, stock, costo y precio) en un solo paso.
+        Cada presentación (x24, x6, unidad) tiene su propio precio, siempre cargado a mano.
       </p>
 
       {avisoPrecio && (
@@ -298,113 +246,64 @@ export function CompraDirectaForm({
                 </td>
               </tr>
             ) : (
-              lineas.map((l, i) => {
-                const ofreceCascada = cascadaOfrecidaIds.has(l.sku.id);
-                const yaActiva = cascadaActivaIds.has(l.sku.id);
-                const esBaseCascada = yaActiva || ofreceCascada;
-                const precioRequerido = requierePrecioVenta(l);
-                const preview =
-                  precioRequerido && l.precioVenta != null ? calcularCascadaCerveza(l.precioVenta) : null;
-                return (
-                  <Fragment key={l.sku.id}>
-                    <tr className="border-b border-[#F1F1F3] last:border-b-0">
-                      <td className="px-[12px] py-[7px] align-middle">
-                        <p className="font-medium text-text">{l.sku.producto?.nombre}</p>
-                        <p className="text-[11.5px] text-text-3">
-                          {l.sku.producto?.marca?.nombre} — {presentacionLabel(l.sku)}
-                        </p>
-                      </td>
-                      <td className="px-[12px] py-[7px] align-middle">
-                        <input
-                          type="number"
-                          min={1}
-                          className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                          value={l.cantidad}
-                          onChange={(e) => actualizarLinea(i, "cantidad", Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="px-[12px] py-[7px] align-middle">
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                          value={l.costoUnitario}
-                          onChange={(e) => actualizarLinea(i, "costoUnitario", Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="px-[12px] py-[7px] align-middle">
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          placeholder={precioRequerido ? "Obligatorio" : "Opcional"}
-                          className={`w-full rounded-[6px] border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe ${
-                            precioRequerido && l.precioVenta == null ? "border-warn" : "border-border"
-                          }`}
-                          value={l.precioVenta ?? ""}
-                          onChange={(e) =>
-                            actualizarLinea(
-                              i,
-                              "precioVenta",
-                              e.target.value === "" ? null : Number(e.target.value),
-                            )
-                          }
-                        />
-                      </td>
-                      <td className="px-[12px] py-[7px] text-right align-middle tabular-nums text-text">
-                        {formatoMoneda.format(l.cantidad * l.costoUnitario)}
-                      </td>
-                      <td className="px-[12px] py-[7px] text-right align-middle">
-                        <button
-                          type="button"
-                          onClick={() => quitarLinea(i)}
-                          className="text-[12px] text-text-3 hover:text-err"
-                        >
-                          Quitar
-                        </button>
-                      </td>
-                    </tr>
-                    {esBaseCascada && (
-                      <tr className="border-b border-[#F1F1F3] bg-info-bg/40 last:border-b-0">
-                        <td colSpan={6} className="px-[12px] py-[8px]">
-                          <div className="flex flex-wrap items-center gap-2 text-[12px] text-text-2">
-                            {ofreceCascada ? (
-                              <label className="flex items-center gap-2">
-                                <input
-                                  type="checkbox"
-                                  checked={l.activarCascada}
-                                  onChange={(e) => alternarCascada(i, e.target.checked)}
-                                />
-                                <span>
-                                  Activar cascada de cerveza en lata para esta familia — el precio de venta
-                                  de acá arriba va a ser la base del x6 y la unidad:
-                                </span>
-                              </label>
-                            ) : (
-                              <span>
-                                Esta familia ya tiene la cascada activada: el precio de venta de acá arriba
-                                es la base del x6 y la unidad —
-                              </span>
-                            )}
-                            {preview ? (
-                              <span className="font-medium text-text">
-                                Olavarría x24 {formatoMoneda.format(preview.x24Olavarria)} · x6{" "}
-                                {formatoMoneda.format(preview.x6Olavarria)} · unidad{" "}
-                                {formatoMoneda.format(preview.unidadOlavarria)} — Laprida x6{" "}
-                                {formatoMoneda.format(preview.x6Laprida)} · unidad{" "}
-                                {formatoMoneda.format(preview.unidadLaprida)}
-                              </span>
-                            ) : (
-                              precioRequerido && <span className="text-warn">Cargá el precio de venta arriba.</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })
+              lineas.map((l, i) => (
+                <tr key={l.sku.id} className="border-b border-[#F1F1F3] last:border-b-0">
+                  <td className="px-[12px] py-[7px] align-middle">
+                    <p className="font-medium text-text">{l.sku.producto?.nombre}</p>
+                    <p className="text-[11.5px] text-text-3">
+                      {l.sku.producto?.marca?.nombre} — {presentacionLabel(l.sku)}
+                    </p>
+                  </td>
+                  <td className="px-[12px] py-[7px] align-middle">
+                    <input
+                      type="number"
+                      min={1}
+                      className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
+                      value={l.cantidad}
+                      onChange={(e) => actualizarLinea(i, "cantidad", Number(e.target.value))}
+                    />
+                  </td>
+                  <td className="px-[12px] py-[7px] align-middle">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
+                      value={l.costoUnitario}
+                      onChange={(e) => actualizarLinea(i, "costoUnitario", Number(e.target.value))}
+                    />
+                  </td>
+                  <td className="px-[12px] py-[7px] align-middle">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      placeholder="Opcional"
+                      className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
+                      value={l.precioVenta ?? ""}
+                      onChange={(e) =>
+                        actualizarLinea(
+                          i,
+                          "precioVenta",
+                          e.target.value === "" ? null : Number(e.target.value),
+                        )
+                      }
+                    />
+                  </td>
+                  <td className="px-[12px] py-[7px] text-right align-middle tabular-nums text-text">
+                    {formatoMoneda.format(l.cantidad * l.costoUnitario)}
+                  </td>
+                  <td className="px-[12px] py-[7px] text-right align-middle">
+                    <button
+                      type="button"
+                      onClick={() => quitarLinea(i)}
+                      className="text-[12px] text-text-3 hover:text-err"
+                    >
+                      Quitar
+                    </button>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

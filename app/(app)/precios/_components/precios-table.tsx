@@ -17,7 +17,6 @@ export type PrecioSkuRow = {
   marcaNombre: string | null;
   categoriaId: string;
   categoriaNombre: string | null;
-  cascadaCervezaLata: boolean;
   precioBaseManual: number | null;
   costoActual: number | null;
   porSucursal: Record<string, PrecioVenta>;
@@ -25,11 +24,9 @@ export type PrecioSkuRow = {
 
 const ORIGEN_LABEL: Record<PrecioVenta["origen"], { texto: string; className: string }> = {
   excepcion: { texto: "Excepción", className: "bg-warn-bg text-warn" },
-  cascada: { texto: "Calculado", className: "bg-info-bg text-info" },
   manual: { texto: "Manual", className: "bg-bg-2 text-text-3" },
   recargo: { texto: "Base + recargo", className: "bg-bg-2 text-text-3" },
   sin_precio: { texto: "Sin precio", className: "bg-bg-2 text-text-3" },
-  sin_costo: { texto: "Sin costo cargado", className: "bg-bg-2 text-text-3" },
 };
 
 function CeldaPrecio({ precio }: { precio: PrecioVenta }) {
@@ -185,11 +182,6 @@ export function PreciosTable({
                   </td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">
                     {presentacionLabel(fila.presentacion)}
-                    {fila.cascadaCervezaLata && (
-                      <span className="ml-[6px] inline-block rounded-[4px] bg-bg-2 px-[6px] py-[1px] text-[10.5px] font-medium text-text-3">
-                        cascada cerveza
-                      </span>
-                    )}
                   </td>
                   {puedeVerCostos && (
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">

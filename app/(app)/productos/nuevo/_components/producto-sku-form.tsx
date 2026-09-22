@@ -97,7 +97,6 @@ export function ProductoSkuForm({
   const [unidadesContenidas, setUnidadesContenidas] = useState("1");
   const [stockMinimo, setStockMinimo] = useState("0");
   const [stockObjetivo, setStockObjetivo] = useState("0");
-  const [cascadaCervezaLata, setCascadaCervezaLata] = useState(false);
 
   // ---- Retornable ----
   const [esRetornable, setEsRetornable] = useState(false);
@@ -227,7 +226,6 @@ export function ProductoSkuForm({
               },
         desarmaEnSkuId: seDesarma ? desarmaEnSkuId : null,
         desarmaEnCantidad: seDesarma ? Number(desarmaEnCantidad) : null,
-        cascadaCervezaLata,
         stockMinimo: Number(stockMinimo),
         stockObjetivo: Number(stockObjetivo),
       },
@@ -538,16 +536,6 @@ export function ProductoSkuForm({
             />
           </div>
         </div>
-
-        <label className="mt-3 flex items-center gap-2 text-[13px] text-text">
-          <input
-            type="checkbox"
-            checked={cascadaCervezaLata}
-            onChange={(e) => setCascadaCervezaLata(e.target.checked)}
-          />
-          Es parte de la cascada de cerveza en lata (bloque 5) — su precio se calcula solo a
-          partir del costo, no se carga a mano.
-        </label>
       </div>
 
       {/* ============ Retornable ============ */}
