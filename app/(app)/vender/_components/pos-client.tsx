@@ -70,15 +70,15 @@ function ticketVacio(id: string): Ticket {
   return { id, lineas: [], envaseChecked: {}, pagos: [], motomandado: "", direccionEnvio: "" };
 }
 
-// Orden pensado para los atajos F1-F4 (pedido del usuario 2026-09-21):
-// Crédito queda sin atajo porque no hay más teclas F libres en el POS
-// (F5-F12 ya están todas asignadas).
+// Orden pensado para los atajos F1-F5 (pedido del usuario 2026-09-21:
+// "F5 poner crédito"). Cantidad se corrió a F6 y Nuevo ticket a F11 para
+// hacerle lugar (ver useEffect de atajos globales más abajo).
 const MEDIOS: { id: MedioPago; label: string; tecla?: string }[] = [
   { id: "efectivo", label: "Efectivo", tecla: "F1" },
   { id: "qr", label: "QR", tecla: "F2" },
   { id: "debito", label: "Débito", tecla: "F3" },
   { id: "transferencia", label: "Transferencia", tecla: "F4" },
-  { id: "credito", label: "Crédito" },
+  { id: "credito", label: "Crédito", tecla: "F5" },
 ];
 
 const ORIGEN_LABEL: Record<Tramo["origen"], string> = {
@@ -598,14 +598,20 @@ export function PosClient({
         confirmar();
         return;
       }
-      if (e.key === "F1" || e.key === "F2" || e.key === "F3" || e.key === "F4") {
+      if (e.key === "F1" || e.key === "F2" || e.key === "F3" || e.key === "F4" || e.key === "F5") {
         e.preventDefault();
         if (lineas.length === 0) return;
-        const medio = { F1: "efectivo", F2: "qr", F3: "debito", F4: "transferencia" } as const;
+        const medio = {
+          F1: "efectivo",
+          F2: "qr",
+          F3: "debito",
+          F4: "transferencia",
+          F5: "credito",
+        } as const;
         elegirMedioUnico(medio[e.key]);
         return;
       }
-      if (e.key === "F5") {
+      if (e.key === "F6") {
         e.preventDefault();
         if (lineaSeleccionada) abrirEdicionCantidad(lineaSeleccionada);
         return;
@@ -620,7 +626,7 @@ export function PosClient({
         searchInputRef.current?.focus();
         return;
       }
-      if (e.key === "F6") {
+      if (e.key === "F11") {
         e.preventDefault();
         nuevoTicket();
         return;
@@ -875,7 +881,7 @@ export function PosClient({
           <button
             type="button"
             onClick={nuevoTicket}
-            title="Nuevo ticket (F6) — dejar este en espera"
+            title="Nuevo ticket (F11) — dejar este en espera"
             className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-[6px] text-text-2 hover:bg-bg-2"
           >
             +
@@ -952,7 +958,7 @@ export function PosClient({
             {lineas.length === 0 ? (
               <div className="p-[40px_20px] text-center text-text-3">
                 <p className="mb-1 text-[13.5px] font-medium text-text-2">Escaneá un producto para empezar</p>
-                <p className="text-[12.5px]">F10 buscar · 3*código cantidad · F6 nuevo ticket</p>
+                <p className="text-[12.5px]">F10 buscar · 3*código cantidad · F11 nuevo ticket</p>
               </div>
             ) : (
               lineas.map((l) => {
@@ -1004,7 +1010,7 @@ export function PosClient({
                             abrirEdicionCantidad(l.skuId);
                           }}
                           className="min-w-[26px] rounded-[5px] px-[4px] text-center text-[13px] font-medium tabular-nums hover:bg-bg-2"
-                          title="Editar cantidad (F5)"
+                          title="Editar cantidad (F6)"
                         >
                           {l.cantidad}
                         </button>
@@ -1070,7 +1076,7 @@ export function PosClient({
           </div>
 
           <div className="shrink-0 border-t border-border px-[15px] py-[7px] text-[11.5px] text-text-3">
-            ↑↓ elegir línea · F5 cantidad · Supr borrar
+            ↑↓ elegir línea · F6 cantidad · Supr borrar
           </div>
         </div>
 
@@ -1127,8 +1133,8 @@ export function PosClient({
           <div className="rounded-card border border-border bg-bg p-[14px_15px] text-[12.5px]">
             <div className="grid grid-cols-2 gap-y-[9px]">
               <AtajoItem label="Buscar" tecla="F10" />
-              <AtajoItem label="Cantidad" tecla="F5" />
-              <AtajoItem label="Nuevo ticket" tecla="F6" />
+              <AtajoItem label="Cantidad" tecla="F6" />
+              <AtajoItem label="Nuevo ticket" tecla="F11" />
               <AtajoItem label="Ver precio" tecla="F9" />
               <AtajoItem label="Cobrar" tecla="F12" />
               <AtajoItem label="Quitar" tecla="Supr" />
@@ -1203,7 +1209,7 @@ export function PosClient({
         </div>
       )}
 
-      {/* ============ Modal: editar cantidad (F5) ============ */}
+      {/* ============ Modal: editar cantidad (F6) ============ */}
       {editandoCantidadSkuId && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"

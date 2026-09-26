@@ -55,9 +55,26 @@ body {
 }
 
 /* Ticket imprimible (app/ticket/[ventaId]): oculta todo lo que no debe
-   salir en el papel (el botón "Imprimir" en sí). */
+   salir en el papel (el botón "Imprimir" en sí) y define el tamaño de
+   página como el ancho real del rollo térmico (80mm, alto automático)
+   -- pedido del usuario 2026-09-25: sin esto Chrome asume A4/Carta y la
+   impresora arrastra varios centímetros de papel en blanco antes de
+   imprimir el ticket, porque el motor de impresión completa esa hoja
+   larga aunque el contenido sea corto. Si la impresora del local es de
+   58mm en vez de 80mm, cambiar el ancho acá. */
 @media print {
   .no-print {
     display: none !important;
+  }
+
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
   }
 }
