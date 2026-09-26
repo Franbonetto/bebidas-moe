@@ -103,7 +103,7 @@ function parseQuery(q: string): { cantidad: number; texto: string } {
 }
 
 const inputClass =
-  "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe";
+  "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[14.5px] text-text outline-none focus:border-moe";
 
 export function PosClient({
   sucursalId,
@@ -687,11 +687,11 @@ export function PosClient({
               ref={i === 0 ? refPrimerBoton : undefined}
               type="button"
               onClick={() => elegirMedioUnico(m.id)}
-              className="flex items-center justify-between rounded-card border border-border bg-bg px-[8px] py-[8px] text-left text-[12.5px] font-medium text-text hover:bg-bg-2"
+              className="flex items-center justify-between rounded-card border border-border bg-bg px-[8px] py-[8px] text-left text-[14px] font-medium text-text hover:bg-bg-2"
             >
               {m.label}
               {m.tecla && (
-                <kbd className="rounded-[4px] border border-border bg-bg-2 px-[5px] py-[1px] text-[10.5px] font-medium text-text-3">
+                <kbd className="rounded-[4px] border border-border bg-bg-2 px-[5px] py-[1px] text-[12px] font-medium text-text-3">
                   {m.tecla}
                 </kbd>
               )}
@@ -708,7 +708,7 @@ export function PosClient({
             <select
               value={p.medioPago}
               onChange={(e) => cambiarMedioPago(i, e.target.value as MedioPago)}
-              className="rounded-[6px] border border-border bg-bg px-[6px] py-[5px] text-[12.5px] text-text outline-none focus:border-moe"
+              className="rounded-[6px] border border-border bg-bg px-[6px] py-[5px] text-[14px] text-text outline-none focus:border-moe"
             >
               {MEDIOS.map((m) => (
                 <option key={m.id} value={m.id}>
@@ -717,7 +717,7 @@ export function PosClient({
               ))}
             </select>
             {pagos.length === 1 ? (
-              <span className="flex-1 text-right text-[13px] tabular-nums text-text-2">
+              <span className="flex-1 text-right text-[14.5px] tabular-nums text-text-2">
                 {formatoMoneda.format(p.monto)}
               </span>
             ) : (
@@ -725,14 +725,14 @@ export function PosClient({
                 type="number"
                 value={p.monto}
                 onChange={(e) => cambiarMontoPago(i, Number(e.target.value) || 0)}
-                className="w-[100px] flex-1 rounded-[6px] border border-border bg-bg px-[8px] py-[5px] text-right text-[13px] tabular-nums text-text outline-none focus:border-moe"
+                className="w-[100px] flex-1 rounded-[6px] border border-border bg-bg px-[8px] py-[5px] text-right text-[14.5px] tabular-nums text-text outline-none focus:border-moe"
               />
             )}
             {pagos.length > 1 && (
               <button
                 type="button"
                 onClick={() => quitarMedio(i)}
-                className="shrink-0 text-[13px] text-text-3 hover:text-err"
+                className="shrink-0 text-[14.5px] text-text-3 hover:text-err"
               >
                 ×
               </button>
@@ -744,14 +744,14 @@ export function PosClient({
           <button
             type="button"
             onClick={agregarMedioAdicional}
-            className="self-start text-[12px] font-medium text-moe hover:underline"
+            className="self-start text-[13.5px] font-medium text-moe hover:underline"
           >
             + Dividir en otro medio
           </button>
         )}
 
         {pagos.length > 1 && restante !== 0 && (
-          <p className={`text-[12px] font-medium ${restante > 0 ? "text-warn" : "text-err"}`}>
+          <p className={`text-[13.5px] font-medium ${restante > 0 ? "text-warn" : "text-err"}`}>
             {restante > 0
               ? `Falta asignar ${formatoMoneda.format(restante)}`
               : `Sobran ${formatoMoneda.format(-restante)}: ajustá los montos`}
@@ -765,14 +765,14 @@ export function PosClient({
     <div className="flex h-[calc(100vh-76px)] flex-col sm:h-[calc(100vh-92px)] lg:h-[calc(100vh-24px)]">
       {/* ============ Encabezado + búsqueda + pestañas de ticket ============ */}
       <div className="mb-3 flex shrink-0 items-center justify-between">
-        <h1 className="text-[15px] font-semibold text-text">
+        <h1 className="text-[17px] font-semibold text-text">
           {modoEnvio ? "Envíos" : "Punto de venta"} — {sucursalNombre}
         </h1>
         <div className="flex gap-2">
           {!modoEnvio && puedeFacturar && (
             <Link
               href="/vender/facturar"
-              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[13.5px] font-medium text-text-2 hover:bg-bg-2"
             >
               Facturar
             </Link>
@@ -780,14 +780,14 @@ export function PosClient({
           {!modoEnvio && (
             <Link
               href="/vender/devoluciones"
-              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[13.5px] font-medium text-text-2 hover:bg-bg-2"
             >
               Devoluciones
             </Link>
           )}
           <Link
             href="/vender/caja"
-            className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2"
+            className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[13.5px] font-medium text-text-2 hover:bg-bg-2"
           >
             Caja del día · {cantidadTicketsHoy} ventas
           </Link>
@@ -795,27 +795,49 @@ export function PosClient({
       </div>
 
       {estadoCaja === "cerrada" && (
-        <div className="mb-3 shrink-0 rounded-[7px] border border-warn/30 bg-warn-bg px-[12px] py-[10px] text-[12.5px] text-warn">
+        <div className="mb-3 shrink-0 rounded-[7px] border border-warn/30 bg-warn-bg px-[12px] py-[10px] text-[14px] text-warn">
           La caja de hoy ya está cerrada. No se pueden registrar más ventas hasta el próximo día.
         </div>
       )}
 
       {modoEnvio && (
         <div className="mb-3 grid shrink-0 grid-cols-1 gap-2 sm:grid-cols-2">
-          <input
-            type="text"
-            value={motomandado}
-            onChange={(e) => actualizarTicketActivo((t) => ({ ...t, motomandado: e.target.value }))}
-            placeholder="Motomandado *"
-            className="w-full rounded-card border border-border bg-bg px-[14px] py-[9px] text-[13.5px] text-text outline-none focus:border-moe"
-          />
-          <input
-            type="text"
-            value={direccionEnvio}
-            onChange={(e) => actualizarTicketActivo((t) => ({ ...t, direccionEnvio: e.target.value }))}
-            placeholder="Dirección *"
-            className="w-full rounded-card border border-border bg-bg px-[14px] py-[9px] text-[13.5px] text-text outline-none focus:border-moe"
-          />
+          <div>
+            <label
+              className={`mb-[3px] block text-[12.5px] font-medium ${
+                motomandado.trim() ? "text-text-2" : "text-warn"
+              }`}
+            >
+              Motomandado {!motomandado.trim() && "— obligatorio"}
+            </label>
+            <input
+              type="text"
+              value={motomandado}
+              onChange={(e) => actualizarTicketActivo((t) => ({ ...t, motomandado: e.target.value }))}
+              placeholder="Nombre del motomandado"
+              className={`w-full rounded-card border bg-bg px-[14px] py-[9px] text-[15px] text-text outline-none focus:border-moe ${
+                motomandado.trim() ? "border-border" : "border-warn/60 bg-warn-bg/40"
+              }`}
+            />
+          </div>
+          <div>
+            <label
+              className={`mb-[3px] block text-[12.5px] font-medium ${
+                direccionEnvio.trim() ? "text-text-2" : "text-warn"
+              }`}
+            >
+              Dirección {!direccionEnvio.trim() && "— obligatorio"}
+            </label>
+            <input
+              type="text"
+              value={direccionEnvio}
+              onChange={(e) => actualizarTicketActivo((t) => ({ ...t, direccionEnvio: e.target.value }))}
+              placeholder="Dirección de entrega"
+              className={`w-full rounded-card border bg-bg px-[14px] py-[9px] text-[15px] text-text outline-none focus:border-moe ${
+                direccionEnvio.trim() ? "border-border" : "border-warn/60 bg-warn-bg/40"
+              }`}
+            />
+          </div>
         </div>
       )}
 
@@ -829,9 +851,9 @@ export function PosClient({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onScanKeyDown}
             placeholder="Escaneá o escribí el código · 3*código para cantidad · nombre para buscar"
-            className="w-full rounded-card border border-border bg-bg px-[14px] py-[11px] text-[14.5px] text-text outline-none focus:border-moe"
+            className="w-full rounded-card border border-border bg-bg px-[14px] py-[11px] text-[16px] text-text outline-none focus:border-moe"
           />
-          <span className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 text-[11.5px] text-text-3">
+          <span className="pointer-events-none absolute right-[12px] top-1/2 -translate-y-1/2 text-[13px] text-text-3">
             Enter agrega
           </span>
           {resultados.length > 0 && (
@@ -841,7 +863,7 @@ export function PosClient({
                   key={s.id}
                   type="button"
                   onClick={() => agregarSku(s, cantidadQuery)}
-                  className="flex w-full items-center justify-between border-b border-[#F1F1F3] px-[12px] py-[8px] text-left text-[13px] last:border-b-0 hover:bg-bg-2"
+                  className="flex w-full items-center justify-between border-b border-[#F1F1F3] px-[12px] py-[8px] text-left text-[14.5px] last:border-b-0 hover:bg-bg-2"
                 >
                   <span>
                     <span className="font-medium text-text">{s.nombre}</span>
@@ -870,12 +892,12 @@ export function PosClient({
               }}
               onDoubleClick={() => cerrarTicket(t.id)}
               title={t.lineas.length > 0 ? "Doble click para descartar" : undefined}
-              className={`whitespace-nowrap rounded-[6px] px-[10px] py-[7px] text-[12.5px] font-medium ${
+              className={`whitespace-nowrap rounded-[6px] px-[10px] py-[7px] text-[14px] font-medium ${
                 t.id === ticketActivoId ? "bg-moe-soft text-moe" : "text-text-2 hover:bg-bg-2"
               }`}
             >
               Ticket {i + 1}
-              {t.lineas.length > 0 && <span className="ml-1 text-[10.5px] text-text-3">({t.lineas.length})</span>}
+              {t.lineas.length > 0 && <span className="ml-1 text-[12px] text-text-3">({t.lineas.length})</span>}
             </button>
           ))}
           <button
@@ -898,8 +920,8 @@ export function PosClient({
               onClick={() => agregarSku(s)}
               className="rounded-[7px] border border-border bg-bg px-[9px] py-[6px] text-left hover:border-border-strong hover:bg-bg-2"
             >
-              <b className="block truncate text-[11.5px] font-medium leading-tight text-text">{s.nombre}</b>
-              <small className="tabular-nums text-[11px] text-text-3">
+              <b className="block truncate text-[13px] font-medium leading-tight text-text">{s.nombre}</b>
+              <small className="tabular-nums text-[12.5px] text-text-3">
                 {s.precioEfectivo != null ? formatoMoneda.format(s.precioEfectivo) : "sin precio"}
               </small>
             </button>
@@ -911,8 +933,8 @@ export function PosClient({
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
         <div className="flex min-h-0 flex-col rounded-card border border-border bg-bg">
           <div className="flex shrink-0 items-center justify-between border-b border-border px-[15px] py-[10px]">
-            <h2 className="text-[13px] font-semibold text-text">Ticket</h2>
-            <span className="text-[12px] text-text-3">
+            <h2 className="text-[14.5px] font-semibold text-text">Ticket</h2>
+            <span className="text-[13.5px] text-text-3">
               {lineas.length === 0
                 ? "Sin productos"
                 : `${lineas.length} producto${lineas.length > 1 ? "s" : ""} · ${cantidadUnidades} unidad${cantidadUnidades > 1 ? "es" : ""}`}
@@ -920,7 +942,7 @@ export function PosClient({
           </div>
 
           {ventaConfirmada != null && (
-            <div className="mx-[15px] mt-[11px] flex items-center gap-2 rounded-[7px] bg-ok-bg px-[12px] py-[10px] text-[12.5px] font-medium text-ok">
+            <div className="mx-[15px] mt-[11px] flex items-center gap-2 rounded-[7px] bg-ok-bg px-[12px] py-[10px] text-[14px] font-medium text-ok">
               <svg
                 viewBox="0 0 24 24"
                 fill="none"
@@ -935,7 +957,7 @@ export function PosClient({
           )}
 
           {ultimaVenta && (
-            <div className="mx-[15px] mt-[8px] flex items-center justify-between rounded-[7px] border border-border bg-bg-2 px-[12px] py-[9px] text-[12px]">
+            <div className="mx-[15px] mt-[8px] flex items-center justify-between rounded-[7px] border border-border bg-bg-2 px-[12px] py-[9px] text-[13.5px]">
               <span className="text-text-2">
                 {ultimaVenta.comprobante
                   ? `Factura ${ultimaVenta.comprobante.tipoCbte} N° ${ultimaVenta.comprobante.numeroComprobante} autorizada`
@@ -957,8 +979,8 @@ export function PosClient({
           <div className="flex-1 overflow-auto">
             {lineas.length === 0 ? (
               <div className="p-[40px_20px] text-center text-text-3">
-                <p className="mb-1 text-[13.5px] font-medium text-text-2">Escaneá un producto para empezar</p>
-                <p className="text-[12.5px]">F10 buscar · 3*código cantidad · F11 nuevo ticket</p>
+                <p className="mb-1 text-[15px] font-medium text-text-2">Escaneá un producto para empezar</p>
+                <p className="text-[14px]">F10 buscar · 3*código cantidad · F11 nuevo ticket</p>
               </div>
             ) : (
               lineas.map((l) => {
@@ -979,16 +1001,16 @@ export function PosClient({
                     }`}
                   >
                     <div className="grid grid-cols-[1fr_auto] items-start gap-x-[10px] gap-y-[4px]">
-                      <div className="text-[13.5px] font-medium leading-tight text-text">
+                      <div className="text-[15px] font-medium leading-tight text-text">
                         {sku.nombre}
-                        <small className="mt-[1px] block text-[11.5px] font-normal text-text-3">
+                        <small className="mt-[1px] block text-[13px] font-normal text-text-3">
                           {sku.marcaNombre} · {presentacionLabel(sku.presentacion)} · {sku.codigoInterno} ·{" "}
                           <span className={sinStock ? "font-medium text-warn" : ""}>
                             S:{Math.max(sku.stock, 0)}
                           </span>
                         </small>
                       </div>
-                      <div className="whitespace-nowrap text-right text-[13.5px] tabular-nums text-text">
+                      <div className="whitespace-nowrap text-right text-[15px] tabular-nums text-text">
                         {formatoMoneda.format(subtotal)}
                       </div>
 
@@ -999,7 +1021,7 @@ export function PosClient({
                             e.stopPropagation();
                             ajustarCantidad(l.skuId, -1);
                           }}
-                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[13px] text-text-2 hover:bg-bg-2"
+                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[14.5px] text-text-2 hover:bg-bg-2"
                         >
                           −
                         </button>
@@ -1009,7 +1031,7 @@ export function PosClient({
                             e.stopPropagation();
                             abrirEdicionCantidad(l.skuId);
                           }}
-                          className="min-w-[26px] rounded-[5px] px-[4px] text-center text-[13px] font-medium tabular-nums hover:bg-bg-2"
+                          className="min-w-[26px] rounded-[5px] px-[4px] text-center text-[14.5px] font-medium tabular-nums hover:bg-bg-2"
                           title="Editar cantidad (F6)"
                         >
                           {l.cantidad}
@@ -1020,14 +1042,14 @@ export function PosClient({
                             e.stopPropagation();
                             ajustarCantidad(l.skuId, 1);
                           }}
-                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[13px] text-text-2 hover:bg-bg-2"
+                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[14.5px] text-text-2 hover:bg-bg-2"
                         >
                           +
                         </button>
 
                         {sku.esRetornable && (
                           <label
-                            className="ml-1 flex items-center gap-1 text-[11.5px] text-text-2"
+                            className="ml-1 flex items-center gap-1 text-[13px] text-text-2"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <input
@@ -1045,7 +1067,7 @@ export function PosClient({
                             e.stopPropagation();
                             quitarLinea(l.skuId);
                           }}
-                          className="ml-auto text-[11.5px] text-text-3 hover:text-err"
+                          className="ml-auto text-[13px] text-text-3 hover:text-err"
                         >
                           Quitar
                         </button>
@@ -1055,7 +1077,7 @@ export function PosClient({
                         t.origen === "combo" || t.origen === "cantidad" ? (
                           <span
                             key={i}
-                            className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-ok-bg px-[6px] py-[1.5px] text-[11px] font-medium text-ok"
+                            className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-ok-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-ok"
                           >
                             {t.cantidad} × {t.promocionNombre ?? ORIGEN_LABEL[t.origen]}
                           </span>
@@ -1063,7 +1085,7 @@ export function PosClient({
                       )}
 
                       {tramos.some((t) => t.bajoCosto) && (
-                        <span className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-orange-bg px-[6px] py-[1.5px] text-[11px] font-medium text-orange">
+                        <span className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-orange-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-orange">
                           Precio por debajo del costo
                         </span>
                       )}
@@ -1075,7 +1097,7 @@ export function PosClient({
             )}
           </div>
 
-          <div className="shrink-0 border-t border-border px-[15px] py-[7px] text-[11.5px] text-text-3">
+          <div className="shrink-0 border-t border-border px-[15px] py-[7px] text-[13px] text-text-3">
             ↑↓ elegir línea · F6 cantidad · Supr borrar
           </div>
         </div>
@@ -1086,7 +1108,7 @@ export function PosClient({
             {renderSelectorPagos()}
 
             {depositoTotal > 0 && (
-              <div className="mb-[5px] flex justify-between text-[13px] text-text-2">
+              <div className="mb-[5px] flex justify-between text-[14.5px] text-text-2">
                 <span>Depósito de envases</span>
                 <span className="tabular-nums">{formatoMoneda.format(depositoTotal)}</span>
               </div>
@@ -1095,34 +1117,34 @@ export function PosClient({
             {hayDescuento ? (
               <>
                 <div className="mb-[5px] flex items-baseline justify-between">
-                  <span className="text-[13px] font-medium text-text-2">Total en efectivo</span>
-                  <span className="text-[20px] font-semibold tabular-nums text-text">
+                  <span className="text-[14.5px] font-medium text-text-2">Total en efectivo</span>
+                  <span className="text-[22px] font-semibold tabular-nums text-text">
                     {formatoMoneda.format(totalEfectivo)}
                   </span>
                 </div>
                 <div className="mb-[9px] flex items-baseline justify-between">
-                  <span className="text-[13px] font-medium text-text-2">Total en otro medio</span>
-                  <span className="text-[15px] font-medium tabular-nums text-text-2">
+                  <span className="text-[14.5px] font-medium text-text-2">Total en otro medio</span>
+                  <span className="text-[17px] font-medium tabular-nums text-text-2">
                     {formatoMoneda.format(totalOtroMedio)}
                   </span>
                 </div>
               </>
             ) : (
               <div className="mb-[9px] flex items-baseline justify-between">
-                <span className="text-[13px] font-medium text-text-2">Total</span>
-                <span className="text-[22px] font-semibold tabular-nums text-text">
+                <span className="text-[14.5px] font-medium text-text-2">Total</span>
+                <span className="text-[24px] font-semibold tabular-nums text-text">
                   {formatoMoneda.format(totalOtroMedio)}
                 </span>
               </div>
             )}
 
-            {error && <p className="mb-2 text-[12.5px] text-err">{error}</p>}
+            {error && <p className="mb-2 text-[14px] text-err">{error}</p>}
 
             <button
               type="button"
               disabled={pending || lineas.length === 0}
               onClick={pagos.length > 0 && restante === 0 ? confirmar : () => setMostrarPago(true)}
-              className="w-full rounded-[7px] bg-moe px-[11px] py-[11px] text-[14px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+              className="w-full rounded-[7px] bg-moe px-[11px] py-[11px] text-[15.5px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
             >
               {pagos.length > 0 && restante === 0
                 ? `Cobrar ${formatoMoneda.format(totalACobrar)}`
@@ -1130,7 +1152,7 @@ export function PosClient({
             </button>
           </div>
 
-          <div className="rounded-card border border-border bg-bg p-[14px_15px] text-[12.5px]">
+          <div className="rounded-card border border-border bg-bg p-[14px_15px] text-[14px]">
             <div className="grid grid-cols-2 gap-y-[9px]">
               <AtajoItem label="Buscar" tecla="F10" />
               <AtajoItem label="Cantidad" tecla="F6" />
@@ -1152,41 +1174,41 @@ export function PosClient({
           onClick={() => setMostrarPago(false)}
         >
           <div className="w-[380px] rounded-card border border-border bg-bg p-5" onClick={(e) => e.stopPropagation()}>
-            <h2 className="mb-3 text-[14px] font-semibold text-text">¿Cómo paga?</h2>
+            <h2 className="mb-3 text-[15.5px] font-semibold text-text">¿Cómo paga?</h2>
 
             {renderSelectorPagos(primerMedioRef)}
 
             {hayDescuento ? (
               <>
                 <div className="mb-[5px] flex items-baseline justify-between">
-                  <span className="text-[13px] font-medium text-text-2">Total en efectivo</span>
-                  <span className="text-[20px] font-semibold tabular-nums text-text">
+                  <span className="text-[14.5px] font-medium text-text-2">Total en efectivo</span>
+                  <span className="text-[22px] font-semibold tabular-nums text-text">
                     {formatoMoneda.format(totalEfectivo)}
                   </span>
                 </div>
                 <div className="mb-[9px] flex items-baseline justify-between">
-                  <span className="text-[13px] font-medium text-text-2">Total en otro medio</span>
-                  <span className="text-[15px] font-medium tabular-nums text-text-2">
+                  <span className="text-[14.5px] font-medium text-text-2">Total en otro medio</span>
+                  <span className="text-[17px] font-medium tabular-nums text-text-2">
                     {formatoMoneda.format(totalOtroMedio)}
                   </span>
                 </div>
               </>
             ) : (
               <div className="mb-[9px] flex items-baseline justify-between">
-                <span className="text-[13px] font-medium text-text-2">Total</span>
-                <span className="text-[22px] font-semibold tabular-nums text-text">
+                <span className="text-[14.5px] font-medium text-text-2">Total</span>
+                <span className="text-[24px] font-semibold tabular-nums text-text">
                   {formatoMoneda.format(totalOtroMedio)}
                 </span>
               </div>
             )}
 
-            {error && <p className="mb-2 text-[12.5px] text-err">{error}</p>}
+            {error && <p className="mb-2 text-[14px] text-err">{error}</p>}
 
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setMostrarPago(false)}
-                className="rounded-[7px] border border-border bg-bg px-[11px] py-[10px] text-[13px] font-medium text-text hover:bg-bg-2"
+                className="rounded-[7px] border border-border bg-bg px-[11px] py-[10px] text-[14.5px] font-medium text-text hover:bg-bg-2"
               >
                 Seguir escaneando
               </button>
@@ -1194,7 +1216,7 @@ export function PosClient({
                 type="button"
                 disabled={pending || pagos.length === 0 || restante !== 0}
                 onClick={confirmar}
-                className="flex-1 rounded-[7px] bg-moe px-[11px] py-[10px] text-[14px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+                className="flex-1 rounded-[7px] bg-moe px-[11px] py-[10px] text-[15.5px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
               >
                 {pending
                   ? "Confirmando…"
@@ -1216,7 +1238,7 @@ export function PosClient({
           onClick={() => setEditandoCantidadSkuId(null)}
         >
           <div className="w-[280px] rounded-card border border-border bg-bg p-5" onClick={(e) => e.stopPropagation()}>
-            <h2 className="mb-3 text-[14px] font-semibold text-text">Cantidad</h2>
+            <h2 className="mb-3 text-[15.5px] font-semibold text-text">Cantidad</h2>
             <input
               type="number"
               autoFocus
@@ -1233,14 +1255,14 @@ export function PosClient({
               <button
                 type="button"
                 onClick={() => setEditandoCantidadSkuId(null)}
-                className="rounded-[6px] border border-border bg-bg px-[12px] py-[6px] text-[12.5px] font-medium text-text-2 hover:bg-bg-2"
+                className="rounded-[6px] border border-border bg-bg px-[12px] py-[6px] text-[14px] font-medium text-text-2 hover:bg-bg-2"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 onClick={confirmarEdicionCantidad}
-                className="rounded-[6px] bg-moe px-[12px] py-[6px] text-[12.5px] font-medium text-white hover:bg-moe/90"
+                className="rounded-[6px] bg-moe px-[12px] py-[6px] text-[14px] font-medium text-white hover:bg-moe/90"
               >
                 Aplicar
               </button>
@@ -1259,7 +1281,7 @@ export function PosClient({
           }}
         >
           <div className="w-[400px] rounded-card border border-border bg-bg p-5" onClick={(e) => e.stopPropagation()}>
-            <h2 className="mb-3 text-[14px] font-semibold text-text">Ver precio</h2>
+            <h2 className="mb-3 text-[15.5px] font-semibold text-text">Ver precio</h2>
             <input
               type="text"
               autoFocus
@@ -1272,7 +1294,7 @@ export function PosClient({
               {resultadosVerPrecio.map((s) => (
                 <div
                   key={s.id}
-                  className="flex items-center justify-between border-b border-[#F1F1F3] py-[8px] text-[13px] last:border-b-0"
+                  className="flex items-center justify-between border-b border-[#F1F1F3] py-[8px] text-[14.5px] last:border-b-0"
                 >
                   <span>
                     <span className="font-medium text-text">{s.nombre}</span>
@@ -1298,11 +1320,11 @@ export function PosClient({
           onClick={() => setMovimientoTipo(null)}
         >
           <div className="w-[340px] rounded-card border border-border bg-bg p-5" onClick={(e) => e.stopPropagation()}>
-            <h2 className="mb-3 text-[14px] font-semibold text-text">
+            <h2 className="mb-3 text-[15.5px] font-semibold text-text">
               {movimientoTipo === "entrada" ? "Entrada de efectivo" : "Salida de efectivo"}
             </h2>
 
-            <label className="mb-1 block text-[12px] font-medium text-text-2">Monto</label>
+            <label className="mb-1 block text-[13.5px] font-medium text-text-2">Monto</label>
             <input
               type="number"
               autoFocus
@@ -1312,7 +1334,7 @@ export function PosClient({
               className={`${inputClass} mb-3`}
             />
 
-            <label className="mb-1 block text-[12px] font-medium text-text-2">Motivo</label>
+            <label className="mb-1 block text-[13.5px] font-medium text-text-2">Motivo</label>
             <input
               type="text"
               value={movimientoMotivo}
@@ -1321,13 +1343,13 @@ export function PosClient({
               className={inputClass}
             />
 
-            {movimientoError && <p className="mt-2 text-[12.5px] text-err">{movimientoError}</p>}
+            {movimientoError && <p className="mt-2 text-[14px] text-err">{movimientoError}</p>}
 
             <div className="mt-3 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setMovimientoTipo(null)}
-                className="rounded-[6px] border border-border bg-bg px-[12px] py-[6px] text-[12.5px] font-medium text-text-2 hover:bg-bg-2"
+                className="rounded-[6px] border border-border bg-bg px-[12px] py-[6px] text-[14px] font-medium text-text-2 hover:bg-bg-2"
               >
                 Cancelar
               </button>
@@ -1335,7 +1357,7 @@ export function PosClient({
                 type="button"
                 disabled={pendingMovimiento}
                 onClick={confirmarMovimientoCaja}
-                className="rounded-[6px] bg-moe px-[12px] py-[6px] text-[12.5px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+                className="rounded-[6px] bg-moe px-[12px] py-[6px] text-[14px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
               >
                 {pendingMovimiento ? "Guardando…" : "Registrar"}
               </button>
@@ -1351,7 +1373,7 @@ function AtajoItem({ label, tecla, deshabilitado }: { label: string; tecla: stri
   return (
     <div className={`flex items-center justify-between ${deshabilitado ? "opacity-40" : ""}`}>
       <span className="text-text-2">{label}</span>
-      <kbd className="rounded-[4px] border border-border bg-bg-2 px-[6px] py-[1px] text-[11px] font-medium text-text-2">
+      <kbd className="rounded-[4px] border border-border bg-bg-2 px-[6px] py-[1px] text-[12.5px] font-medium text-text-2">
         {tecla}
       </kbd>
     </div>
