@@ -48,7 +48,11 @@ export async function crearProductoYSku(
         .insert({ nombre: input.marca.nombreNueva })
         .select("id")
         .single();
-      if (error) return { error: `No se pudo crear la marca: ${error.message}` };
+      if (error) {
+        if (error.code === "23505")
+          return { error: "Ya existe una marca con ese nombre: elegila en \"Existente\"." };
+        return { error: `No se pudo crear la marca: ${error.message}` };
+      }
       marcaId = data.id;
     }
 
@@ -64,7 +68,11 @@ export async function crearProductoYSku(
         })
         .select("id")
         .single();
-      if (error) return { error: `No se pudo crear la categoría: ${error.message}` };
+      if (error) {
+        if (error.code === "23505")
+          return { error: "Ya existe una categoría con ese nombre: elegila en \"Existente\"." };
+        return { error: `No se pudo crear la categoría: ${error.message}` };
+      }
       categoriaId = data.id;
     }
 
@@ -73,7 +81,18 @@ export async function crearProductoYSku(
       .insert({ nombre: input.producto.nombreNuevo, marca_id: marcaId, categoria_id: categoriaId })
       .select("id")
       .single();
-    if (error) return { error: `No se pudo crear el producto: ${error.message}` };
+    // 23505 = unique_violation. El caso real: ese producto ya existe para
+    // esa marca (productos_marca_id_nombre_key) y la persona lo está
+    // volviendo a crear en vez de elegirlo de la lista -- pasa seguido
+    // cargando catálogo, y el mensaje de Postgres no ayuda a entenderlo.
+    if (error) {
+      if (error.code === "23505")
+        return {
+          error:
+            "Ya existe un producto con ese nombre para esa marca. Elegilo en \"Existente\" en vez de crearlo: ahí le agregás esta presentación.",
+        };
+      return { error: `No se pudo crear el producto: ${error.message}` };
+    }
     productoId = data.id;
   }
 
@@ -119,7 +138,14 @@ export async function crearProductoYSku(
     .select("id")
     .single();
 
-  if (skuError) return { error: `No se pudo crear el SKU: ${skuError.message}` };
+  if (skuError) {
+    if (skuError.code === "23505")
+      return {
+        error:
+          "Ya hay un SKU con ese código interno o de barras. Revisá el código, o buscá el producto en el catálogo: puede estar cargado.",
+      };
+    return { error: `No se pudo crear el SKU: ${skuError.message}` };
+  }
 
   if (input.proveedores.length > 0) {
     const { error: proveedorSkusError } = await supabase.from("proveedor_skus").insert(

@@ -514,6 +514,17 @@ export function ProductoSkuForm({
               onChange={(e) => setUnidadesContenidas(e.target.value)}
               className={inputClass}
             />
+          
+            {/* Multiplica el recargo de Laprida (monto fijo x unidades
+                contenidas), así que un número de más acá sale caro y no se
+                nota hasta que alguien mira un ticket. Se avisa, no se
+                bloquea: mismo criterio que el precio bajo costo. */}
+            {tipoPresentacion === "unidad" && Number(unidadesContenidas) !== 1 && (
+              <p className="mt-[4px] text-[11.5px] text-warn">
+                Una unidad suelta contiene 1. Con {unidadesContenidas} acá, el recargo de Laprida
+                para este producto se multiplica por {unidadesContenidas}.
+              </p>
+            )}
           </div>
           <div>
             <label className={labelClass}>Stock mínimo</label>
