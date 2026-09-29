@@ -46,16 +46,20 @@ create policy empleados_delete on empleados for delete using (es_dueno());
 -- Se resuelve la sucursal por es_central, no por nombre hardcodeado, mismo
 -- criterio que el resto del sistema. Francisco y Lucas trabajan en las dos,
 -- así que tienen una fila en cada una.
+--
+-- gente.nombre va calificado a propósito: sucursales también tiene una
+-- columna nombre, y sin calificar Postgres no sabe a cuál de las dos se
+-- refiere.
 
 insert into empleados (nombre, sucursal_id)
-select nombre, s.id
+select gente.nombre, s.id
 from sucursales s
 cross join (values ('Macarena'), ('Rocío'), ('Andrea'), ('Francisco'), ('Lucas')) as gente(nombre)
 where s.es_central = true
 on conflict (sucursal_id, nombre) do nothing;
 
 insert into empleados (nombre, sucursal_id)
-select nombre, s.id
+select gente.nombre, s.id
 from sucursales s
 cross join (values ('Morena'), ('Mono'), ('Lucas'), ('Francisco')) as gente(nombre)
 where s.es_central = false
