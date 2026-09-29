@@ -9,7 +9,9 @@ export default async function ComprasPage() {
     supabase
       .from("compras")
       .select(
-        "id, numero_factura, fecha_factura, estado, total, proveedor:proveedores ( razon_social, nombre_comercial )",
+        `id, numero_factura, fecha_factura, estado, total,
+         tipo_comprobante, neto_gravado, iva, percepciones,
+         proveedor:proveedores ( razon_social, nombre_comercial )`,
       )
       .order("fecha_factura", { ascending: false, nullsFirst: false }),
     esDueno(supabase).then((esDuenoActual) => !esDuenoActual),

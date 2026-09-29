@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatoFecha, formatoMoneda } from "../_lib/formato";
+import { TIPO_COMPROBANTE_LABEL, type TipoComprobante } from "../_lib/comprobante";
 
 export type Compra = {
   id: string;
@@ -10,6 +11,12 @@ export type Compra = {
   fecha_factura: string | null;
   estado: "borrador" | "confirmada" | "cerrada";
   total: number;
+  // null = compra cargada antes de que el sistema pidiera el comprobante.
+  // No se asume que fue remito: se muestra como "Sin clasificar".
+  tipo_comprobante: TipoComprobante | null;
+  neto_gravado: number | null;
+  iva: number | null;
+  percepciones: number | null;
   proveedor: { razon_social: string; nombre_comercial: string | null } | null;
 };
 
@@ -31,6 +38,27 @@ export function EstadoCompraBadge({ estado }: { estado: Compra["estado"] }) {
       className={`inline-block rounded-[4px] px-[8px] py-[2px] text-[11.5px] font-medium ${ESTADO_CLASS[estado]}`}
     >
       {ESTADO_LABEL[estado]}
+    </span>
+  );
+}
+
+// Verde = descuenta IVA (Factura A). Amarillo = no descuenta, y es algo para
+// mirar (remito). Gris = dato que falta. Colores universales suaves, no el
+// rojo de marca (docs/identidad-visual.md).
+const COMPROBANTE_CLASS: Record<TipoComprobante | "sin_clasificar", string> = {
+  factura_a: "bg-ok-bg text-ok",
+  factura_b: "bg-info-bg text-info",
+  remito: "bg-warn-bg text-warn",
+  sin_clasificar: "bg-bg-2 text-text-2",
+};
+
+export function ComprobanteBadge({ tipo }: { tipo: TipoComprobante | null }) {
+  const clave = tipo ?? "sin_clasificar";
+  return (
+    <span
+      className={`inline-block whitespace-nowrap rounded-[4px] px-[8px] py-[2px] text-[11.5px] font-medium ${COMPROBANTE_CLASS[clave]}`}
+    >
+      {tipo ? TIPO_COMPROBANTE_LABEL[tipo] : "Sin clasificar"}
     </span>
   );
 }
@@ -103,7 +131,7 @@ export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; pued
                   Proveedor
                 </th>
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
-                  Factura
+                  Comprobante
                 </th>
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
                   Fecha
@@ -124,8 +152,11 @@ export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; pued
                       {c.proveedor?.nombre_comercial ?? c.proveedor?.razon_social ?? "—"}
                     </Link>
                   </td>
-                  <td className="px-[14px] py-[9px] align-middle text-text-2">
-                    {c.numero_factura ?? "—"}
+                  <td className="px-[14px] py-[9px] align-middle">
+                    <ComprobanteBadge tipo={c.tipo_comprobante} />
+                    {c.numero_factura && (
+                      <span className="ml-[6px] text-[12.5px] text-text-2">{c.numero_factura}</span>
+                    )}
                   </td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">
                     {c.fecha_factura ? formatoFecha.format(new Date(c.fecha_factura)) : "—"}

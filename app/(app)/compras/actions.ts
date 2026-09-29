@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import type { TipoComprobante } from "./_lib/comprobante";
 
 export type LineaCompra = {
   sku_id: string;
@@ -10,6 +11,22 @@ export type LineaCompra = {
   // Opcional: no todos los productos vencen (ej. vinos), otros sí (ej.
   // gaseosa) -- se carga si corresponde, nunca es obligatorio.
   fecha_vencimiento: string | null;
+};
+
+// Dato fiscal del comprobante, tal como figura en el papel. Vive en el
+// encabezado de la compra, no en las líneas: el costo por línea sigue
+// siendo el precio final pagado (IVA incluido), que es lo que usan el
+// margen y la cascada de precios.
+export type ComprobanteCompra = {
+  tipo_comprobante: TipoComprobante;
+  numero_factura: string | null;
+  fecha_factura: string | null;
+  // Solo Factura A: es la única que discrimina IVA.
+  neto_gravado: number | null;
+  iva: number | null;
+  // Percepciones (IIBB / IVA percepción). Se guardan para que el pie de la
+  // factura cuadre, pero no entran en el saldo de IVA (son pago a cuenta).
+  percepciones: number | null;
 };
 
 function validarLineas(lineas: LineaCompra[]): string | null {
@@ -24,6 +41,31 @@ function validarLineas(lineas: LineaCompra[]): string | null {
   return null;
 }
 
+// Mismo criterio que validar_comprobante_fiscal_compra() en la base: acá es
+// para dar el mensaje antes de ir al servidor, la validación real vive en
+// Postgres (la app no es la última palabra sobre qué es un comprobante
+// válido).
+function validarComprobante(c: ComprobanteCompra): string | null {
+  if (!c.tipo_comprobante) return "Indicá con qué vino la mercadería: Factura A, Factura B o remito.";
+
+  if (c.tipo_comprobante === "factura_a" || c.tipo_comprobante === "factura_b") {
+    if (!c.numero_factura) return "Cargá el número de la factura.";
+    if (!c.fecha_factura) return "Cargá la fecha de la factura.";
+  }
+
+  if (c.tipo_comprobante === "factura_a") {
+    if (c.neto_gravado === null || c.iva === null)
+      return "La Factura A tiene el IVA discriminado: cargá el neto gravado y el IVA.";
+    if (c.neto_gravado <= 0) return "El neto gravado tiene que ser mayor a cero.";
+    if (c.iva < 0) return "El IVA no puede ser negativo.";
+  }
+
+  if (c.percepciones !== null && c.percepciones < 0)
+    return "Las percepciones no pueden ser negativas.";
+
+  return null;
+}
+
 // Único camino para cargar una compra (arquitectura.md 1.6, decisión del
 // usuario 2026-09-21: "no trabaja así el local" -- se sacó el flujo de
 // "Nueva compra" en varias tandas/borrador, siempre llega todo junto).
@@ -31,27 +73,70 @@ function validarLineas(lineas: LineaCompra[]): string | null {
 // y actualiza stock/costo/precio en una sola transacción.
 export async function cargarCompraDirecta(datos: {
   proveedor_id: string;
-  numero_factura: string | null;
-  fecha_factura: string | null;
+  comprobante: ComprobanteCompra;
   lineas: LineaCompra[];
 }): Promise<{ error: string } | { id: string }> {
   const supabase = await createClient();
 
   if (!datos.proveedor_id) return { error: "Elegí un proveedor." };
 
+  const errorComprobante = validarComprobante(datos.comprobante);
+  if (errorComprobante) return { error: errorComprobante };
+
   const errorLineas = validarLineas(datos.lineas);
   if (errorLineas) return { error: errorLineas };
 
   const { data, error } = await supabase.rpc("cargar_compra_directa", {
     p_proveedor_id: datos.proveedor_id,
-    p_numero_factura: datos.numero_factura,
-    p_fecha_factura: datos.fecha_factura,
+    p_numero_factura: datos.comprobante.numero_factura,
+    p_fecha_factura: datos.comprobante.fecha_factura,
     p_lineas: datos.lineas,
+    p_tipo_comprobante: datos.comprobante.tipo_comprobante,
+    p_neto_gravado: datos.comprobante.neto_gravado,
+    p_iva: datos.comprobante.iva,
+    p_percepciones: datos.comprobante.percepciones,
   });
 
   if (error) return { error: error.message };
 
   revalidatePath("/compras");
   revalidatePath("/productos");
+  revalidatePath("/reportes/iva");
   return { id: data as string };
+}
+
+// La mercadería llegó con remito y la factura llegó después (o se cargó mal
+// el tipo). Cambia SOLO el comprobante fiscal -- no toca stock, costos ni el
+// total -- y deja una fila inmutable en compras_reclasificacion_fiscal con
+// quién, cuándo y por qué.
+export async function reclasificarComprobanteCompra(datos: {
+  compra_id: string;
+  comprobante: ComprobanteCompra;
+  motivo: string;
+}): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  const errorComprobante = validarComprobante(datos.comprobante);
+  if (errorComprobante) return { error: errorComprobante };
+
+  if (!datos.motivo.trim())
+    return { error: "Escribí por qué se cambia el comprobante de esta compra." };
+
+  const { error } = await supabase.rpc("reclasificar_comprobante_compra", {
+    p_compra_id: datos.compra_id,
+    p_tipo_comprobante: datos.comprobante.tipo_comprobante,
+    p_numero_factura: datos.comprobante.numero_factura,
+    p_fecha_factura: datos.comprobante.fecha_factura,
+    p_motivo: datos.motivo.trim(),
+    p_neto_gravado: datos.comprobante.neto_gravado,
+    p_iva: datos.comprobante.iva,
+    p_percepciones: datos.comprobante.percepciones,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/compras");
+  revalidatePath(`/compras/${datos.compra_id}`);
+  revalidatePath("/reportes/iva");
+  return { ok: true };
 }

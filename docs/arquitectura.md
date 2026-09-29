@@ -134,6 +134,30 @@ No mueve stock                    Genera movimiento de entrada
 - **Proveedor ↔ producto específico** (no solo marca/categoría). Habilita comparar proveedores y detectar productos sin proveedor activo.
 - La compra es el **único lugar donde cambia el costo**. La ficha de producto lo muestra en solo lectura.
 
+### Comprobante fiscal de la compra (2026-09-28)
+
+Al cargar mercadería, la encargada marca **con qué vino**: Factura A, Factura B o remito. Es
+obligatorio. Es el dato que alimenta el balance de IVA del dueño (ver 1.8).
+
+- **Solo la Factura A da crédito fiscal.** Moe es Responsable Inscripto: como receptor, la B no
+  le discrimina IVA y el remito no existe fiscalmente. La B se registra como gasto sin crédito y
+  el remito como compra sin comprobante — los tres se muestran separados en el reporte.
+- **El costo por línea no cambia de significado:** sigue siendo el precio final pagado, IVA
+  incluido (es lo que usan el margen y la cascada de precios). El dato fiscal —neto gravado e
+  IVA— vive en el **encabezado** de la compra, tal como figura al pie del comprobante. El sistema
+  lo propone calculándolo con `categorias.alicuota_iva` y la encargada lo corrige contra el papel.
+- Si neto + IVA + percepciones no coincide con la suma de las líneas, **se advierte, no se
+  bloquea** (mismo criterio que el precio bajo costo): una factura real trae bonificaciones y
+  redondeos.
+- **Percepciones** (IIBB u otras) se guardan como dato del comprobante para que el pie cuadre,
+  pero no entran en el saldo de IVA: son pago a cuenta, van en otro renglón de la DDJJ.
+- **La factura que llega después del remito** se carga sobre la misma compra, sin tocar stock,
+  costos ni total. Cada cambio deja una fila inmutable en `compras_reclasificacion_fiscal` (quién,
+  cuándo, de qué a qué, y motivo obligatorio). Lo hace la encargada, no el dueño — mismo criterio
+  que el resto del módulo de compras, donde el dueño solo visualiza.
+- Las compras cargadas antes de esta decisión quedan **sin clasificar**: no se asume que fueron
+  remito, y el reporte muestra ese monto aparte.
+
 ### Costo
 
 - **Historial completo por lote/recepción**: cada entrada guarda costo, proveedor y fecha.
@@ -264,6 +288,31 @@ factura la emite el otro, hasta que este bloque esté validado en homologación.
   reintentar facturar — mismo principio de inmutabilidad que el resto del sistema.
 - Certificado, clave privada y CUIT viven solo en variables de entorno del servidor: nunca
   en el repo, nunca en el cliente (browser), nunca en logs.
+
+### Balance de IVA — panel del dueño (2026-09-28)
+
+Pedido del cliente: ver el IVA discriminado, "el balance entre las compras en blanco y en negro
+que efectúa con lo que vende". Pantalla `/reportes/iva`, **solo el dueño**
+(`ve_rentabilidad_global()`): es resultado fiscal de la empresa, no costo ni margen, así que el
+encargado de Olavarría no entra.
+
+- **IVA débito** = suma de `comprobantes_fiscales.importe_iva` de los comprobantes `autorizado`
+  del mes. Solo lo facturado: es lo que realmente se declara.
+- **IVA crédito** = suma de `compras.iva` de las compras con Factura A del mes (ver 1.6).
+- **Saldo del mes** = débito − crédito. Positivo: a pagar. Negativo: a favor, se descuenta el mes
+  siguiente. No se arrastra automáticamente entre meses (eso lo hace la DDJJ, no el sistema).
+- **El período lo define la fecha del comprobante**, no la de la venta o la de la mercadería: para
+  ventas, la fecha de emisión (`CbteFch`); para compras, la fecha de la factura y, si es un remito
+  sin fecha, la fecha en que entró la mercadería. El mes se corta en **hora argentina**, no UTC.
+- Además del saldo, la pantalla muestra el panorama blanco/negro: qué proporción de lo comprado
+  tiene Factura A, B, remito o está sin clasificar, y qué proporción de lo vendido se facturó.
+- **No es la DDJJ, y la pantalla lo dice.** Quedan afuera: los gastos que no son mercadería (luz,
+  alquiler, fletes, servicios), que también dan crédito fiscal y hoy no existen en el sistema; y
+  las notas de crédito por devoluciones, que todavía no se emiten. El número final lo define el
+  contador.
+
+**Pendiente, como bloque aparte:** cargar comprobantes de compra que no mueven stock (servicios y
+gastos), para que el crédito fiscal del reporte se acerque al real.
 
 ### Requisitos técnicos de ARCA relevados (para Etapa 2)
 
@@ -561,6 +610,16 @@ compras
   numero_factura, fecha_factura
   estado ∈ {borrador, confirmada, cerrada}
   usuario_id, total
+  tipo_comprobante ∈ {factura_a, factura_b, remito}  ← null = cargada antes de 2026-09-28
+  neto_gravado, iva                                  ← solo Factura A (la B no discrimina)
+  percepciones                                       ← IIBB u otras; no entran en el saldo de IVA
+  comprobante_cargado_por, comprobante_cargado_en    ← trigger con auth.uid(), nunca la app
+
+compras_reclasificacion_fiscal
+  id, compra_id, usuario_id, fecha, motivo (obligatorio)
+  tipo/numero/fecha/neto/iva/percepciones: anterior y nuevo
+  ← una fila por cada corrección del comprobante (típico: llegó la factura del remito).
+    Inmutable. Solo la escribe reclasificar_comprobante_compra().
 
 compra_items
   id, compra_id, sku_id, cantidad, costo_unitario, subtotal

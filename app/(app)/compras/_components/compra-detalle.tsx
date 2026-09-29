@@ -1,17 +1,31 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   presentacionLabel,
   type SkuPresentacion,
 } from "@/app/(app)/productos/_components/productos-table";
 import { formatoFechaHora, formatoMoneda } from "../_lib/formato";
-import { EstadoCompraBadge, type Compra } from "./compras-table";
+import {
+  TIPOS_COMPROBANTE,
+  TIPO_COMPROBANTE_AYUDA,
+  TIPO_COMPROBANTE_LABEL,
+  desglosarIvaCompra,
+  redondearPeso,
+  type TipoComprobante,
+} from "../_lib/comprobante";
+import { reclasificarComprobanteCompra } from "../actions";
+import { ComprobanteBadge, EstadoCompraBadge, type Compra } from "./compras-table";
 
 type SkuInfo = SkuPresentacion & {
   nombre: string;
   codigo_interno: string;
-  producto: { nombre: string; marca: { nombre: string } | null } | null;
+  producto: {
+    nombre: string;
+    marca: { nombre: string } | null;
+    categoria?: { alicuota_iva: number } | null;
+  } | null;
 };
 
 export type ItemCompraDetalle = {
@@ -43,6 +57,20 @@ export type CompraDetalleData = Compra & {
   items: ItemCompraDetalle[];
 };
 
+// Log inmutable de cambios del comprobante fiscal (el caso típico: llegó con
+// remito y la factura apareció tres días después).
+export type ReclasificacionCompra = {
+  id: string;
+  tipo_anterior: TipoComprobante | null;
+  tipo_nuevo: TipoComprobante;
+  numero_nuevo: string | null;
+  fecha_nueva: string | null;
+  iva_nuevo: number | null;
+  motivo: string;
+  fecha: string;
+  usuario: { nombre: string } | null;
+};
+
 function nombreSku(sku: SkuInfo | null) {
   if (!sku) return "SKU eliminado";
   return sku.producto?.nombre ?? sku.nombre;
@@ -59,6 +87,184 @@ function formatoVencimiento(fecha: string | null) {
   return `${dd}/${mm}/${aaaa}`;
 }
 
+const inputClass =
+  "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe";
+const labelClass = "mb-[4px] block text-[12px] font-medium text-text-2";
+
+// Cargar (o corregir) el comprobante fiscal de una compra ya cerrada. No
+// toca stock, costos ni el total: solo cambia con qué vino esa mercadería, y
+// exige motivo -- queda una fila en compras_reclasificacion_fiscal.
+function ComprobanteForm({
+  compra,
+  netoSugerido,
+  ivaSugerido,
+  onListo,
+  onCancelar,
+}: {
+  compra: CompraDetalleData;
+  netoSugerido: number;
+  ivaSugerido: number;
+  onListo: () => void;
+  onCancelar: () => void;
+}) {
+  const [tipo, setTipo] = useState<TipoComprobante | "">(compra.tipo_comprobante ?? "");
+  const [numero, setNumero] = useState(compra.numero_factura ?? "");
+  const [fecha, setFecha] = useState(compra.fecha_factura ?? "");
+  const [neto, setNeto] = useState<string | null>(
+    compra.neto_gravado !== null ? String(compra.neto_gravado) : null,
+  );
+  const [iva, setIva] = useState<string | null>(compra.iva !== null ? String(compra.iva) : null);
+  const [percepciones, setPercepciones] = useState(
+    compra.percepciones !== null ? String(compra.percepciones) : "",
+  );
+  const [motivo, setMotivo] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const esFactura = tipo === "factura_a" || tipo === "factura_b";
+  const discriminaIva = tipo === "factura_a";
+  const netoMostrado = neto ?? redondearPeso(netoSugerido).toFixed(2);
+  const ivaMostrado = iva ?? redondearPeso(ivaSugerido).toFixed(2);
+
+  function guardar() {
+    setError(null);
+    startTransition(async () => {
+      const resultado = await reclasificarComprobanteCompra({
+        compra_id: compra.id,
+        comprobante: {
+          tipo_comprobante: tipo as TipoComprobante,
+          numero_factura: numero.trim() || null,
+          fecha_factura: fecha || null,
+          neto_gravado: discriminaIva && netoMostrado !== "" ? Number(netoMostrado) : null,
+          iva: discriminaIva && ivaMostrado !== "" ? Number(ivaMostrado) : null,
+          percepciones: discriminaIva && percepciones !== "" ? Number(percepciones) : null,
+        },
+        motivo,
+      });
+
+      if ("error" in resultado) {
+        setError(resultado.error);
+        return;
+      }
+      onListo();
+    });
+  }
+
+  return (
+    <div className="mt-3 border-t border-border pt-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {TIPOS_COMPROBANTE.map((t) => {
+          const activo = tipo === t;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTipo(t)}
+              className={`rounded-[6px] border px-[10px] py-[7px] text-left ${
+                activo
+                  ? "border-moe bg-moe-soft text-moe"
+                  : "border-border bg-bg text-text-2 hover:bg-[#FAFAFB]"
+              }`}
+            >
+              <span className="block text-[13px] font-medium">{TIPO_COMPROBANTE_LABEL[t]}</span>
+              <span className="mt-[1px] block text-[11px] leading-[1.3] text-text-3">
+                {TIPO_COMPROBANTE_AYUDA[t]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {esFactura && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className={labelClass}>Número de factura *</label>
+            <input className={inputClass} value={numero} onChange={(e) => setNumero(e.target.value)} />
+          </div>
+          <div>
+            <label className={labelClass}>Fecha de la factura *</label>
+            <input
+              type="date"
+              className={inputClass}
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
+      {discriminaIva && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div>
+            <label className={labelClass}>Neto gravado *</label>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className={`${inputClass} text-right tabular-nums`}
+              value={netoMostrado}
+              onChange={(e) => setNeto(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>IVA *</label>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              className={`${inputClass} text-right tabular-nums`}
+              value={ivaMostrado}
+              onChange={(e) => setIva(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Percepciones</label>
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              placeholder="0"
+              className={`${inputClass} text-right tabular-nums`}
+              value={percepciones}
+              onChange={(e) => setPercepciones(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3">
+        <label className={labelClass}>¿Por qué se corrige? *</label>
+        <input
+          className={inputClass}
+          placeholder="Ej.: llegó la factura del remito del 12/09"
+          value={motivo}
+          onChange={(e) => setMotivo(e.target.value)}
+        />
+      </div>
+
+      {error && <p className="mt-2 text-[12.5px] text-err">{error}</p>}
+
+      <div className="mt-3 flex items-center justify-end gap-3">
+        <button
+          type="button"
+          onClick={onCancelar}
+          className="text-[12.5px] text-text-3 hover:text-text"
+        >
+          Cancelar
+        </button>
+        <button
+          type="button"
+          onClick={guardar}
+          disabled={pending}
+          className="rounded-[6px] bg-moe px-[14px] py-[7px] text-[13px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+        >
+          {pending ? "Guardando…" : "Guardar comprobante"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Solo lectura: toda compra se carga y recibe en un solo paso desde
 // "Cargar mercadería" (cargar_compra_directa()), así que para cuando esta
 // pantalla existe la compra ya está cerrada -- no hay borrador para editar
@@ -68,11 +274,32 @@ function formatoVencimiento(fecha: string | null) {
 export function CompraDetalle({
   compra,
   recepciones,
+  reclasificaciones,
+  puedeReclasificar,
 }: {
   compra: CompraDetalleData;
   recepciones: RecepcionDetalle[];
+  reclasificaciones: ReclasificacionCompra[];
+  // El dueño solo visualiza compras: el comprobante lo carga la encargada
+  // (20260922140000_compras_solo_lectura_dueno.sql).
+  puedeReclasificar: boolean;
 }) {
   const itemsPorId = useMemo(() => new Map(compra.items.map((i) => [i.id, i])), [compra.items]);
+  const router = useRouter();
+  const [editando, setEditando] = useState(false);
+
+  // Propuesta de desglose para cuando la factura llega después: el costo
+  // cargado es el precio final pagado, el neto sale para atrás.
+  const desgloseSugerido = useMemo(
+    () =>
+      desglosarIvaCompra(
+        compra.items.map((it) => ({
+          total: it.subtotal,
+          alicuotaIva: it.sku?.producto?.categoria?.alicuota_iva ?? 21,
+        })),
+      ),
+    [compra.items],
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -83,12 +310,92 @@ export function CompraDetalle({
               {compra.proveedor?.nombre_comercial ?? compra.proveedor?.razon_social ?? "Proveedor"}
             </h2>
             <p className="mt-[2px] text-[12.5px] text-text-3">
-              {compra.numero_factura ? `Factura ${compra.numero_factura}` : "Sin número de factura"}
+              {compra.numero_factura ?? "Sin número de comprobante"}
               {compra.fecha_factura ? ` · ${compra.fecha_factura}` : ""}
             </p>
           </div>
-          <EstadoCompraBadge estado={compra.estado} />
+          <div className="flex items-center gap-2">
+            <ComprobanteBadge tipo={compra.tipo_comprobante} />
+            <EstadoCompraBadge estado={compra.estado} />
+          </div>
         </div>
+
+        <div className="mt-3 border-t border-border pt-3">
+          {compra.tipo_comprobante === "factura_a" ? (
+            <div className="flex flex-wrap gap-x-[22px] gap-y-[4px] text-[12.5px] text-text-2">
+              <span>
+                Neto gravado:{" "}
+                <b className="font-medium tabular-nums text-text">
+                  {formatoMoneda.format(compra.neto_gravado ?? 0)}
+                </b>
+              </span>
+              <span>
+                IVA:{" "}
+                <b className="font-medium tabular-nums text-text">
+                  {formatoMoneda.format(compra.iva ?? 0)}
+                </b>
+              </span>
+              {compra.percepciones !== null && compra.percepciones > 0 && (
+                <span>
+                  Percepciones:{" "}
+                  <b className="font-medium tabular-nums text-text">
+                    {formatoMoneda.format(compra.percepciones)}
+                  </b>
+                </span>
+              )}
+              <span className="text-ok">Descuenta IVA</span>
+            </div>
+          ) : (
+            <p className="text-[12.5px] text-text-2">
+              {compra.tipo_comprobante === "factura_b"
+                ? "Factura B: no discrimina IVA, así que esta compra no descuenta IVA."
+                : compra.tipo_comprobante === "remito"
+                  ? "Llegó con remito: esta compra no descuenta IVA."
+                  : "Esta compra se cargó antes de que el sistema pidiera el comprobante, así que no sabemos con qué vino."}
+            </p>
+          )}
+
+          {puedeReclasificar && !editando && (
+            <button
+              type="button"
+              onClick={() => setEditando(true)}
+              className="mt-2 text-[12.5px] font-medium text-moe hover:underline"
+            >
+              {compra.tipo_comprobante === "factura_a" || compra.tipo_comprobante === "factura_b"
+                ? "Corregir comprobante"
+                : "Cargar la factura"}
+            </button>
+          )}
+
+          {editando && (
+            <ComprobanteForm
+              compra={compra}
+              netoSugerido={desgloseSugerido.neto}
+              ivaSugerido={desgloseSugerido.iva}
+              onCancelar={() => setEditando(false)}
+              onListo={() => {
+                setEditando(false);
+                router.refresh();
+              }}
+            />
+          )}
+        </div>
+
+        {reclasificaciones.length > 0 && (
+          <div className="mt-3 border-t border-border pt-3">
+            <p className="mb-[5px] text-[12px] font-medium text-text-2">Cambios del comprobante</p>
+            <div className="flex flex-col gap-[3px]">
+              {reclasificaciones.map((r) => (
+                <p key={r.id} className="text-[12px] text-text-3">
+                  {formatoFechaHora.format(new Date(r.fecha))} · {r.usuario?.nombre ?? "—"} ·{" "}
+                  {r.tipo_anterior ? TIPO_COMPROBANTE_LABEL[r.tipo_anterior] : "Sin clasificar"} →{" "}
+                  {TIPO_COMPROBANTE_LABEL[r.tipo_nuevo]}
+                  {r.numero_nuevo ? ` (${r.numero_nuevo})` : ""} — {r.motivo}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-card border border-border bg-bg">

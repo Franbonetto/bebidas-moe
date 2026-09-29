@@ -7,6 +7,14 @@ import { cargarCompraDirecta } from "../actions";
 import { guardarPrecioBase } from "@/app/(app)/precios/actions";
 import { actualizarCodigoBarras } from "@/app/(app)/productos/actions";
 import { formatoMoneda } from "../_lib/formato";
+import {
+  TIPOS_COMPROBANTE,
+  TIPO_COMPROBANTE_AYUDA,
+  TIPO_COMPROBANTE_LABEL,
+  desglosarIvaCompra,
+  redondearPeso,
+  type TipoComprobante,
+} from "../_lib/comprobante";
 import { SkuPicker, type SkuCatalogo } from "./sku-picker";
 
 type Proveedor = { id: string; razon_social: string; nombre_comercial: string | null };
@@ -55,6 +63,17 @@ function fechaVencimientoAIso(valor: string): string | null {
   return `${aaaa}-${mm}-${dd}`;
 }
 
+// Hoy todo el catálogo va al 21% pero el dato vive en la categoría
+// (20260907090000_categorias_alicuota_iva.sql) -- mismo fallback que usa la
+// facturación de ventas si la categoría no lo trae.
+function alicuotaDe(sku: SkuCatalogo): number {
+  return sku.producto?.categoria?.alicuota_iva ?? 21;
+}
+
+// Tolerancia del cuadre: un peso. Las facturas reales redondean, así que
+// exigir el centavo exacto solo generaría una advertencia permanente.
+const TOLERANCIA_CUADRE = 1;
+
 export function CompraDirectaForm({
   proveedores,
   skus,
@@ -68,6 +87,15 @@ export function CompraDirectaForm({
   const [proveedorId, setProveedorId] = useState("");
   const [numeroFactura, setNumeroFactura] = useState("");
   const [fechaFactura, setFechaFactura] = useState("");
+  // Con qué vino la mercadería. Obligatorio: es lo que después define si esa
+  // compra descuenta IVA o no en el balance del dueño.
+  const [tipoComprobante, setTipoComprobante] = useState<TipoComprobante | "">("");
+  // null = todavía no lo tocó, se muestra el número que calcula el sistema a
+  // partir de la alícuota de cada categoría. Si escribe, manda lo que escribió
+  // (el papel gana sobre el cálculo).
+  const [netoInput, setNetoInput] = useState<string | null>(null);
+  const [ivaInput, setIvaInput] = useState<string | null>(null);
+  const [percepciones, setPercepciones] = useState("");
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [avisoPrecio, setAvisoPrecio] = useState<string | null>(null);
@@ -80,6 +108,43 @@ export function CompraDirectaForm({
 
   const excluirIds = useMemo(() => new Set(lineas.map((l) => l.sku.id)), [lineas]);
   const total = lineas.reduce((acc, l) => acc + l.cantidad * l.costoUnitario, 0);
+
+  // Desglose propuesto: el costo cargado es el precio final pagado (IVA
+  // incluido), así que el neto sale para atrás con la alícuota de cada
+  // categoría. Es una propuesta -- la encargada lo corrige contra el papel.
+  const desgloseSugerido = useMemo(
+    () =>
+      desglosarIvaCompra(
+        lineas
+          .filter((l) => !l.soloPrecio)
+          .map((l) => ({ total: l.cantidad * l.costoUnitario, alicuotaIva: alicuotaDe(l.sku) })),
+      ),
+    [lineas],
+  );
+
+  const esFactura = tipoComprobante === "factura_a" || tipoComprobante === "factura_b";
+  const discriminaIva = tipoComprobante === "factura_a";
+
+  const netoMostrado =
+    netoInput ?? (total > 0 ? redondearPeso(desgloseSugerido.neto).toFixed(2) : "");
+  const ivaMostrado = ivaInput ?? (total > 0 ? redondearPeso(desgloseSugerido.iva).toFixed(2) : "");
+  const netoValor = netoMostrado === "" ? null : Number(netoMostrado);
+  const ivaValor = ivaMostrado === "" ? null : Number(ivaMostrado);
+  const percepcionesValor = percepciones === "" ? null : Number(percepciones);
+
+  // Se advierte, no se bloquea (mismo criterio que el precio bajo costo):
+  // una factura real puede traer bonificaciones o conceptos que no están en
+  // las líneas cargadas.
+  const cuadre =
+    discriminaIva && netoValor !== null && ivaValor !== null
+      ? netoValor + ivaValor + (percepcionesValor ?? 0)
+      : null;
+  const avisoCuadre =
+    cuadre !== null && total > 0 && Math.abs(cuadre - total) > TOLERANCIA_CUADRE
+      ? `El comprobante suma ${formatoMoneda.format(cuadre)} y lo cargado en las líneas da ${formatoMoneda.format(
+          total,
+        )}. Revisalo contra la factura — si la diferencia es real (bonificaciones, redondeos), podés registrar igual.`
+      : null;
 
   // Mapa completo de la cadena de desarme (x24 -> x6 -> unidad) para poder
   // encontrar TODA la familia de un SKU sin importar por cuál se entra --
@@ -216,6 +281,19 @@ export function CompraDirectaForm({
 
   function validar(): string | null {
     if (!proveedorId) return "Elegí un proveedor.";
+    if (!tipoComprobante) return "Indicá con qué vino la mercadería: Factura A, Factura B o remito.";
+    if (esFactura && !numeroFactura.trim()) return "Cargá el número de la factura.";
+    if (esFactura && !fechaFactura) return "Cargá la fecha de la factura.";
+    if (discriminaIva) {
+      if (netoValor === null || ivaValor === null)
+        return "La Factura A tiene el IVA discriminado: cargá el neto gravado y el IVA.";
+      if (!Number.isFinite(netoValor) || netoValor <= 0)
+        return "El neto gravado tiene que ser mayor a cero.";
+      if (!Number.isFinite(ivaValor) || ivaValor < 0) return "El IVA no puede ser negativo.";
+    }
+    if (percepcionesValor !== null && (!Number.isFinite(percepcionesValor) || percepcionesValor < 0))
+      return "Las percepciones no pueden ser negativas.";
+
     const lineasReales = lineas.filter((l) => !l.soloPrecio);
     if (lineasReales.length === 0) return "Agregá al menos una línea.";
     for (const l of lineasReales) {
@@ -244,8 +322,18 @@ export function CompraDirectaForm({
     startTransition(async () => {
       const resultado = await cargarCompraDirecta({
         proveedor_id: proveedorId,
-        numero_factura: numeroFactura.trim() || null,
-        fecha_factura: fechaFactura || null,
+        comprobante: {
+          tipo_comprobante: tipoComprobante as TipoComprobante,
+          numero_factura: numeroFactura.trim() || null,
+          fecha_factura: fechaFactura || null,
+          // La B no discrimina IVA y el remito no tiene nada fiscal: se
+          // mandan en null a propósito (la base también lo fuerza).
+          neto_gravado: discriminaIva ? netoValor : null,
+          iva: discriminaIva ? ivaValor : null,
+          // El campo solo se muestra con Factura A (es donde aparecen en la
+          // práctica): con B o remito no se manda nada.
+          percepciones: discriminaIva ? percepcionesValor : null,
+        },
         lineas: lineas
           .filter((l) => !l.soloPrecio)
           .map((l) => ({
@@ -275,6 +363,10 @@ export function CompraDirectaForm({
       setNumeroFactura("");
       setFechaFactura("");
       setProveedorId("");
+      setTipoComprobante("");
+      setNetoInput(null);
+      setIvaInput(null);
+      setPercepciones("");
 
       if (fallos.length > 0) {
         setCompraCreadaId(resultado.id);
@@ -294,8 +386,9 @@ export function CompraDirectaForm({
     <div className="mx-auto max-w-[880px] rounded-card border border-border bg-bg p-5">
       <h2 className="mb-1 text-[14px] font-semibold text-text">Cargar mercadería</h2>
       <p className="mb-4 text-[12.5px] text-text-3">
-        Elegí el proveedor, cargá lo que entró, el costo y el precio de venta, y queda todo
-        actualizado (compra, stock, costo y precio) en un solo paso. Cada presentación (x24, x6,
+        Elegí el proveedor, marcá con qué vino (factura o remito), cargá lo que entró, el costo y el
+        precio de venta, y queda todo actualizado (compra, stock, costo y precio) en un solo paso.
+        Cada presentación (x24, x6,
         unidad) tiene su propio precio, siempre cargado a mano y obligatorio. Si agregás un pack
         que se desarma, el resto de la familia aparece abajo para cargarle el precio ahí mismo. El
         vencimiento es opcional: cargalo solo si el producto lo tiene.
@@ -316,7 +409,7 @@ export function CompraDirectaForm({
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <div>
           <label className={labelClass}>Proveedor *</label>
           <select
@@ -332,24 +425,62 @@ export function CompraDirectaForm({
             ))}
           </select>
         </div>
+
         <div>
-          <label className={labelClass}>Número de factura</label>
-          <input
-            className={inputClass}
-            value={numeroFactura}
-            onChange={(e) => setNumeroFactura(e.target.value)}
-          />
-        </div>
-        <div>
-          <label className={labelClass}>Fecha de factura</label>
-          <input
-            type="date"
-            className={inputClass}
-            value={fechaFactura}
-            onChange={(e) => setFechaFactura(e.target.value)}
-          />
+          <label className={labelClass}>¿Con qué vino la mercadería? *</label>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {TIPOS_COMPROBANTE.map((t) => {
+              const activo = tipoComprobante === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTipoComprobante(t)}
+                  className={`rounded-[6px] border px-[10px] py-[7px] text-left ${
+                    activo
+                      ? "border-moe bg-moe-soft text-moe"
+                      : "border-border bg-bg text-text-2 hover:bg-[#FAFAFB]"
+                  }`}
+                >
+                  <span className="block text-[13px] font-medium">{TIPO_COMPROBANTE_LABEL[t]}</span>
+                  <span className="mt-[1px] block text-[11px] leading-[1.3] text-text-3">
+                    {TIPO_COMPROBANTE_AYUDA[t]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
+
+      {esFactura && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div>
+            <label className={labelClass}>Número de factura *</label>
+            <input
+              className={inputClass}
+              value={numeroFactura}
+              onChange={(e) => setNumeroFactura(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Fecha de la factura *</label>
+            <input
+              type="date"
+              className={inputClass}
+              value={fechaFactura}
+              onChange={(e) => setFechaFactura(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
+      {tipoComprobante === "remito" && (
+        <p className="mt-3 rounded-[6px] border border-info/30 bg-info-bg px-[12px] py-[8px] text-[12.5px] text-info">
+          Queda registrada como compra sin factura: no descuenta IVA. Cuando llegue la factura,
+          entrá a la compra y cargala desde ahí — se actualiza sola en el balance.
+        </p>
+      )}
 
       <div className="mt-5">
         <label className={labelClass}>Agregar producto</label>
@@ -526,10 +657,68 @@ export function CompraDirectaForm({
       </div>
 
       <div className="mt-3 flex justify-end">
-        <p className="text-[13px] font-semibold text-text">
-          Total: <span className="tabular-nums">{formatoMoneda.format(total)}</span>
-        </p>
+        <div className="w-full sm:w-[360px]">
+          {discriminaIva && (
+            <>
+              <p className="mb-[6px] text-[12px] text-text-3">
+                Como figura al pie de la factura. Lo calculamos por vos — corregilo si el papel dice
+                otra cosa.
+              </p>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-[12.5px] text-text-2">Neto gravado</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="w-[140px] rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
+                    value={netoMostrado}
+                    onChange={(e) => setNetoInput(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-[12.5px] text-text-2">IVA</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="w-[140px] rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
+                    value={ivaMostrado}
+                    onChange={(e) => setIvaInput(e.target.value)}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-[12.5px] text-text-2">
+                    Percepciones
+                    <span className="block text-[11px] text-text-3">IIBB u otras, si tiene</span>
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="0"
+                    className="w-[140px] rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
+                    value={percepciones}
+                    onChange={(e) => setPercepciones(e.target.value)}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <p
+            className={`text-[13px] font-semibold text-text ${discriminaIva ? "mt-3 border-t border-border pt-2" : ""} text-right`}
+          >
+            Total: <span className="tabular-nums">{formatoMoneda.format(total)}</span>
+          </p>
+        </div>
       </div>
+
+      {avisoCuadre && (
+        <p className="mt-3 rounded-[6px] border border-warn/40 bg-warn-bg px-[12px] py-[8px] text-[12.5px] text-warn">
+          {avisoCuadre}
+        </p>
+      )}
 
       {error && <p className="mt-3 text-[12.5px] text-err">{error}</p>}
 

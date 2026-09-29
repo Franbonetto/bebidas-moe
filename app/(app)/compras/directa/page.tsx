@@ -33,7 +33,7 @@ export default async function CompraDirectaPage() {
       .select(
         `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
          desarma_en_sku_id,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
+         producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( alicuota_iva ) )`,
       )
       .eq("activo", true),
     supabase.from("proveedor_skus").select("proveedor_id, sku_id, costo_referencia"),

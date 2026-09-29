@@ -1,6 +1,12 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { CompraDetalle, type CompraDetalleData, type RecepcionDetalle } from "../_components/compra-detalle";
+import { esDueno } from "@/lib/permisos";
+import {
+  CompraDetalle,
+  type CompraDetalleData,
+  type ReclasificacionCompra,
+  type RecepcionDetalle,
+} from "../_components/compra-detalle";
 
 export default async function CompraDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -10,11 +16,13 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
     .from("compras")
     .select(
       `id, numero_factura, fecha_factura, estado, total,
+       tipo_comprobante, neto_gravado, iva, percepciones,
        proveedor:proveedores ( id, razon_social, nombre_comercial ),
        compra_items (
          id, sku_id, cantidad, costo_unitario, subtotal, fecha_vencimiento,
          sku:skus ( nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-                    producto:productos ( nombre, marca:marcas ( nombre ) ) )
+                    producto:productos ( nombre, marca:marcas ( nombre ),
+                                         categoria:categorias ( alicuota_iva ) ) )
        )`,
     )
     .eq("id", id)
@@ -22,14 +30,24 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
 
   if (!compra) notFound();
 
-  const { data: recepciones } = await supabase
-    .from("recepciones_compra")
-    .select(
-      `id, fecha, estado, usuario:usuarios ( nombre ),
-       recepcion_items ( compra_item_id, cantidad_recibida, diferencia, motivo_diferencia )`,
-    )
-    .eq("compra_id", id)
-    .order("fecha", { ascending: true });
+  const [{ data: recepciones }, { data: reclasificaciones }, esDuenoActual] = await Promise.all([
+    supabase
+      .from("recepciones_compra")
+      .select(
+        `id, fecha, estado, usuario:usuarios ( nombre ),
+         recepcion_items ( compra_item_id, cantidad_recibida, diferencia, motivo_diferencia )`,
+      )
+      .eq("compra_id", id)
+      .order("fecha", { ascending: true }),
+    supabase
+      .from("compras_reclasificacion_fiscal")
+      .select(
+        "id, tipo_anterior, tipo_nuevo, numero_nuevo, fecha_nueva, iva_nuevo, motivo, fecha, usuario:usuarios ( nombre )",
+      )
+      .eq("compra_id", id)
+      .order("fecha", { ascending: false }),
+    esDueno(supabase),
+  ]);
 
   const recepcionesList = (recepciones ?? []) as unknown as RecepcionDetalle[];
 
@@ -52,5 +70,14 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
     return { ...it, recibido_previo: recibidoPrevio, pendiente: it.cantidad - recibidoPrevio };
   });
 
-  return <CompraDetalle compra={{ ...compraRaw, items }} recepciones={recepcionesList} />;
+  return (
+    <CompraDetalle
+      compra={{ ...compraRaw, items }}
+      recepciones={recepcionesList}
+      reclasificaciones={(reclasificaciones ?? []) as unknown as ReclasificacionCompra[]}
+      // Cargar la factura que llegó después es carga de mercadería, no
+      // lectura: el dueño mira, la encargada corrige.
+      puedeReclasificar={!esDuenoActual && compraRaw.estado !== "borrador"}
+    />
+  );
 }

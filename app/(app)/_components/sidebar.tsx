@@ -103,6 +103,15 @@ const NAV: NavItem[] = [
     icon: "M9 11H3v10h6zM15 3H9v18h6zM21 7h-6v14h6z",
   },
   {
+    label: "Balance de IVA",
+    href: "/reportes/iva",
+    seccion: "catalogo",
+    // Rentabilidad global: solo el dueño (CLAUDE.md, matriz de roles). El
+    // encargado de Olavarría ve costos y márgenes, no el resultado fiscal.
+    soloDueno: true,
+    icon: "M19 5L5 19M6.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM17.5 20a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
+  },
+  {
     label: "Usuarios",
     href: "/usuarios",
     seccion: "catalogo",

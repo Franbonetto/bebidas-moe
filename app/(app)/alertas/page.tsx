@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { operaCentral, veCostos } from "@/lib/permisos";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
@@ -377,6 +378,22 @@ export default async function AlertasPage() {
         </div>
         <PreferenciasPanel categorias={categoriasDisponibles} preferencias={preferenciasPorCategoria} />
       </div>
+
+      {rol === "dueno" && (
+        <Link
+          href="/reportes/iva"
+          className="flex items-center justify-between gap-3 rounded-card border border-border bg-bg px-[14px] py-[12px] hover:border-border-strong hover:bg-[#FAFAFB]"
+        >
+          <span>
+            <b className="block text-[13.5px] font-medium text-text">Balance de IVA</b>
+            <small className="text-[12px] text-text-3">
+              Cuánto IVA cobrás en lo que facturás y cuánto pagás en las compras con factura, mes por
+              mes.
+            </small>
+          </span>
+          <span className="text-[13px] text-moe">Ver →</span>
+        </Link>
+      )}
 
       {!hayAlgunaAlerta && <EmptyState title="Todo al día" sub="No hay alertas activas en este momento." />}
 

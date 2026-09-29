@@ -18,6 +18,10 @@ export type SkuCatalogo = SkuPresentacion & {
   producto: {
     nombre: string;
     marca: { nombre: string } | null;
+    // Opcional, igual que desarma_en_sku_id: solo lo necesita Cargar
+    // mercadería, para proponer el desglose de neto/IVA de la factura a
+    // partir de la alícuota de la categoría.
+    categoria?: { alicuota_iva: number } | null;
   } | null;
 };
 
