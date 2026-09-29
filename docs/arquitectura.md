@@ -168,6 +168,14 @@ obligatorio. Es el dato que alimenta el balance de IVA del dueño (ver 1.8).
 
 - **Historial completo por lote/recepción**: cada entrada guarda costo, proveedor y fecha.
 - El stock **no rastrea de qué lote sale** cada unidad.
+- **Un mismo SKU puede tener varios lotes con vencimientos distintos** (2026-09-29): dos entregas
+  del mismo producto son dos lotes, y la carga inicial también permite repartir lo contado en
+  varias fechas. Como el stock no está atado al lote, **qué sigue en el local se estima**:
+  se recorren los lotes del más nuevo al más viejo sumando cantidades hasta cubrir el stock
+  actual (la mercadería se vende de la más vieja a la más nueva). Antes el panel de vencimientos
+  miraba solo el último lote, que es justo el que vence más lejos: del que estaba por vencer no
+  avisaba nunca. Si la estimación falla muestra una alerta de más o de menos — no toca stock ni
+  costos.
 - El "costo actual" mostrado = costo del último lote recibido.
 - Migrable a FIFO más adelante sin perder datos, porque el historial ya se guarda desde el día uno.
 

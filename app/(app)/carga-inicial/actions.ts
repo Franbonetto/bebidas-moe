@@ -89,8 +89,10 @@ export async function guardarCargaInicial(datos: {
   cantidad: number;
   costo: number | null;
   precio: number | null;
-  // dd/mm/aaaa ya convertido a ISO por el formulario, o null.
-  fecha_vencimiento: string | null;
+  // Un lote por fecha de vencimiento. Vacío = no se cargó vencimiento.
+  // Cuando hay más de uno, las cantidades tienen que sumar lo contado: un
+  // producto puede tener 6 que vencen en marzo y 6 en septiembre.
+  lotes: { cantidad: number; fecha_vencimiento: string }[];
   proveedor_id: string | null;
   // null = no lo tocó, se deja el que ya tenía el SKU.
   stock_minimo: number | null;
@@ -108,6 +110,19 @@ export async function guardarCargaInicial(datos: {
   ] as const) {
     if (valor !== null && (!Number.isInteger(valor) || valor < 0))
       return { error: `${nombre} tiene que ser un número entero, cero o más.` };
+  }
+
+  const sumaLotes = datos.lotes.reduce((acc, l) => acc + l.cantidad, 0);
+  if (datos.lotes.length > 0) {
+    for (const lote of datos.lotes) {
+      if (!Number.isInteger(lote.cantidad) || lote.cantidad <= 0)
+        return { error: "Cada vencimiento necesita una cantidad mayor a cero." };
+      if (!lote.fecha_vencimiento) return { error: "Falta la fecha en uno de los vencimientos." };
+    }
+    if (sumaLotes !== datos.cantidad)
+      return {
+        error: `Los vencimientos suman ${sumaLotes} y contaste ${datos.cantidad}: tienen que dar igual.`,
+      };
   }
 
   if (
@@ -133,8 +148,8 @@ export async function guardarCargaInicial(datos: {
     p_sucursal_id: datos.sucursal_id,
     p_cantidad: datos.cantidad,
     p_costo: datos.costo,
-    p_fecha_vencimiento: datos.fecha_vencimiento,
     p_proveedor_id: datos.proveedor_id,
+    p_lotes: datos.lotes.length > 0 ? datos.lotes : null,
   });
 
   if (error) return { error: error.message };

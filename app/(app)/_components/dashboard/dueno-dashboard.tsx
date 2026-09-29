@@ -180,10 +180,12 @@ function BloqueSucursal({
                 const sku = skuPorId.get(v.sku_id);
                 return (
                   <div
-                    key={v.sku_id}
+                    key={`${v.sku_id}:${v.fecha_vencimiento}`}
                     className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[8px] last:border-b-0"
                   >
-                    <p className="min-w-0 truncate text-[12.5px] text-text">{nombreSku(sku)}</p>
+                    <p className="min-w-0 truncate text-[12.5px] text-text">
+                      {nombreSku(sku)} <span className="text-text-3">· {v.unidades} u.</span>
+                    </p>
                     <Badge color={v.dias_restantes < 0 ? "err" : v.dias_restantes <= 7 ? "warn" : "info"}>
                       {v.dias_restantes < 0 ? "Vencido" : v.dias_restantes === 0 ? "Hoy" : `${v.dias_restantes} d.`}
                     </Badge>
@@ -251,7 +253,7 @@ export async function DuenoDashboard() {
       .order("fecha", { ascending: false }),
     supabase
       .from("historial_costos")
-      .select("sku_id, costo_unitario, fecha, fecha_vencimiento")
+      .select("sku_id, costo_unitario, cantidad, fecha, fecha_vencimiento")
       .order("fecha", { ascending: false }),
     // Sin filtro de fecha acá: fecha_factura es opcional (compra-form.tsx la
     // manda null si no se cargó) y un gte() contra una columna null la
@@ -444,8 +446,23 @@ export async function DuenoDashboard() {
     sku_id: string;
     fecha_vencimiento: string | null;
     fecha: string;
+    cantidad: number;
   }[];
-  const porVencerGlobal = calcularProductosPorVencer(historialConVencimiento);
+  // Stock sumado de las dos sucursales: los lotes de historial_costos no
+  // guardan sucursal (nacen de una recepción, que siempre es la central, o
+  // de una carga inicial), así que acá se estima contra el total de la
+  // empresa. Para el dueño es lo correcto: le importa si algo va a vencer,
+  // no en qué estante está.
+  const stockTotalParaVencimientos = new Map<string, number>(
+    skusList.map((sku) => {
+      const porSucursal = stockPorSku.get(sku.id) ?? {};
+      return [sku.id, Object.values(porSucursal).reduce((acc, c) => acc + c, 0)];
+    }),
+  );
+  const porVencerGlobal = calcularProductosPorVencer(
+    historialConVencimiento,
+    stockTotalParaVencimientos,
+  );
 
   // "Compras del mes": confirmadas + cerradas cuya fecha efectiva cae en el
   // mes en curso. fecha_factura manda cuando está cargada; si no, se usa la

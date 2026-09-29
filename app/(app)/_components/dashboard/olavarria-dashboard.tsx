@@ -70,7 +70,7 @@ export async function OlavarriaDashboard() {
     supabase.from("proveedor_skus").select("sku_id").eq("activo", true),
     supabase
       .from("historial_costos")
-      .select("sku_id, costo_unitario, fecha, fecha_vencimiento")
+      .select("sku_id, costo_unitario, cantidad, fecha, fecha_vencimiento")
       .order("fecha", { ascending: false }),
   ]);
 
@@ -101,8 +101,14 @@ export async function OlavarriaDashboard() {
   // pendientes", que con cargar_compra_directa() ya no tiene sentido --
   // toda compra se recibe completa en el momento, nunca queda pendiente).
   const productosPorVencer = calcularProductosPorVencer(
-    (historial ?? []) as { sku_id: string; fecha_vencimiento: string | null; fecha: string }[],
-  ).filter((v) => (stockPorSku.get(v.sku_id) ?? 0) > 0);
+    (historial ?? []) as {
+      sku_id: string;
+      fecha_vencimiento: string | null;
+      fecha: string;
+      cantidad: number;
+    }[],
+    stockPorSku,
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -190,13 +196,14 @@ export async function OlavarriaDashboard() {
                 const sku = skuPorId.get(v.sku_id);
                 return (
                   <div
-                    key={v.sku_id}
+                    key={`${v.sku_id}:${v.fecha_vencimiento}`}
                     className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[10px] last:border-b-0"
                   >
                     <div className="min-w-0">
                       <p className="font-medium text-text">{sku?.producto?.nombre ?? sku?.nombre ?? "—"}</p>
                       <p className="text-[11.5px] text-text-3">
-                        {sku ? presentacionLabel(sku) : ""} · vence {v.fecha_vencimiento.split("-").reverse().join("/")}
+                        {sku ? presentacionLabel(sku) : ""} · {v.unidades} u. vencen{" "}
+                        {v.fecha_vencimiento.split("-").reverse().join("/")}
                       </p>
                     </div>
                     <Badge color={v.dias_restantes < 0 ? "err" : v.dias_restantes <= 7 ? "warn" : "info"}>

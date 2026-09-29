@@ -65,29 +65,55 @@ export type ProductoPorVencer = {
   sku_id: string;
   fecha_vencimiento: string;
   dias_restantes: number;
+  // Cuántas de ese lote se estima que siguen en el local (ver abajo).
+  unidades: number;
 };
 
-// Del último lote recibido por SKU con fecha_vencimiento cargada
-// (historial_costos.fecha_vencimiento, opcional -- no todo vence, ver
-// migración 20260922110000), se queda con los que vencen dentro de la
-// ventana (incluye los ya vencidos, dias_restantes negativo). `historial`
-// viene ordenado por fecha descendente, así el primer registro de cada SKU
-// es el último lote -- mismo criterio que calcularCostosQueSubieron.
+// Lotes por vencer que se estima que TODAVÍA ESTÁN en el local.
+//
+// El stock es un número solo por SKU: no se sabe de qué lote salió cada
+// botella que se vendió (CLAUDE.md, decisión de siempre). Pero la mercadería
+// se vende de la más vieja a la más nueva -- nadie saca la botella del fondo
+// --, así que se puede deducir qué queda: se recorren los lotes del más
+// nuevo al más viejo sumando cantidades hasta cubrir el stock actual, y esos
+// son los que siguen en la góndola.
+//
+//   stock 18 · lote de marzo 12 (último) · lote de octubre 10
+//   12 + 6 = 18  ->  quedan los 12 de marzo y 6 del de octubre
+//
+// Antes esto miraba solo el ÚLTIMO lote de cada SKU, que es justo el que
+// vence más lejos: de las 6 de octubre no avisaba nunca (pedido del usuario
+// 2026-09-29). Si la estimación se equivoca, muestra una alerta de más o de
+// menos -- no toca ni un peso ni una unidad de stock.
+//
+// `historial` viene ordenado por fecha descendente, igual que en
+// calcularCostosQueSubieron. Devuelve una fila por lote, así un SKU con dos
+// fechas aparece dos veces.
 export function calcularProductosPorVencer(
-  historial: { sku_id: string; fecha_vencimiento: string | null; fecha: string }[],
+  historial: { sku_id: string; fecha_vencimiento: string | null; fecha: string; cantidad: number }[],
+  stockPorSku: Map<string, number>,
   ventanaDias = 30,
 ): ProductoPorVencer[] {
-  const vistos = new Set<string>();
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
   const limite = hoy.getTime() + ventanaDias * 86_400_000;
 
+  const restantePorSku = new Map<string, number>();
   const resultado: ProductoPorVencer[] = [];
-  for (const fila of historial) {
-    if (vistos.has(fila.sku_id)) continue;
-    vistos.add(fila.sku_id);
-    if (!fila.fecha_vencimiento) continue;
 
+  for (const fila of historial) {
+    const restante = restantePorSku.get(fila.sku_id) ?? Math.max(stockPorSku.get(fila.sku_id) ?? 0, 0);
+    if (restante <= 0) {
+      restantePorSku.set(fila.sku_id, 0);
+      continue;
+    }
+
+    // De este lote sigue en el local, como mucho, lo que falte para cubrir
+    // el stock actual.
+    const enElLocal = Math.min(fila.cantidad, restante);
+    restantePorSku.set(fila.sku_id, restante - enElLocal);
+
+    if (!fila.fecha_vencimiento) continue;
     const vencimiento = new Date(`${fila.fecha_vencimiento}T00:00:00`).getTime();
     if (vencimiento > limite) continue;
 
@@ -95,6 +121,7 @@ export function calcularProductosPorVencer(
       sku_id: fila.sku_id,
       fecha_vencimiento: fila.fecha_vencimiento,
       dias_restantes: Math.round((vencimiento - hoy.getTime()) / 86_400_000),
+      unidades: enElLocal,
     });
   }
 

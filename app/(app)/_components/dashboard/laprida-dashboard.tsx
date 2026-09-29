@@ -74,7 +74,7 @@ export async function LapridaDashboard() {
       .order("fecha_despacho", { ascending: true }),
     supabase
       .from("historial_costos")
-      .select("sku_id, fecha, fecha_vencimiento")
+      .select("sku_id, cantidad, fecha, fecha_vencimiento")
       .order("fecha", { ascending: false }),
   ]);
 
@@ -109,8 +109,14 @@ export async function LapridaDashboard() {
   // mismo SKU del catálogo global -- el stock no rastrea de qué lote sale
   // cada unidad, así que es la misma aproximación que ya usa costo_actual.
   const productosPorVencer = calcularProductosPorVencer(
-    (historial ?? []) as { sku_id: string; fecha_vencimiento: string | null; fecha: string }[],
-  ).filter((v) => (stockPorSku.get(v.sku_id) ?? 0) > 0);
+    (historial ?? []) as {
+      sku_id: string;
+      fecha_vencimiento: string | null;
+      fecha: string;
+      cantidad: number;
+    }[],
+    stockPorSku,
+  );
 
   const pedidoBorradorData = pedidoBorrador as unknown as {
     id: string;
@@ -289,7 +295,8 @@ export async function LapridaDashboard() {
                   <div className="min-w-0">
                     <p className="font-medium text-text">{sku?.producto?.nombre ?? sku?.nombre ?? "—"}</p>
                     <p className="text-[11.5px] text-text-3">
-                      {sku ? presentacionLabel(sku) : ""} · vence {v.fecha_vencimiento.split("-").reverse().join("/")}
+                      {sku ? presentacionLabel(sku) : ""} · {v.unidades} u. vencen{" "}
+                        {v.fecha_vencimiento.split("-").reverse().join("/")}
                     </p>
                   </div>
                   <Badge color={v.dias_restantes < 0 ? "err" : v.dias_restantes <= 7 ? "warn" : "info"}>

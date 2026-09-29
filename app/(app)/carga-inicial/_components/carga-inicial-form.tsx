@@ -37,6 +37,10 @@ const inputClass =
   "w-full rounded-[8px] border border-border bg-bg px-[12px] py-[9px] text-[16px] text-text outline-none focus:border-moe";
 const labelClass = "mb-[5px] block text-[12.5px] font-medium text-text-2";
 
+function sumaLotesExtra(lotes: { cantidad: string }[]): number {
+  return lotes.reduce((acc, l) => acc + Number(l.cantidad || 0), 0);
+}
+
 export function CargaInicialForm({
   sucursales,
   proveedores,
@@ -54,6 +58,9 @@ export function CargaInicialForm({
   const [costo, setCosto] = useState("");
   const [precio, setPrecio] = useState("");
   const [vencimiento, setVencimiento] = useState("");
+  // Segundo vencimiento en adelante: {cantidad, fecha} por lote. Vacío =
+  // una sola fecha (el caso normal), que usa el campo de arriba.
+  const [lotes, setLotes] = useState<{ cantidad: string; fecha: string }[]>([]);
   const [proveedorId, setProveedorId] = useState("");
   const [stockMinimo, setStockMinimo] = useState("");
   const [stockObjetivo, setStockObjetivo] = useState("");
@@ -119,6 +126,7 @@ export function CargaInicialForm({
     setCosto("");
     setPrecio("");
     setVencimiento("");
+    setLotes([]);
     setProveedorId("");
     setStockMinimo("");
     setStockObjetivo("");
@@ -145,6 +153,7 @@ export function CargaInicialForm({
     setCosto("");
     setPrecio("");
     setVencimiento("");
+    setLotes([]);
     setProveedorId("");
     setStockMinimo("");
     setStockObjetivo("");
@@ -166,6 +175,20 @@ export function CargaInicialForm({
       setError("El vencimiento tiene que ser dd/mm/aaaa, o quedar vacío.");
       return;
     }
+    for (const lote of lotes) {
+      if (!fechaVencimientoValida(lote.fecha) || !lote.fecha) {
+        setError("Cada vencimiento necesita su fecha en dd/mm/aaaa.");
+        return;
+      }
+      if (lote.cantidad === "" || Number(lote.cantidad) <= 0) {
+        setError("Cada vencimiento necesita una cantidad mayor a cero.");
+        return;
+      }
+    }
+    if (lotes.length > 0 && sumaLotes !== cantidadNum) {
+      setError(`Los vencimientos suman ${sumaLotes} y contaste ${cantidadNum}: tienen que dar igual.`);
+      return;
+    }
 
     setError(null);
     setGuardando(true);
@@ -175,7 +198,7 @@ export function CargaInicialForm({
       cantidad: cantidadNum,
       costo: costo === "" ? null : Number(costo),
       precio: precio === "" ? null : Number(precio),
-      fecha_vencimiento: fechaVencimientoAIso(vencimiento),
+      lotes: lotesParaGuardar,
       proveedor_id: proveedorId || null,
       stock_minimo: stockMinimo === "" ? null : Number(stockMinimo),
       stock_objetivo: stockObjetivo === "" ? null : Number(stockObjetivo),
@@ -199,6 +222,23 @@ export function CargaInicialForm({
     limpiar();
     enfocarBuscador();
   }
+
+  // Con "Dividir" abierto, la primera fila es el campo de arriba: el total
+  // se reparte entre todas las fechas y tiene que cerrar contra lo contado.
+  const cantidadPrimerLote = lotes.length > 0 ? Number(cantidad || 0) - sumaLotesExtra(lotes) : 0;
+  const sumaLotes = lotes.length > 0 ? cantidadPrimerLote + sumaLotesExtra(lotes) : 0;
+  const lotesParaGuardar =
+    lotes.length > 0
+      ? [
+          { cantidad: cantidadPrimerLote, fecha_vencimiento: fechaVencimientoAIso(vencimiento)! },
+          ...lotes.map((l) => ({
+            cantidad: Number(l.cantidad),
+            fecha_vencimiento: fechaVencimientoAIso(l.fecha)!,
+          })),
+        ]
+      : vencimiento && Number(cantidad || 0) > 0
+        ? [{ cantidad: Number(cantidad || 0), fecha_vencimiento: fechaVencimientoAIso(vencimiento)! }]
+        : [];
 
   const yaCargadoEnSesion = sku ? cargados.some((c) => c.skuId === sku.id) : false;
 
@@ -373,9 +413,24 @@ export function CargaInicialForm({
                   value={vencimiento}
                   onChange={(e) => setVencimiento(formatearFechaVencimiento(e.target.value))}
                 />
-                <p className="mt-[3px] text-[11.5px] text-text-3">
-                  Solo si el producto vence. El vino no, la gaseosa sí.
-                </p>
+                {lotes.length === 0 ? (
+                  <p className="mt-[3px] text-[11.5px] text-text-3">
+                    Solo si el producto vence.{" "}
+                    {vencimiento && (
+                      <button
+                        type="button"
+                        onClick={() => setLotes([{ cantidad: "", fecha: "" }])}
+                        className="font-medium text-moe hover:underline"
+                      >
+                        ¿Hay más de una fecha?
+                      </button>
+                    )}
+                  </p>
+                ) : (
+                  <p className="mt-[3px] text-[11.5px] text-text-3">
+                    {cantidadPrimerLote > 0 ? `${cantidadPrimerLote} u.` : "—"} con esta fecha
+                  </p>
+                )}
               </div>
               <div>
                 <label className={labelClass}>Proveedor</label>
@@ -396,6 +451,74 @@ export function CargaInicialForm({
                 </p>
               </div>
             </div>
+
+            {lotes.length > 0 && (
+              <div className="mt-3 rounded-[8px] border border-border bg-bg-2 p-3">
+                <p className="mb-2 text-[12px] text-text-2">
+                  Repartí lo que contaste entre las fechas. La suma tiene que dar{" "}
+                  <b className="font-medium">{cantidad || 0}</b>.
+                </p>
+                <div className="flex flex-col gap-2">
+                  {lotes.map((lote, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        step={1}
+                        placeholder="Cant."
+                        className={`${inputClass} w-[90px] tabular-nums`}
+                        value={lote.cantidad}
+                        onChange={(e) =>
+                          setLotes((prev) =>
+                            prev.map((l, j) => (j === i ? { ...l, cantidad: e.target.value } : l)),
+                          )
+                        }
+                      />
+                      <span className="text-[12.5px] text-text-3">vencen</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="dd/mm/aaaa"
+                        maxLength={10}
+                        className={`${inputClass} flex-1 tabular-nums`}
+                        value={lote.fecha}
+                        onChange={(e) =>
+                          setLotes((prev) =>
+                            prev.map((l, j) =>
+                              j === i ? { ...l, fecha: formatearFechaVencimiento(e.target.value) } : l,
+                            ),
+                          )
+                        }
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setLotes((prev) => prev.filter((_, j) => j !== i))}
+                        className="text-[12px] text-text-3 hover:text-err"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setLotes((prev) => [...prev, { cantidad: "", fecha: "" }])}
+                    className="text-[12.5px] font-medium text-moe hover:underline"
+                  >
+                    + Otra fecha
+                  </button>
+                  <span
+                    className={`text-[12.5px] tabular-nums ${
+                      sumaLotes === Number(cantidad || 0) ? "text-ok" : "text-warn"
+                    }`}
+                  >
+                    Suman {sumaLotes} de {cantidad || 0}
+                  </span>
+                </div>
+              </div>
+            )}
 
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
