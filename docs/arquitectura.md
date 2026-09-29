@@ -146,11 +146,17 @@ obligatorio. Es el dato que alimenta el balance de IVA del dueño (ver 1.8).
   incluido (es lo que usan el margen y la cascada de precios). El dato fiscal —neto gravado e
   IVA— vive en el **encabezado** de la compra, tal como figura al pie del comprobante. El sistema
   lo propone calculándolo con `categorias.alicuota_iva` y la encargada lo corrige contra el papel.
-- Si neto + IVA + percepciones no coincide con la suma de las líneas, **se advierte, no se
-  bloquea** (mismo criterio que el precio bajo costo): una factura real trae bonificaciones y
-  redondeos.
-- **Percepciones** (IIBB u otras) se guardan como dato del comprobante para que el pie cuadre,
-  pero no entran en el saldo de IVA: son pago a cuenta, van en otro renglón de la DDJJ.
+- **El pie se carga completo, con la misma estructura que traen las facturas reales**
+  (relevado 2026-09-29 sobre facturas de Dellepiane y Coca-Cola Andina):
+  `neto gravado + impuestos internos + IVA + percepción IVA + percepción IIBB = total`.
+  - **Impuestos internos:** en bebidas con alcohol son plata seria (en la factura de Dellepiane,
+    $12.096 sobre $72.576 — el 17% del comprobante). El IVA se calcula sobre el neto gravado, **no**
+    sobre neto + internos. No se recuperan: son costo.
+  - **Las percepciones son dos cosas distintas.** La de **IVA** (RG 2408) es pago a cuenta del
+    propio IVA y se descuenta de lo que hay que depositar. La de **Ingresos Brutos** va a otro
+    impuesto y no toca el balance de IVA. Sumadas en un solo campo, el saldo queda mal siempre.
+- Si el pie no coincide con la suma de las líneas, **se advierte, no se bloquea** (mismo criterio
+  que el precio bajo costo): una factura real trae bonificaciones y redondeos.
 - **La factura que llega después del remito** se carga sobre la misma compra, sin tocar stock,
   costos ni total. Cada cambio deja una fila inmutable en `compras_reclasificacion_fiscal` (quién,
   cuándo, de qué a qué, y motivo obligatorio). Lo hace la encargada, no el dueño — mismo criterio
@@ -299,8 +305,11 @@ encargado de Olavarría no entra.
 - **IVA débito** = suma de `comprobantes_fiscales.importe_iva` de los comprobantes `autorizado`
   del mes. Solo lo facturado: es lo que realmente se declara.
 - **IVA crédito** = suma de `compras.iva` de las compras con Factura A del mes (ver 1.6).
-- **Saldo del mes** = débito − crédito. Positivo: a pagar. Negativo: a favor, se descuenta el mes
-  siguiente. No se arrastra automáticamente entre meses (eso lo hace la DDJJ, no el sistema).
+- **Saldo técnico** = débito − crédito. **A pagar** = saldo técnico − percepciones de IVA sufridas
+  (ya se pagaron al proveedor, son pago a cuenta). Positivo: a pagar. Negativo: a favor, se
+  descuenta el mes siguiente. No se arrastra automáticamente entre meses (eso lo hace la DDJJ, no
+  el sistema). Los impuestos internos y la percepción de IIBB se informan aparte: no entran en
+  ninguno de los dos números.
 - **El período lo define la fecha del comprobante**, no la de la venta o la de la mercadería: para
   ventas, la fecha de emisión (`CbteFch`); para compras, la fecha de la factura y, si es un remito
   sin fecha, la fecha en que entró la mercadería. El mes se corta en **hora argentina**, no UTC.
@@ -659,7 +668,9 @@ compras
   usuario_id, total
   tipo_comprobante ∈ {factura_a, factura_b, remito}  ← null = cargada antes de 2026-09-28
   neto_gravado, iva                                  ← solo Factura A (la B no discrimina)
-  percepciones                                       ← IIBB u otras; no entran en el saldo de IVA
+  impuestos_internos                                 ← costo, no crédito (bebidas con alcohol)
+  percepcion_iva                                     ← pago a cuenta: descuenta IVA a pagar
+  percepcion_iibb                                    ← va a Ingresos Brutos, no toca el IVA
   comprobante_cargado_por, comprobante_cargado_en    ← trigger con auth.uid(), nunca la app
 
 compras_reclasificacion_fiscal

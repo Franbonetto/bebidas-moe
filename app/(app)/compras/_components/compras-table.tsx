@@ -16,7 +16,9 @@ export type Compra = {
   tipo_comprobante: TipoComprobante | null;
   neto_gravado: number | null;
   iva: number | null;
-  percepciones: number | null;
+  impuestos_internos: number | null;
+  percepcion_iva: number | null;
+  percepcion_iibb: number | null;
   proveedor: { razon_social: string; nombre_comercial: string | null } | null;
 };
 

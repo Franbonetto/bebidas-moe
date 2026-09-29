@@ -21,12 +21,18 @@ export type ComprobanteCompra = {
   tipo_comprobante: TipoComprobante;
   numero_factura: string | null;
   fecha_factura: string | null;
-  // Solo Factura A: es la única que discrimina IVA.
+  // El pie de la factura, tal cual figura en el papel. Solo Factura A: es la
+  // única que discrimina.
   neto_gravado: number | null;
   iva: number | null;
-  // Percepciones (IIBB / IVA percepción). Se guardan para que el pie de la
-  // factura cuadre, pero no entran en el saldo de IVA (son pago a cuenta).
-  percepciones: number | null;
+  // Bebidas con alcohol: en una factura de licor pueden ser el 17% del
+  // comprobante. El IVA se calcula sobre el neto gravado, no sobre neto +
+  // internos.
+  impuestos_internos: number | null;
+  // Pago a cuenta del propio IVA: se descuenta de lo que hay que depositar.
+  percepcion_iva: number | null;
+  // Va a Ingresos Brutos, no toca el IVA. Se guarda para que el pie cuadre.
+  percepcion_iibb: number | null;
 };
 
 function validarLineas(lineas: LineaCompra[]): string | null {
@@ -60,8 +66,13 @@ function validarComprobante(c: ComprobanteCompra): string | null {
     if (c.iva < 0) return "El IVA no puede ser negativo.";
   }
 
-  if (c.percepciones !== null && c.percepciones < 0)
-    return "Las percepciones no pueden ser negativas.";
+  for (const [valor, nombre] of [
+    [c.impuestos_internos, "Los impuestos internos"],
+    [c.percepcion_iva, "La percepción de IVA"],
+    [c.percepcion_iibb, "La percepción de IIBB"],
+  ] as const) {
+    if (valor !== null && valor < 0) return `${nombre} no puede ser un monto negativo.`;
+  }
 
   return null;
 }
@@ -94,7 +105,9 @@ export async function cargarCompraDirecta(datos: {
     p_tipo_comprobante: datos.comprobante.tipo_comprobante,
     p_neto_gravado: datos.comprobante.neto_gravado,
     p_iva: datos.comprobante.iva,
-    p_percepciones: datos.comprobante.percepciones,
+    p_impuestos_internos: datos.comprobante.impuestos_internos,
+    p_percepcion_iva: datos.comprobante.percepcion_iva,
+    p_percepcion_iibb: datos.comprobante.percepcion_iibb,
   });
 
   if (error) return { error: error.message };
@@ -130,7 +143,9 @@ export async function reclasificarComprobanteCompra(datos: {
     p_motivo: datos.motivo.trim(),
     p_neto_gravado: datos.comprobante.neto_gravado,
     p_iva: datos.comprobante.iva,
-    p_percepciones: datos.comprobante.percepciones,
+    p_impuestos_internos: datos.comprobante.impuestos_internos,
+    p_percepcion_iva: datos.comprobante.percepcion_iva,
+    p_percepcion_iibb: datos.comprobante.percepcion_iibb,
   });
 
   if (error) return { error: error.message };

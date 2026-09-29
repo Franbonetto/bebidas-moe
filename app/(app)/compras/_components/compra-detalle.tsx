@@ -114,8 +114,14 @@ function ComprobanteForm({
     compra.neto_gravado !== null ? String(compra.neto_gravado) : null,
   );
   const [iva, setIva] = useState<string | null>(compra.iva !== null ? String(compra.iva) : null);
-  const [percepciones, setPercepciones] = useState(
-    compra.percepciones !== null ? String(compra.percepciones) : "",
+  const [internos, setInternos] = useState(
+    compra.impuestos_internos !== null ? String(compra.impuestos_internos) : "",
+  );
+  const [percepcionIva, setPercepcionIva] = useState(
+    compra.percepcion_iva !== null ? String(compra.percepcion_iva) : "",
+  );
+  const [percepcionIibb, setPercepcionIibb] = useState(
+    compra.percepcion_iibb !== null ? String(compra.percepcion_iibb) : "",
   );
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -137,7 +143,9 @@ function ComprobanteForm({
           fecha_factura: fecha || null,
           neto_gravado: discriminaIva && netoMostrado !== "" ? Number(netoMostrado) : null,
           iva: discriminaIva && ivaMostrado !== "" ? Number(ivaMostrado) : null,
-          percepciones: discriminaIva && percepciones !== "" ? Number(percepciones) : null,
+          impuestos_internos: discriminaIva && internos !== "" ? Number(internos) : null,
+          percepcion_iva: discriminaIva && percepcionIva !== "" ? Number(percepcionIva) : null,
+          percepcion_iibb: discriminaIva && percepcionIibb !== "" ? Number(percepcionIibb) : null,
         },
         motivo,
       });
@@ -194,42 +202,71 @@ function ComprobanteForm({
       )}
 
       {discriminaIva && (
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <div>
-            <label className={labelClass}>Neto gravado *</label>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              className={`${inputClass} text-right tabular-nums`}
-              value={netoMostrado}
-              onChange={(e) => setNeto(e.target.value)}
-            />
+        <>
+          <p className="mt-3 text-[12px] text-text-3">
+            El pie de la factura, con los mismos nombres que trae el papel.
+          </p>
+          <div className="mt-2 grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className={labelClass}>Neto gravado *</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                className={`${inputClass} text-right tabular-nums`}
+                value={netoMostrado}
+                onChange={(e) => setNeto(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Impuestos internos</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="0"
+                className={`${inputClass} text-right tabular-nums`}
+                value={internos}
+                onChange={(e) => setInternos(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>IVA *</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                className={`${inputClass} text-right tabular-nums`}
+                value={ivaMostrado}
+                onChange={(e) => setIva(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Percepción IVA</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="0"
+                className={`${inputClass} text-right tabular-nums`}
+                value={percepcionIva}
+                onChange={(e) => setPercepcionIva(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Percepción IIBB</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                placeholder="0"
+                className={`${inputClass} text-right tabular-nums`}
+                value={percepcionIibb}
+                onChange={(e) => setPercepcionIibb(e.target.value)}
+              />
+            </div>
           </div>
-          <div>
-            <label className={labelClass}>IVA *</label>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              className={`${inputClass} text-right tabular-nums`}
-              value={ivaMostrado}
-              onChange={(e) => setIva(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Percepciones</label>
-            <input
-              type="number"
-              min={0}
-              step="0.01"
-              placeholder="0"
-              className={`${inputClass} text-right tabular-nums`}
-              value={percepciones}
-              onChange={(e) => setPercepciones(e.target.value)}
-            />
-          </div>
-        </div>
+        </>
       )}
 
       <div className="mt-3">
@@ -335,11 +372,27 @@ export function CompraDetalle({
                   {formatoMoneda.format(compra.iva ?? 0)}
                 </b>
               </span>
-              {compra.percepciones !== null && compra.percepciones > 0 && (
+              {compra.impuestos_internos !== null && compra.impuestos_internos > 0 && (
                 <span>
-                  Percepciones:{" "}
+                  Impuestos internos:{" "}
                   <b className="font-medium tabular-nums text-text">
-                    {formatoMoneda.format(compra.percepciones)}
+                    {formatoMoneda.format(compra.impuestos_internos)}
+                  </b>
+                </span>
+              )}
+              {compra.percepcion_iva !== null && compra.percepcion_iva > 0 && (
+                <span>
+                  Percepción IVA:{" "}
+                  <b className="font-medium tabular-nums text-text">
+                    {formatoMoneda.format(compra.percepcion_iva)}
+                  </b>
+                </span>
+              )}
+              {compra.percepcion_iibb !== null && compra.percepcion_iibb > 0 && (
+                <span>
+                  Percepción IIBB:{" "}
+                  <b className="font-medium tabular-nums text-text">
+                    {formatoMoneda.format(compra.percepcion_iibb)}
                   </b>
                 </span>
               )}

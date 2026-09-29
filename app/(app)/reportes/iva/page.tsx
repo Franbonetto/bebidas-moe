@@ -20,8 +20,18 @@ type FilaMes = {
   total_compras_sin_credito: number;
   total_compras_sin_comprobante: number;
   total_compras_sin_clasificar: number;
-  percepciones: number;
+  // Costo, no crédito: no se recupera. Se muestra para que el total de la
+  // factura cierre y para dimensionar cuánta plata se va en impuesto.
+  impuestos_internos: number;
+  // Pago a cuenta del propio IVA: se descuenta de lo que hay que depositar.
+  percepcion_iva: number;
+  // Va a Ingresos Brutos, no toca el IVA.
+  percepcion_iibb: number;
+  // Débito - crédito, la posición técnica del mes.
   saldo: number;
+  // Saldo menos las percepciones de IVA ya sufridas: lo que realmente hay
+  // que depositar.
+  a_pagar: number;
 };
 
 type FilaCompra = {
@@ -32,7 +42,9 @@ type FilaCompra = {
   numero_factura: string | null;
   neto_gravado: number | null;
   iva: number | null;
-  percepciones: number | null;
+  impuestos_internos: number | null;
+  percepcion_iva: number | null;
+  percepcion_iibb: number | null;
   total: number;
 };
 
@@ -129,11 +141,14 @@ export default async function BalanceIvaPage({
       total_compras_sin_credito: 0,
       total_compras_sin_comprobante: 0,
       total_compras_sin_clasificar: 0,
-      percepciones: 0,
+      impuestos_internos: 0,
+      percepcion_iva: 0,
+      percepcion_iibb: 0,
       saldo: 0,
+      a_pagar: 0,
     } satisfies FilaMes);
 
-  const aPagar = actual.saldo >= 0;
+  const aPagar = actual.a_pagar >= 0;
   const totalCompras =
     actual.total_compras_con_credito +
     actual.total_compras_sin_credito +
@@ -196,18 +211,18 @@ export default async function BalanceIvaPage({
           sub="Solo compras con Factura A"
         />
         <Kpi
+          label="Percepciones de IVA"
+          value={formatoMoneda.format(actual.percepcion_iva)}
+          sub="Ya las pagaste: se descuentan"
+        />
+        <Kpi
           label={aPagar ? "Te queda a pagar" : "Te queda a favor"}
           value={
             <span className={aPagar ? "text-orange" : "text-ok"}>
-              {formatoMoneda.format(Math.abs(actual.saldo))}
+              {formatoMoneda.format(Math.abs(actual.a_pagar))}
             </span>
           }
-          sub={aPagar ? "Diferencia del mes" : "Se descuenta el mes que viene"}
-        />
-        <Kpi
-          label="Percepciones sufridas"
-          value={formatoMoneda.format(actual.percepciones)}
-          sub="Pago a cuenta, aparte del saldo"
+          sub={aPagar ? "Después de las percepciones" : "Se descuenta el mes que viene"}
         />
       </KpiGrid>
 
@@ -217,11 +232,20 @@ export default async function BalanceIvaPage({
         de IVA en lo que facturaste y pagaste{" "}
         <b className="font-medium tabular-nums text-text">{formatoMoneda.format(actual.iva_compras)}</b>{" "}
         de IVA en compras con factura.{" "}
+        {actual.percepcion_iva > 0 && (
+          <>
+            Además te retuvieron{" "}
+            <b className="font-medium tabular-nums text-text">
+              {formatoMoneda.format(actual.percepcion_iva)}
+            </b>{" "}
+            de percepción de IVA, que ya es plata a cuenta.{" "}
+          </>
+        )}
         {aPagar ? (
           <>
             Te queda{" "}
             <b className="font-medium tabular-nums text-text">
-              {formatoMoneda.format(actual.saldo)}
+              {formatoMoneda.format(actual.a_pagar)}
             </b>{" "}
             para pagar.
           </>
@@ -229,7 +253,7 @@ export default async function BalanceIvaPage({
           <>
             Te queda{" "}
             <b className="font-medium tabular-nums text-text">
-              {formatoMoneda.format(Math.abs(actual.saldo))}
+              {formatoMoneda.format(Math.abs(actual.a_pagar))}
             </b>{" "}
             a favor para descontar el mes que viene.
           </>
@@ -288,6 +312,14 @@ export default async function BalanceIvaPage({
                 </b>
                 . Solo la Factura A descuenta IVA.
               </p>
+              {(actual.impuestos_internos > 0 || actual.percepcion_iibb > 0) && (
+                <p className="text-[12px] leading-[1.5] text-text-3">
+                  Adentro de esas compras: {formatoMoneda.format(actual.impuestos_internos)} de
+                  impuestos internos (no se recuperan, son costo) y{" "}
+                  {formatoMoneda.format(actual.percepcion_iibb)} de percepción de Ingresos Brutos
+                  (va a otro impuesto, no al IVA).
+                </p>
+              )}
             </div>
           )}
         </Card>
@@ -358,7 +390,13 @@ export default async function BalanceIvaPage({
                       Neto
                     </th>
                     <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                      Internos
+                    </th>
+                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                       IVA
+                    </th>
+                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                      Percepciones
                     </th>
                     <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                       Total
@@ -400,7 +438,17 @@ export default async function BalanceIvaPage({
                         {c.neto_gravado === null ? "—" : formatoMoneda.format(c.neto_gravado)}
                       </td>
                       <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
+                        {c.impuestos_internos === null
+                          ? "—"
+                          : formatoMoneda.format(c.impuestos_internos)}
+                      </td>
+                      <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
                         {c.iva === null ? "—" : formatoMoneda.format(c.iva)}
+                      </td>
+                      <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
+                        {c.percepcion_iva === null && c.percepcion_iibb === null
+                          ? "—"
+                          : formatoMoneda.format((c.percepcion_iva ?? 0) + (c.percepcion_iibb ?? 0))}
                       </td>
                       <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
                         {formatoMoneda.format(c.total)}
@@ -431,7 +479,7 @@ export default async function BalanceIvaPage({
                     IVA compras
                   </th>
                   <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
-                    Saldo
+                    A pagar
                   </th>
                 </tr>
               </thead>
@@ -462,12 +510,12 @@ export default async function BalanceIvaPage({
                       </td>
                       <td
                         className={`px-[14px] py-[9px] text-right align-middle font-medium tabular-nums ${
-                          m.saldo >= 0 ? "text-orange" : "text-ok"
+                          m.a_pagar >= 0 ? "text-orange" : "text-ok"
                         }`}
                       >
-                        {m.saldo >= 0
-                          ? formatoMoneda.format(m.saldo)
-                          : `${formatoMoneda.format(Math.abs(m.saldo))} a favor`}
+                        {m.a_pagar >= 0
+                          ? formatoMoneda.format(m.a_pagar)
+                          : `${formatoMoneda.format(Math.abs(m.a_pagar))} a favor`}
                       </td>
                     </tr>
                   );

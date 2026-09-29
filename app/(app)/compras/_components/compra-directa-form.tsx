@@ -55,6 +55,40 @@ function alicuotaDe(sku: SkuCatalogo): number {
 // exigir el centavo exacto solo generaría una advertencia permanente.
 const TOLERANCIA_CUADRE = 1;
 
+// Una fila del pie de la factura. Son cinco y todas iguales: label a la
+// izquierda, monto a la derecha, alineado como en el papel.
+function FilaPie({
+  label,
+  ayuda,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  ayuda?: string;
+  value: string;
+  onChange: (valor: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <label className="text-[12.5px] text-text-2">
+        {label}
+        {ayuda && <span className="block text-[11px] text-text-3">{ayuda}</span>}
+      </label>
+      <input
+        type="number"
+        min={0}
+        step="0.01"
+        placeholder={placeholder}
+        className="w-[150px] rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
 export function CompraDirectaForm({
   proveedores,
   skus,
@@ -76,7 +110,9 @@ export function CompraDirectaForm({
   // (el papel gana sobre el cálculo).
   const [netoInput, setNetoInput] = useState<string | null>(null);
   const [ivaInput, setIvaInput] = useState<string | null>(null);
-  const [percepciones, setPercepciones] = useState("");
+  const [internos, setInternos] = useState("");
+  const [percepcionIva, setPercepcionIva] = useState("");
+  const [percepcionIibb, setPercepcionIibb] = useState("");
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [avisoPrecio, setAvisoPrecio] = useState<string | null>(null);
@@ -111,20 +147,29 @@ export function CompraDirectaForm({
   const ivaMostrado = ivaInput ?? (total > 0 ? redondearPeso(desgloseSugerido.iva).toFixed(2) : "");
   const netoValor = netoMostrado === "" ? null : Number(netoMostrado);
   const ivaValor = ivaMostrado === "" ? null : Number(ivaMostrado);
-  const percepcionesValor = percepciones === "" ? null : Number(percepciones);
+  const internosValor = internos === "" ? null : Number(internos);
+  const percepcionIvaValor = percepcionIva === "" ? null : Number(percepcionIva);
+  const percepcionIibbValor = percepcionIibb === "" ? null : Number(percepcionIibb);
 
+  // Suma del pie, con la misma estructura que traen las facturas reales:
+  // neto gravado + impuestos internos + IVA + percepciones = total.
+  const cuadre =
+    discriminaIva && netoValor !== null && ivaValor !== null
+      ? netoValor +
+        (internosValor ?? 0) +
+        ivaValor +
+        (percepcionIvaValor ?? 0) +
+        (percepcionIibbValor ?? 0)
+      : null;
+  const diferenciaCuadre = cuadre !== null && total > 0 ? cuadre - total : null;
   // Se advierte, no se bloquea (mismo criterio que el precio bajo costo):
   // una factura real puede traer bonificaciones o conceptos que no están en
   // las líneas cargadas.
-  const cuadre =
-    discriminaIva && netoValor !== null && ivaValor !== null
-      ? netoValor + ivaValor + (percepcionesValor ?? 0)
-      : null;
   const avisoCuadre =
-    cuadre !== null && total > 0 && Math.abs(cuadre - total) > TOLERANCIA_CUADRE
-      ? `El comprobante suma ${formatoMoneda.format(cuadre)} y lo cargado en las líneas da ${formatoMoneda.format(
+    diferenciaCuadre !== null && Math.abs(diferenciaCuadre) > TOLERANCIA_CUADRE
+      ? `El pie de la factura suma ${formatoMoneda.format(cuadre!)} y lo cargado en las líneas da ${formatoMoneda.format(
           total,
-        )}. Revisalo contra la factura — si la diferencia es real (bonificaciones, redondeos), podés registrar igual.`
+        )}. Revisalo — si la diferencia es real (bonificaciones, redondeos), podés registrar igual.`
       : null;
 
   // Mapa completo de la cadena de desarme (x24 -> x6 -> unidad) para poder
@@ -272,8 +317,14 @@ export function CompraDirectaForm({
         return "El neto gravado tiene que ser mayor a cero.";
       if (!Number.isFinite(ivaValor) || ivaValor < 0) return "El IVA no puede ser negativo.";
     }
-    if (percepcionesValor !== null && (!Number.isFinite(percepcionesValor) || percepcionesValor < 0))
-      return "Las percepciones no pueden ser negativas.";
+    for (const [valor, nombre] of [
+      [internosValor, "Los impuestos internos"],
+      [percepcionIvaValor, "La percepción de IVA"],
+      [percepcionIibbValor, "La percepción de IIBB"],
+    ] as const) {
+      if (valor !== null && (!Number.isFinite(valor) || valor < 0))
+        return `${nombre} no puede ser un monto negativo.`;
+    }
 
     const lineasReales = lineas.filter((l) => !l.soloPrecio);
     if (lineasReales.length === 0) return "Agregá al menos una línea.";
@@ -311,9 +362,11 @@ export function CompraDirectaForm({
           // mandan en null a propósito (la base también lo fuerza).
           neto_gravado: discriminaIva ? netoValor : null,
           iva: discriminaIva ? ivaValor : null,
-          // El campo solo se muestra con Factura A (es donde aparecen en la
-          // práctica): con B o remito no se manda nada.
-          percepciones: discriminaIva ? percepcionesValor : null,
+          // El pie solo se muestra con Factura A: con B o remito no hay nada
+          // que discriminar, así que no se manda nada.
+          impuestos_internos: discriminaIva ? internosValor : null,
+          percepcion_iva: discriminaIva ? percepcionIvaValor : null,
+          percepcion_iibb: discriminaIva ? percepcionIibbValor : null,
         },
         lineas: lineas
           .filter((l) => !l.soloPrecio)
@@ -347,7 +400,9 @@ export function CompraDirectaForm({
       setTipoComprobante("");
       setNetoInput(null);
       setIvaInput(null);
-      setPercepciones("");
+      setInternos("");
+      setPercepcionIva("");
+      setPercepcionIibb("");
 
       if (fallos.length > 0) {
         setCompraCreadaId(resultado.id);
@@ -638,60 +693,60 @@ export function CompraDirectaForm({
       </div>
 
       <div className="mt-3 flex justify-end">
-        <div className="w-full sm:w-[360px]">
+        <div className="w-full sm:w-[400px]">
           {discriminaIva && (
             <>
-              <p className="mb-[6px] text-[12px] text-text-3">
-                Como figura al pie de la factura. Lo calculamos por vos — corregilo si el papel dice
-                otra cosa.
+              <p className="mb-[7px] text-[12px] text-text-3">
+                Copiá el pie de la factura, con los mismos nombres que trae el papel. El neto y el
+                IVA vienen calculados: corregilos si no coinciden.
               </p>
               <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <label className="text-[12.5px] text-text-2">Neto gravado</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    className="w-[140px] rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                    value={netoMostrado}
-                    onChange={(e) => setNetoInput(e.target.value)}
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <label className="text-[12.5px] text-text-2">IVA</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    className="w-[140px] rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                    value={ivaMostrado}
-                    onChange={(e) => setIvaInput(e.target.value)}
-                  />
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <label className="text-[12.5px] text-text-2">
-                    Percepciones
-                    <span className="block text-[11px] text-text-3">IIBB u otras, si tiene</span>
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    placeholder="0"
-                    className="w-[140px] rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
-                    value={percepciones}
-                    onChange={(e) => setPercepciones(e.target.value)}
-                  />
-                </div>
+                <FilaPie label="Neto gravado" value={netoMostrado} onChange={setNetoInput} />
+                <FilaPie
+                  label="Impuestos internos"
+                  ayuda="Bebidas con alcohol"
+                  value={internos}
+                  onChange={setInternos}
+                  placeholder="0"
+                />
+                <FilaPie label="IVA" value={ivaMostrado} onChange={setIvaInput} />
+                <FilaPie
+                  label="Percepción IVA"
+                  ayuda="Te descuenta IVA a pagar"
+                  value={percepcionIva}
+                  onChange={setPercepcionIva}
+                  placeholder="0"
+                />
+                <FilaPie
+                  label="Percepción IIBB"
+                  ayuda="No toca el IVA"
+                  value={percepcionIibb}
+                  onChange={setPercepcionIibb}
+                  placeholder="0"
+                />
               </div>
+
+              {cuadre !== null && (
+                <p className="mt-2 flex items-center justify-between gap-3 text-[12.5px] text-text-2">
+                  <span>Suma del comprobante</span>
+                  <span className="tabular-nums">{formatoMoneda.format(cuadre)}</span>
+                </p>
+              )}
             </>
           )}
 
           <p
-            className={`text-[13px] font-semibold text-text ${discriminaIva ? "mt-3 border-t border-border pt-2" : ""} text-right`}
+            className={`flex items-center justify-between gap-3 text-[13px] font-semibold text-text ${
+              discriminaIva ? "mt-2 border-t border-border pt-2" : "justify-end"
+            }`}
           >
-            Total: <span className="tabular-nums">{formatoMoneda.format(total)}</span>
+            <span>Total de las líneas</span>
+            <span className="tabular-nums">{formatoMoneda.format(total)}</span>
           </p>
+
+          {diferenciaCuadre !== null && Math.abs(diferenciaCuadre) <= TOLERANCIA_CUADRE && (
+            <p className="mt-1 text-right text-[12px] text-ok">Cuadra con la factura ✓</p>
+          )}
         </div>
       </div>
 

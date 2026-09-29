@@ -10,7 +10,7 @@ export default async function ComprasPage() {
       .from("compras")
       .select(
         `id, numero_factura, fecha_factura, estado, total,
-         tipo_comprobante, neto_gravado, iva, percepciones,
+         tipo_comprobante, neto_gravado, iva, impuestos_internos, percepcion_iva, percepcion_iibb,
          proveedor:proveedores ( razon_social, nombre_comercial )`,
       )
       .order("fecha_factura", { ascending: false, nullsFirst: false }),

@@ -16,7 +16,7 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
     .from("compras")
     .select(
       `id, numero_factura, fecha_factura, estado, total,
-       tipo_comprobante, neto_gravado, iva, percepciones,
+       tipo_comprobante, neto_gravado, iva, impuestos_internos, percepcion_iva, percepcion_iibb,
        proveedor:proveedores ( id, razon_social, nombre_comercial ),
        compra_items (
          id, sku_id, cantidad, costo_unitario, subtotal, fecha_vencimiento,
