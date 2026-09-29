@@ -71,13 +71,18 @@ function ticketVacio(id: string): Ticket {
 }
 
 // Orden pensado para los atajos F1-F5 (pedido del usuario 2026-09-21:
-// "F5 poner crédito"). Cantidad se corrió a F6 y Nuevo ticket a F11 para
-// hacerle lugar (ver useEffect de atajos globales más abajo).
+// "F5 poner crédito"; 2026-09-29: F3 transferencia y F4 débito). Cantidad se
+// corrió a F6 y Nuevo ticket a F11 para hacerle lugar (ver useEffect de
+// atajos globales más abajo).
+//
+// El orden del array es el de los botones en pantalla: se mueven junto con
+// la tecla, para que lo que se ve siga el orden F1, F2, F3... y no haya que
+// buscar cuál es cuál.
 const MEDIOS: { id: MedioPago; label: string; tecla?: string }[] = [
   { id: "efectivo", label: "Efectivo", tecla: "F1" },
   { id: "qr", label: "QR", tecla: "F2" },
-  { id: "debito", label: "Débito", tecla: "F3" },
-  { id: "transferencia", label: "Transferencia", tecla: "F4" },
+  { id: "transferencia", label: "Transferencia", tecla: "F3" },
+  { id: "debito", label: "Débito", tecla: "F4" },
   { id: "credito", label: "Crédito", tecla: "F5" },
 ];
 
@@ -604,8 +609,8 @@ export function PosClient({
         const medio = {
           F1: "efectivo",
           F2: "qr",
-          F3: "debito",
-          F4: "transferencia",
+          F3: "transferencia",
+          F4: "debito",
           F5: "credito",
         } as const;
         elegirMedioUnico(medio[e.key]);

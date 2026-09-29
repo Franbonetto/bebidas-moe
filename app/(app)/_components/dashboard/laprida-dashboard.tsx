@@ -166,6 +166,10 @@ export async function LapridaDashboard() {
       </div>
 
       <div>
+        {/* Mismo criterio que Olavarría (usuario 2026-09-29): acciones del
+            día a día. "Ver mis pedidos" salió porque el pedido semanal y la
+            mercadería en camino ya están en las tarjetas de abajo, y
+            "Hacer inventario" porque no es diario -- sigue en el menú. */}
         <SectionHeader title="Acciones rápidas" />
         <QuickActions>
           <QuickAction
@@ -173,8 +177,8 @@ export async function LapridaDashboard() {
             label={pedidoBorradorData ? "Continuar pedido semanal" : "Hacer pedido semanal"}
             sub={pedidoBorradorData ? pedidoBorradorData.numero : `${sugeridas.length} productos sugeridos`}
           />
-          <QuickAction href="/pedidos" label="Ver mis pedidos" sub="Historial y estado" />
-          <QuickAction href="/inventarios/nuevo" label="Hacer inventario" sub="General, por categoría o puntual" />
+          <QuickAction href="/mermas" label="Registrar merma" sub="Rotura, vencido o consumo interno" />
+          <QuickAction href="/vender/caja" label="Caja del día" sub="Apertura, movimientos y cierre" />
         </QuickActions>
       </div>
 

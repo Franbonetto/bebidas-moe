@@ -15,6 +15,10 @@ export type DatosSkuCarga = {
   // Vencimiento del último lote cargado, para que se note si ya pasó por
   // este producto.
   vencimientoUltimoLote: string | null;
+  // Umbrales de reposición del SKU: se cargan acá porque es el momento en
+  // que tiene el producto delante y sabe cuánto le conviene tener.
+  stockMinimo: number;
+  stockObjetivo: number;
 };
 
 // Lo que hay que mostrarle antes de que escriba nada: cuánto tiene el
@@ -33,7 +37,11 @@ export async function datosSkuParaCarga(
     { data: proveedorSku },
     { data: lote },
   ] = await Promise.all([
-    supabase.from("skus").select("costo_actual, codigo_barras").eq("id", skuId).maybeSingle(),
+    supabase
+      .from("skus")
+      .select("costo_actual, codigo_barras, stock_minimo, stock_objetivo")
+      .eq("id", skuId)
+      .maybeSingle(),
     supabase
       .from("stock_sucursal")
       .select("cantidad")
@@ -67,6 +75,8 @@ export async function datosSkuParaCarga(
     codigoBarras: sku.codigo_barras ?? null,
     proveedorId: proveedorSku?.proveedor_id ?? null,
     vencimientoUltimoLote: lote?.fecha_vencimiento ?? null,
+    stockMinimo: sku.stock_minimo ?? 0,
+    stockObjetivo: sku.stock_objetivo ?? 0,
   };
 }
 
@@ -82,12 +92,33 @@ export async function guardarCargaInicial(datos: {
   // dd/mm/aaaa ya convertido a ISO por el formulario, o null.
   fecha_vencimiento: string | null;
   proveedor_id: string | null;
+  // null = no lo tocó, se deja el que ya tenía el SKU.
+  stock_minimo: number | null;
+  stock_objetivo: number | null;
 }): Promise<{ error: string } | { stock: number }> {
   const supabase = await createClient();
 
   if (!Number.isInteger(datos.cantidad) || datos.cantidad < 0)
     return { error: "La cantidad contada tiene que ser un número entero, cero o más." };
   if (datos.costo !== null && datos.costo < 0) return { error: "El costo no puede ser negativo." };
+
+  for (const [valor, nombre] of [
+    [datos.stock_minimo, "El stock mínimo"],
+    [datos.stock_objetivo, "El stock objetivo"],
+  ] as const) {
+    if (valor !== null && (!Number.isInteger(valor) || valor < 0))
+      return { error: `${nombre} tiene que ser un número entero, cero o más.` };
+  }
+
+  if (
+    datos.stock_minimo !== null &&
+    datos.stock_objetivo !== null &&
+    datos.stock_objetivo > 0 &&
+    datos.stock_objetivo < datos.stock_minimo
+  )
+    return {
+      error: "El stock objetivo no puede ser menor que el mínimo: reponer te dejaría bajo el mínimo.",
+    };
 
   // El precio primero: si falla, no queremos stock cargado con el precio a
   // medias. Al revés es peor -- el POS vende sin stock (advierte), pero sin
@@ -107,6 +138,24 @@ export async function guardarCargaInicial(datos: {
   });
 
   if (error) return { error: error.message };
+
+  // Los umbrales viven en el catálogo (skus), no en el stock: van aparte, con
+  // el update directo que ya usa el resto del catálogo (RLS ve_costos()).
+  if (datos.stock_minimo !== null || datos.stock_objetivo !== null) {
+    const cambios: { stock_minimo?: number; stock_objetivo?: number } = {};
+    if (datos.stock_minimo !== null) cambios.stock_minimo = datos.stock_minimo;
+    if (datos.stock_objetivo !== null) cambios.stock_objetivo = datos.stock_objetivo;
+
+    const { error: errorUmbrales } = await supabase
+      .from("skus")
+      .update(cambios)
+      .eq("id", datos.sku_id);
+
+    if (errorUmbrales)
+      return {
+        error: `El stock quedó cargado, pero no se pudieron guardar los mínimos: ${errorUmbrales.message}`,
+      };
+  }
 
   revalidatePath("/productos");
   revalidatePath("/carga-inicial");

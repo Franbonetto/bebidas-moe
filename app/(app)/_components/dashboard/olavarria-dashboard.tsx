@@ -76,7 +76,6 @@ export async function OlavarriaDashboard() {
 
   const pedidosList = (pedidos ?? []) as unknown as PedidoRow[];
   const sinAtender = pedidosList.filter((p) => p.estado === "enviado");
-  const enCurso = pedidosList.filter((p) => p.estado !== "enviado");
 
   const skusList = (skus ?? []) as unknown as SkuInfo[];
   const stockPorSku = new Map((stockOlavarria ?? []).map((f) => [f.sku_id, f.cantidad as number]));
@@ -143,10 +142,14 @@ export async function OlavarriaDashboard() {
 
       <div>
         <SectionHeader title="Acciones rápidas" />
+        {/* Acciones del día a día, no del mes (pedido del usuario 2026-09-29).
+            Salieron "Ver pedidos de Laprida" (ya están en la tarjeta de acá
+            abajo, era un botón para bajar la vista) y "Hacer inventario" (se
+            hace una o dos veces al año, no es diario; sigue en el menú). */}
         <QuickActions>
-          <QuickAction href="/compras/directa" label="Cargar mercadería" sub="Nueva factura de proveedor" />
-          <QuickAction href="/pedidos" label="Ver pedidos de Laprida" sub={`${enCurso.length} en curso`} />
-          <QuickAction href="/inventarios/nuevo" label="Hacer inventario" sub="General, por categoría o puntual" />
+          <QuickAction href="/compras/directa" label="Cargar mercadería" sub="Lo que llegó del proveedor" />
+          <QuickAction href="/mermas" label="Registrar merma" sub="Rotura, vencido o consumo interno" />
+          <QuickAction href="/vender/caja" label="Caja del día" sub="Apertura, movimientos y cierre" />
         </QuickActions>
       </div>
 

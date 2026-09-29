@@ -55,6 +55,8 @@ export function CargaInicialForm({
   const [precio, setPrecio] = useState("");
   const [vencimiento, setVencimiento] = useState("");
   const [proveedorId, setProveedorId] = useState("");
+  const [stockMinimo, setStockMinimo] = useState("");
+  const [stockObjetivo, setStockObjetivo] = useState("");
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const [avisoEscaneo, setAvisoEscaneo] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -118,6 +120,8 @@ export function CargaInicialForm({
     setPrecio("");
     setVencimiento("");
     setProveedorId("");
+    setStockMinimo("");
+    setStockObjetivo("");
     setCargandoDatos(true);
     const resultado = await datosSkuParaCarga(elegido.id, sucursalId);
     setCargandoDatos(false);
@@ -130,6 +134,8 @@ export function CargaInicialForm({
     setPrecio(resultado.precioBase !== null ? String(resultado.precioBase) : "");
     setVencimiento(fechaVencimientoDesdeIso(resultado.vencimientoUltimoLote));
     setProveedorId(resultado.proveedorId ?? "");
+    setStockMinimo(String(resultado.stockMinimo));
+    setStockObjetivo(String(resultado.stockObjetivo));
   }
 
   function limpiar() {
@@ -140,6 +146,8 @@ export function CargaInicialForm({
     setPrecio("");
     setVencimiento("");
     setProveedorId("");
+    setStockMinimo("");
+    setStockObjetivo("");
     setError(null);
   }
 
@@ -169,6 +177,8 @@ export function CargaInicialForm({
       precio: precio === "" ? null : Number(precio),
       fecha_vencimiento: fechaVencimientoAIso(vencimiento),
       proveedor_id: proveedorId || null,
+      stock_minimo: stockMinimo === "" ? null : Number(stockMinimo),
+      stock_objetivo: stockObjetivo === "" ? null : Number(stockObjetivo),
     });
     setGuardando(false);
 
@@ -383,6 +393,39 @@ export function CargaInicialForm({
                 </select>
                 <p className="mt-[3px] text-[11.5px] text-text-3">
                   A quién le comprás este producto
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Stock mínimo</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  className={`${inputClass} tabular-nums`}
+                  value={stockMinimo}
+                  onChange={(e) => setStockMinimo(e.target.value)}
+                />
+                <p className="mt-[3px] text-[11.5px] text-text-3">
+                  Con menos que esto, salta la alerta
+                </p>
+              </div>
+              <div>
+                <label className={labelClass}>Stock objetivo</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  className={`${inputClass} tabular-nums`}
+                  value={stockObjetivo}
+                  onChange={(e) => setStockObjetivo(e.target.value)}
+                />
+                <p className="mt-[3px] text-[11.5px] text-text-3">
+                  Cuánto querés tener cuando reponés
                 </p>
               </div>
             </div>
