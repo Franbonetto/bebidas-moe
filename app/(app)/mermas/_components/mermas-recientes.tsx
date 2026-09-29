@@ -13,6 +13,10 @@ export type MermaFila = {
   detalle: string | null;
   fecha: string;
   sucursal: { nombre: string } | null;
+  // Quién la registró (el mostrador comparte sesión, así que el usuario
+  // logueado no alcanza). Null en las mermas cargadas antes de que existiera
+  // el campo.
+  empleado: { nombre: string } | null;
   usuario: { nombre: string } | null;
   sku:
     | (SkuPresentacion & {
@@ -76,6 +80,9 @@ export function MermasRecientes({
                   </th>
                 )}
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
+                  Quién
+                </th>
+                <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
                   Cuándo
                 </th>
               </tr>
@@ -113,11 +120,14 @@ export function MermasRecientes({
                       {m.sucursal?.nombre ?? "—"}
                     </td>
                   )}
+                  <td className="px-[14px] py-[9px] align-middle text-text">
+                    {m.empleado?.nombre ?? "—"}
+                    <span className="block text-[11.5px] text-text-3">
+                      sesión de {m.usuario?.nombre ?? "—"}
+                    </span>
+                  </td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">
                     {formatoFechaHora.format(new Date(m.fecha))}
-                    <span className="block text-[11.5px] text-text-3">
-                      {m.usuario?.nombre ?? "—"}
-                    </span>
                   </td>
                 </tr>
               ))}

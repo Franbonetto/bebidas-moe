@@ -29,6 +29,9 @@ export async function registrarMerma(datos: {
   sucursal_id: string;
   cantidad: number;
   motivo: MotivoMerma;
+  // Quién la registra: en el mostrador comparten la sesión del encargado,
+  // así que el usuario logueado no alcanza para saber de quién fue.
+  empleado_id: string;
   detalle: string | null;
 }): Promise<{ error: string } | { ok: true }> {
   const supabase = await createClient();
@@ -38,6 +41,8 @@ export async function registrarMerma(datos: {
 
   if (!MOTIVOS_MERMA.includes(datos.motivo)) return { error: "Elegí un motivo." };
 
+  if (!datos.empleado_id) return { error: "Elegí quién la registra." };
+
   if (datos.motivo === "otro" && !datos.detalle?.trim())
     return { error: 'Si el motivo es "otro", explicá qué pasó.' };
 
@@ -46,6 +51,7 @@ export async function registrarMerma(datos: {
     p_sucursal_id: datos.sucursal_id,
     p_cantidad: datos.cantidad,
     p_motivo: datos.motivo,
+    p_empleado_id: datos.empleado_id,
     p_detalle: datos.detalle?.trim() || null,
   });
 

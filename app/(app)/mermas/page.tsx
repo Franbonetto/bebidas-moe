@@ -20,7 +20,7 @@ export default async function MermasPage() {
   const operables = await Promise.all(sucursalesList.map((s) => operaSucursal(supabase, s.id)));
   const sucursalesOperables = sucursalesList.filter((_, i) => operables[i]);
 
-  const [{ data: skus }, { data: mermas }] = await Promise.all([
+  const [{ data: skus }, { data: empleados }, { data: mermas }] = await Promise.all([
     supabase
       .from("skus")
       .select(
@@ -29,11 +29,17 @@ export default async function MermasPage() {
       )
       .eq("activo", true),
     supabase
+      .from("empleados")
+      .select("id, nombre, sucursal_id")
+      .eq("activo", true)
+      .order("nombre"),
+    supabase
       .from("mermas")
       .select(
         `id, cantidad, motivo, detalle, fecha,
          sucursal:sucursales ( nombre ),
          usuario:usuarios ( nombre ),
+         empleado:empleados ( nombre ),
          sku:skus ( nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
                     producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
       )
@@ -45,6 +51,7 @@ export default async function MermasPage() {
     <div className="flex flex-col gap-4">
       <MermaForm
         sucursales={sucursalesOperables}
+        empleados={empleados ?? []}
         skus={(skus ?? []) as unknown as SkuCatalogo[]}
       />
       <MermasRecientes

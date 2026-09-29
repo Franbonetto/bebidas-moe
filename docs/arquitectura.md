@@ -412,6 +412,11 @@ tenía dónde anotarse.
   queda quién, cuándo, cuánto y por qué, y el movimiento es inmutable.
 - **No bloquea que el stock quede negativo**, solo advierte: si romper una botella deja el stock en
   -1, ese -1 es información real (el conteo estaba mal) que hay que ver, no esconder.
+- **Empleado obligatorio** (2026-09-28): en el mostrador comparten la sesión del encargado, así que
+  `usuario_id` dice "encargado de Olavarría" y no sirve para lo único que importa acá, que es saber
+  quién dijo que se rompió. El empleado se elige de la tabla `empleados` (nombre + sucursal, sin
+  login ni permisos: no es un usuario del sistema). La función valida que el empleado sea de esa
+  sucursal. Altas y bajas, solo el dueño.
 
 ## 1.10 Devoluciones de cliente
 

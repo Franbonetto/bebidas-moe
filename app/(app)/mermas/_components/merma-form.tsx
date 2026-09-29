@@ -8,18 +8,28 @@ import { registrarMerma, stockActualDeSku } from "../actions";
 import { MOTIVOS_MERMA, MOTIVO_MERMA_LABEL, type MotivoMerma } from "../_lib/motivos";
 
 type Sucursal = { id: string; nombre: string };
+type Empleado = { id: string; nombre: string; sucursal_id: string };
 
 const inputClass =
   "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[7px] text-[14px] text-text outline-none focus:border-moe";
 const labelClass = "mb-[4px] block text-[12px] font-medium text-text-2";
 
-export function MermaForm({ sucursales, skus }: { sucursales: Sucursal[]; skus: SkuCatalogo[] }) {
+export function MermaForm({
+  sucursales,
+  empleados,
+  skus,
+}: {
+  sucursales: Sucursal[];
+  empleados: Empleado[];
+  skus: SkuCatalogo[];
+}) {
   const router = useRouter();
   const [sucursalId, setSucursalId] = useState(sucursales[0]?.id ?? "");
   const [sku, setSku] = useState<SkuCatalogo | null>(null);
   const [stockActual, setStockActual] = useState<number | null>(null);
   const [cantidad, setCantidad] = useState("");
   const [motivo, setMotivo] = useState<MotivoMerma | "">("");
+  const [empleadoId, setEmpleadoId] = useState("");
   const [detalle, setDetalle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -43,6 +53,7 @@ export function MermaForm({ sucursales, skus }: { sucursales: Sucursal[]; skus: 
     setStockActual(null);
     setCantidad("");
     setMotivo("");
+    setEmpleadoId("");
     setDetalle("");
     setError(null);
   }
@@ -58,6 +69,10 @@ export function MermaForm({ sucursales, skus }: { sucursales: Sucursal[]; skus: 
       setError("Elegí un motivo.");
       return;
     }
+    if (!empleadoId) {
+      setError("Elegí quién la registra.");
+      return;
+    }
     if (motivo === "otro" && !detalle.trim()) {
       setError("Contá qué pasó.");
       return;
@@ -70,6 +85,7 @@ export function MermaForm({ sucursales, skus }: { sucursales: Sucursal[]; skus: 
         sucursal_id: sucursalId,
         cantidad: cantidadNum,
         motivo,
+        empleado_id: empleadoId,
         detalle: detalle.trim() || null,
       });
 
@@ -84,6 +100,11 @@ export function MermaForm({ sucursales, skus }: { sucursales: Sucursal[]; skus: 
       router.refresh();
     });
   }
+
+  // Cada mostrador ve solo a su gente: la función además lo valida contra
+  // la base, para que desde Laprida no se pueda cargar a nombre de alguien
+  // de Olavarría.
+  const empleadosDeLaSucursal = empleados.filter((e) => e.sucursal_id === sucursalId);
 
   // Avisa, no bloquea: que el stock quede negativo es información real (el
   // conteo estaba mal), no algo para esconder.
@@ -172,6 +193,27 @@ export function MermaForm({ sucursales, skus }: { sucursales: Sucursal[]; skus: 
                 ))}
               </div>
             </div>
+          </div>
+
+          <div className="mt-3">
+            <label className={labelClass}>¿Quién la registra? *</label>
+            <select
+              className={inputClass}
+              value={empleadoId}
+              onChange={(e) => setEmpleadoId(e.target.value)}
+            >
+              <option value="">Elegir…</option>
+              {empleadosDeLaSucursal.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.nombre}
+                </option>
+              ))}
+            </select>
+            {empleadosDeLaSucursal.length === 0 && (
+              <p className="mt-[3px] text-[11.5px] text-warn">
+                No hay empleados cargados en esta sucursal.
+              </p>
+            )}
           </div>
 
           <div className="mt-3">
