@@ -393,6 +393,26 @@ registrarlo como compra le mentiría al historial de compras y al Balance de IVA
   que se repone en el medio se cuente dos veces, y si el pack se abre para reponer, encima cambia
   de SKU.
 
+### Mermas (2026-09-28)
+
+Pantalla propia (`/mermas`, `registrar_merma()`) para anotar en el momento lo que se rompe, se
+vence o se consume adentro del local. Antes el tipo de movimiento `merma` existía desde el bloque 3
+pero el único camino que lo usaba era la devolución de cliente: una botella rota en el depósito no
+tenía dónde anotarse.
+
+- **Por qué importa:** sin esto la rotura aparece recién en el próximo inventario como una
+  diferencia sin explicación, indistinguible de un faltante por robo. Con la merma registrada al
+  momento, lo que sobra en el conteo es fuga real y se puede medir.
+- Motivo de **lista cerrada** (rotura, vencido, consumo interno, otro), con detalle obligatorio
+  cuando es "otro". Mismo criterio que los motivos de diferencia de inventario.
+- La registra **cualquier usuario activo sobre la sucursal que opera** — incluido el encargado de
+  Laprida, que es quien ve romperse las botellas de Laprida. No pide `ve_costos()`: la merma no
+  revela ningún costo.
+- Control detectivo, sin aprobación previa (mismo criterio que precios y ajustes de inventario):
+  queda quién, cuándo, cuánto y por qué, y el movimiento es inmutable.
+- **No bloquea que el stock quede negativo**, solo advierte: si romper una botella deja el stock en
+  -1, ese -1 es información real (el conteo estaba mal) que hay que ver, no esconder.
+
 ## 1.10 Devoluciones de cliente
 
 ```

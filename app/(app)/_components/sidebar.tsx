@@ -73,6 +73,14 @@ const NAV: NavItem[] = [
     icon: "M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10",
   },
   {
+    label: "Mermas",
+    href: "/mermas",
+    seccion: "operacion",
+    // Sin restringir: la registra quien ve romperse la botella, en
+    // cualquiera de las dos sucursales. No muestra costos.
+    icon: "M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v5M14 11v5",
+  },
+  {
     label: "Productos",
     href: "/productos",
     seccion: "catalogo",
