@@ -5,6 +5,7 @@ import {
   type MotivoInventario,
 } from "@/app/(app)/inventarios/_components/estado-inventario-badge";
 import { TIPO_MOVIMIENTO_LABEL, motivoLegible } from "@/lib/movimientos";
+import { MOTIVO_MERMA_LABEL, type MotivoMerma } from "@/app/(app)/mermas/_lib/motivos";
 import { formatoFecha, formatoFechaHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import {
@@ -498,6 +499,34 @@ export async function DuenoDashboard() {
   const barsMotivos = [...porMotivo.entries()].sort((a, b) => b[1].unidades - a[1].unidades);
   const maxMotivo = barsMotivos[0]?.[1].unidades ?? 0;
 
+  // Mermas por motivo, últimos 30 días (pedido del usuario 2026-09-28). La
+  // merma se carga a mano y es justamente donde se puede esconder un
+  // faltante, así que el dueño tiene que verla sin ir a buscarla: si
+  // aparecen seis roturas de la misma marca cara, se nota acá.
+  const { data: mermas30 } = await supabase
+    .from("mermas")
+    .select("cantidad, motivo, sku_id")
+    .gte("fecha", cutoff30);
+
+  const porMotivoMerma = new Map<string, { unidades: number; valor: number }>();
+  for (const merma of (mermas30 ?? []) as {
+    cantidad: number;
+    motivo: MotivoMerma;
+    sku_id: string;
+  }[]) {
+    const actual = porMotivoMerma.get(merma.motivo) ?? { unidades: 0, valor: 0 };
+    actual.unidades += merma.cantidad;
+    // Valuada al costo actual del SKU: es una aproximación (el costo pudo
+    // cambiar desde que se rompió), pero alcanza para dimensionar la
+    // pérdida, que es de lo que se trata la tarjeta.
+    actual.valor += merma.cantidad * (skuPorId.get(merma.sku_id)?.costo_actual ?? 0);
+    porMotivoMerma.set(merma.motivo, actual);
+  }
+  const barsMermas = [...porMotivoMerma.entries()].sort((a, b) => b[1].unidades - a[1].unidades);
+  const maxMerma = barsMermas[0]?.[1].unidades ?? 0;
+  const mermaUnidades = barsMermas.reduce((acc, [, d]) => acc + d.unidades, 0);
+  const mermaValor = barsMermas.reduce((acc, [, d]) => acc + d.valor, 0);
+
   const movimientosRecientes = movimientosList.slice(0, 8);
 
   const vendidoHoyTotal = ventasHoyList.reduce((acc, v) => acc + v.total, 0);
@@ -710,6 +739,36 @@ export async function DuenoDashboard() {
                     display={`${datos.unidades} u. · ${datos.count} ajuste${datos.count === 1 ? "" : "s"}`}
                   />
                 ))}
+              </div>
+            )}
+          </Card>
+
+          <Card title="Mermas por motivo · últimos 30 días">
+            {barsMermas.length === 0 ? (
+              <EmptyState
+                title="Sin mermas registradas en los últimos 30 días"
+                sub="Acá aparece lo que se rompió, se venció o se consumió adentro del local, y cuánto pesó cada motivo."
+              />
+            ) : (
+              <div className="flex flex-col gap-[9px] p-[14px]">
+                {barsMermas.map(([motivo, datos]) => (
+                  <BarRow
+                    key={motivo}
+                    tone="loss"
+                    label={MOTIVO_MERMA_LABEL[motivo as MotivoMerma] ?? motivo}
+                    value={datos.unidades}
+                    max={maxMerma}
+                    display={`${datos.unidades} u. · ${formatoMoneda.format(datos.valor)}`}
+                  />
+                ))}
+                <p className="mt-[3px] border-t border-border pt-[8px] text-[12.5px] text-text-2">
+                  Total:{" "}
+                  <b className="font-medium tabular-nums text-text">{mermaUnidades} unidades</b> ·{" "}
+                  {formatoMoneda.format(mermaValor)} a costo.{" "}
+                  <Link href="/mermas" className="font-medium text-moe hover:underline">
+                    Ver el detalle
+                  </Link>
+                </p>
               </div>
             )}
           </Card>

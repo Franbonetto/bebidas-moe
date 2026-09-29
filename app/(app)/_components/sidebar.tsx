@@ -28,13 +28,17 @@ const SECCION_LABEL: Record<Seccion, string> = {
 // (catálogo con stock por sucursal) -- se unificó ahí en vez de construir
 // una pantalla aparte (ver histórico de movimientos y alertas de stock
 // bajo mínimo/sin stock dentro de la fila de cada SKU en /productos).
-// Compras y Proveedores están marcados "restringido": solo entran al menú
-// si puedeVerCostos es true (dueño + encargado Olavarría, CLAUDE.md), y ni
-// siquiera se muestran inertes para el resto -- no deben saber que existen.
+// Entrada de mercadería, Carga inicial y Proveedores están marcados
+// "restringido": solo entran al menú si puedeVerCostos es true (dueño +
+// encargado Olavarría, CLAUDE.md), y ni siquiera se muestran inertes para
+// el resto -- no deben saber que existen.
 // Agrupación pedida por el usuario (ref. Tiqora/Minimercado Abigail):
-// Inicio suelto arriba, después Operación (punto de venta, compras,
-// pedidos, envíos, en ese orden -- pedido del usuario 2026-09-22),
-// Catálogo (productos y el resto del catálogo) y Personas (proveedores).
+// Inicio suelto arriba, después Operación, Catálogo y Personas.
+// Orden y nombres de Operación pedidos por el usuario 2026-09-28: punto de
+// venta, envíos, merma, pedido semanal, entrada de mercadería -- es el
+// orden en que se usan en el mostrador, de lo más frecuente a lo más
+// esporádico. "Pedidos" pasó a llamarse "Pedido semanal" y "Compras" a
+// "Entrada de mercadería", que es como lo nombran ellos.
 const NAV: NavItem[] = [
   { label: "Inicio", href: "/", icon: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" },
   {
@@ -47,38 +51,36 @@ const NAV: NavItem[] = [
     icon: "M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11",
   },
   {
-    label: "Pedidos",
-    href: "/pedidos",
-    seccion: "operacion",
-    // Orden pedido por el usuario 2026-09-22: primero para el dueño (antes
-    // que Compras), porque es lo que más necesita revisar seguido.
-    icon: "M16 3h5v5M4 20L20.5 3.5M21 16v5h-5M15 15l5.5 5.5M4 4l5 5",
-  },
-  {
-    label: "Compras",
-    href: "/compras",
-    seccion: "operacion",
-    restringido: true,
-    icon: "M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0",
-  },
-  {
     label: "Envíos",
     href: "/envios",
     seccion: "operacion",
     // A diferencia de Punto de venta, acá el dueño SÍ entra -- ve el
     // historial de envíos de las dos sucursales en modo lectura, no arma
     // pedidos (misma pantalla, /envios/page.tsx decide qué mostrarle).
-    // Orden pedido por el usuario 2026-09-22: en el panel del dueño (donde
-    // Punto de venta queda oculto) Envíos tiene que quedar tercero.
-    icon: "M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10",
+    // Ícono de moto (pedido del usuario 2026-09-28): el envío del local es
+    // el motomandado, no un camión.
+    icon: "M5.5 19.5a3 3 0 110-6 3 3 0 010 6zM18.5 19.5a3 3 0 110-6 3 3 0 010 6zM5.5 16.5h5.5l3.5-5.5h2M14.5 11l4 5.5M9 11h4M16 8h3",
   },
   {
-    label: "Mermas",
+    label: "Merma",
     href: "/mermas",
     seccion: "operacion",
     // Sin restringir: la registra quien ve romperse la botella, en
     // cualquiera de las dos sucursales. No muestra costos.
     icon: "M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v5M14 11v5",
+  },
+  {
+    label: "Pedido semanal",
+    href: "/pedidos",
+    seccion: "operacion",
+    icon: "M16 3h5v5M4 20L20.5 3.5M21 16v5h-5M15 15l5.5 5.5M4 4l5 5",
+  },
+  {
+    label: "Entrada de mercadería",
+    href: "/compras",
+    seccion: "operacion",
+    restringido: true,
+    icon: "M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0",
   },
   {
     label: "Productos",
@@ -249,7 +251,7 @@ export function Sidebar({
           {inicio.map((item) => renderNavItem(item, pathname, onCerrar))}
           {secciones.map(({ seccion, items }) => (
             <div key={seccion} className="mt-3 flex flex-col gap-px first:mt-0">
-              <p className="px-2 pb-1 text-[10.5px] font-semibold tracking-wide text-text-3">
+              <p className="px-2 pb-1 text-[10.5px] font-semibold tracking-wide text-moe">
                 {SECCION_LABEL[seccion]}
               </p>
               {items.map((item) =>
@@ -257,7 +259,7 @@ export function Sidebar({
                   item,
                   pathname,
                   onCerrar,
-                  item.label === "Pedidos" ? pedidosCompraSinVer : undefined,
+                  item.href === "/pedidos" ? pedidosCompraSinVer : undefined,
                 ),
               )}
             </div>
