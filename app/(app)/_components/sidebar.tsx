@@ -85,6 +85,16 @@ const NAV: NavItem[] = [
     icon: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6",
   },
   {
+    label: "Carga inicial",
+    href: "/carga-inicial",
+    seccion: "catalogo",
+    // Incluye el costo: misma población que ve costos (dueño + Olavarría).
+    // Es la pantalla del arranque del sistema en cada sucursal -- se usa
+    // mucho unos días y después casi nunca.
+    restringido: true,
+    icon: "M12 5v14M5 12h14",
+  },
+  {
     label: "Inventarios",
     href: "/inventarios",
     seccion: "catalogo",

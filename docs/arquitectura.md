@@ -371,6 +371,28 @@ en paralelo al desarrollo, aunque falten meses para usarlo.
 - Al confirmar se generan movimientos de ajuste. El inventario queda **cerrado e inmutable**.
 - Los productos marcados por "venta con stock en cero" alimentan la lista de conteo puntual sugerido.
 
+### Carga inicial de stock (2026-09-28)
+
+El arranque del sistema en cada sucursal es **otra cosa que un inventario**, y tiene pantalla
+propia (`/carga-inicial`, `cargar_stock_inicial()`): se hace de a un producto por vez, a lo largo
+de varios días, con el negocio abierto y creando productos sobre la marcha. El inventario físico
+no sirve para eso (exige contar todo el alcance antes de cerrar, pide motivo de una lista fija por
+cada diferencia, no carga costo ni precio, y no incluye los SKU creados después de abrirlo), y
+registrarlo como compra le mentiría al historial de compras y al Balance de IVA.
+
+- **La cantidad que se carga es el total contado en esa sucursal, no un incremento.** Cargar dos
+  veces el mismo SKU corrige, no duplica — es el error más probable después de dos horas contando.
+  El movimiento que se registra es la diferencia contra lo que el sistema tenía en ese momento.
+- Movimiento tipo `ajuste` contra un documento `carga_inicial` por sucursal (tabla
+  `cargas_iniciales`). No pasa por compras ni por el Balance de IVA.
+- Permiso: `ve_costos()`, **con el dueño incluido** — a diferencia de las compras, acá el dueño no
+  es espectador: la carga inicial la hace él en las dos sucursales. Laprida queda afuera porque la
+  carga incluye el costo.
+- Criterio de conteo acordado con el cliente: **contar por producto completo (depósito + góndola
+  juntos), no por lugar**. Contar primero todo el depósito y después toda la góndola hace que lo
+  que se repone en el medio se cuente dos veces, y si el pack se abre para reponer, encima cambia
+  de SKU.
+
 ## 1.10 Devoluciones de cliente
 
 ```
