@@ -450,7 +450,12 @@ $$;
 -- información (son plata que salió), pero no entran en ninguno de los dos:
 -- los internos son costo y la percepción de IIBB va a otro impuesto.
 
-create or replace function reporte_iva_mensual(p_desde date, p_hasta date)
+-- Cambian las columnas que devuelve, y eso Postgres no lo deja reemplazar en
+-- el lugar ("cannot change return type of existing function"): hay que
+-- dropearla primero, igual que con las funciones que cambian de firma.
+drop function if exists reporte_iva_mensual(date, date);
+
+create function reporte_iva_mensual(p_desde date, p_hasta date)
 returns table (
   mes date,
   iva_ventas numeric,
