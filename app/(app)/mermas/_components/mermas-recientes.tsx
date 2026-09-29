@@ -3,6 +3,7 @@ import {
   type SkuPresentacion,
 } from "@/app/(app)/productos/_components/productos-table";
 import { formatoFechaHora } from "@/app/(app)/compras/_lib/formato";
+import { fechaVencimientoDesdeIso } from "@/app/(app)/compras/_lib/vencimiento";
 import { EmptyState } from "@/app/(app)/_components/dashboard/ui";
 import { MOTIVO_MERMA_LABEL, type MotivoMerma } from "../_lib/motivos";
 
@@ -11,6 +12,8 @@ export type MermaFila = {
   cantidad: number;
   motivo: MotivoMerma;
   detalle: string | null;
+  // Solo en las mermas por vencimiento: cuándo vencía lo que se tiró.
+  fecha_vencimiento: string | null;
   fecha: string;
   sucursal: { nombre: string } | null;
   // Quién la registró (el mostrador comparte sesión, así que el usuario
@@ -111,6 +114,11 @@ export function MermasRecientes({
                     >
                       {MOTIVO_MERMA_LABEL[m.motivo]}
                     </span>
+                    {m.fecha_vencimiento && (
+                      <p className="mt-[3px] text-[11.5px] text-text-3">
+                        vencía el {fechaVencimientoDesdeIso(m.fecha_vencimiento)}
+                      </p>
+                    )}
                     {m.detalle && (
                       <p className="mt-[3px] text-[11.5px] text-text-3">{m.detalle}</p>
                     )}

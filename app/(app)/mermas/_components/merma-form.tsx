@@ -4,7 +4,12 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { presentacionLabel } from "@/app/(app)/productos/_components/productos-table";
 import { SkuPicker, type SkuCatalogo } from "@/app/(app)/compras/_components/sku-picker";
-import { registrarMerma, stockActualDeSku } from "../actions";
+import {
+  fechaVencimientoAIso,
+  fechaVencimientoDesdeIso,
+} from "@/app/(app)/compras/_lib/vencimiento";
+import { datosSkuParaMerma, registrarMerma } from "../actions";
+import { ModalVencimiento } from "./modal-vencimiento";
 import { MOTIVOS_MERMA, MOTIVO_MERMA_LABEL, type MotivoMerma } from "../_lib/motivos";
 
 type Sucursal = { id: string; nombre: string };
@@ -30,6 +35,10 @@ export function MermaForm({
   const [cantidad, setCantidad] = useState("");
   const [motivo, setMotivo] = useState<MotivoMerma | "">("");
   const [empleadoId, setEmpleadoId] = useState("");
+  // dd/mm/aaaa. Solo se usa cuando el motivo es "vencido".
+  const [vencimiento, setVencimiento] = useState("");
+  const [vencimientoUltimoLote, setVencimientoUltimoLote] = useState<string | null>(null);
+  const [modalVencimiento, setModalVencimiento] = useState(false);
   const [detalle, setDetalle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -40,12 +49,26 @@ export function MermaForm({
     setError(null);
     setOk(null);
     setStockActual(null);
-    const resultado = await stockActualDeSku(elegido.id, sucursalId);
+    const resultado = await datosSkuParaMerma(elegido.id, sucursalId);
     if ("error" in resultado) {
       setError(resultado.error);
       return;
     }
     setStockActual(resultado.stock);
+    setVencimientoUltimoLote(resultado.vencimientoUltimoLote);
+  }
+
+  // El modal se abre al elegir "vencido": con el producto en la mano, no al
+  // final del formulario de memoria. Si lo cancela, el motivo vuelve a
+  // quedar sin elegir -- no se puede guardar un "vencido" sin fecha.
+  function elegirMotivo(m: MotivoMerma) {
+    setMotivo(m);
+    setError(null);
+    if (m === "vencido") {
+      setModalVencimiento(true);
+    } else {
+      setVencimiento("");
+    }
   }
 
   function limpiar() {
@@ -54,6 +77,8 @@ export function MermaForm({
     setCantidad("");
     setMotivo("");
     setEmpleadoId("");
+    setVencimiento("");
+    setVencimientoUltimoLote(null);
     setDetalle("");
     setError(null);
   }
@@ -73,6 +98,11 @@ export function MermaForm({
       setError("Elegí quién la registra.");
       return;
     }
+    if (motivo === "vencido" && !vencimiento) {
+      setError("Indicá cuándo vencía.");
+      setModalVencimiento(true);
+      return;
+    }
     if (motivo === "otro" && !detalle.trim()) {
       setError("Contá qué pasó.");
       return;
@@ -87,6 +117,7 @@ export function MermaForm({
         motivo,
         empleado_id: empleadoId,
         detalle: detalle.trim() || null,
+        fecha_vencimiento: motivo === "vencido" ? fechaVencimientoAIso(vencimiento) : null,
       });
 
       if ("error" in resultado) {
@@ -181,7 +212,7 @@ export function MermaForm({
                   <button
                     key={m}
                     type="button"
-                    onClick={() => setMotivo(m)}
+                    onClick={() => elegirMotivo(m)}
                     className={`rounded-[6px] border px-[8px] py-[7px] text-[12.5px] font-medium ${
                       motivo === m
                         ? "border-moe bg-moe-soft text-moe"
@@ -194,6 +225,19 @@ export function MermaForm({
               </div>
             </div>
           </div>
+
+          {motivo === "vencido" && vencimiento && (
+            <p className="mt-2 text-[12.5px] text-text-2">
+              Vencía el <b className="font-medium tabular-nums text-text">{vencimiento}</b>{" "}
+              <button
+                type="button"
+                onClick={() => setModalVencimiento(true)}
+                className="font-medium text-moe hover:underline"
+              >
+                cambiar
+              </button>
+            </p>
+          )}
 
           <div className="mt-3">
             <label className={labelClass}>¿Quién la registra? *</label>
@@ -258,6 +302,21 @@ export function MermaForm({
       )}
 
       {!sku && error && <p className="mt-3 text-[12.5px] text-err">{error}</p>}
+
+      {modalVencimiento && sku && (
+        <ModalVencimiento
+          producto={`${sku.producto?.nombre ?? sku.codigo_interno} — ${presentacionLabel(sku)}`}
+          valorInicial={vencimiento || fechaVencimientoDesdeIso(vencimientoUltimoLote)}
+          onConfirmar={(fecha) => {
+            setVencimiento(fecha);
+            setModalVencimiento(false);
+          }}
+          onCancelar={() => {
+            setModalVencimiento(false);
+            if (!vencimiento) setMotivo("");
+          }}
+        />
+      )}
     </div>
   );
 }

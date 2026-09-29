@@ -36,7 +36,7 @@ export default async function MermasPage() {
     supabase
       .from("mermas")
       .select(
-        `id, cantidad, motivo, detalle, fecha,
+        `id, cantidad, motivo, detalle, fecha, fecha_vencimiento,
          sucursal:sucursales ( nombre ),
          usuario:usuarios ( nombre ),
          empleado:empleados ( nombre ),
