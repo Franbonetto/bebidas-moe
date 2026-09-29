@@ -39,6 +39,17 @@ function proveedorLabel(p: ProveedorOpcion) {
   return p.nombre_comercial ?? p.razon_social;
 }
 
+// Mismo criterio que siguienteCodigoInterno() en el servidor, con la lista
+// que la pantalla ya tiene cargada: solo cuentan los códigos numéricos.
+function siguienteCodigoLibre(skus: SkuOpcion[]): string {
+  const maximo = skus.reduce((acc, sku) => {
+    const codigo = (sku.codigo_interno ?? "").trim();
+    if (!/^\d+$/.test(codigo)) return acc;
+    return Math.max(acc, Number(codigo));
+  }, 0);
+  return String(maximo + 1).padStart(5, "0");
+}
+
 export function ProductoSkuForm({
   marcas,
   categorias,
@@ -88,7 +99,11 @@ export function ProductoSkuForm({
 
   // ---- SKU ----
   const [nombreSku, setNombreSku] = useState("");
-  const [codigoInterno, setCodigoInterno] = useState("");
+  // Arranca con el siguiente número libre: es un identificador interno que
+  // nadie memoriza y tipearlo a mano solo servía para chocar con uno ya
+  // usado (pasó cargando el catálogo, 2026-09-29). Se puede pisar a mano si
+  // se quiere un código hablado tipo BRANCA-750.
+  const [codigoInterno, setCodigoInterno] = useState(() => siguienteCodigoLibre(skus));
   const [codigoBarras, setCodigoBarras] = useState("");
   const nombreSkuRef = useRef<HTMLInputElement>(null);
   const [volumen, setVolumen] = useState("");
@@ -438,7 +453,7 @@ export function ProductoSkuForm({
               type="text"
               value={codigoInterno}
               onChange={(e) => setCodigoInterno(e.target.value)}
-              placeholder="Ej. BRANCA-750"
+              placeholder="Lo numera el sistema"
               className={inputClass}
             />
           </div>

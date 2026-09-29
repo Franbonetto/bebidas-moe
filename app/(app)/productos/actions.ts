@@ -29,6 +29,22 @@ export type NuevoProductoInput = {
   proveedores: { proveedorId: string; costoReferencia: number | null }[];
 };
 
+// Siguiente código interno libre, mirando solo los que son puramente
+// numéricos (00001, 00002, ...). Los códigos "hablados" tipo BRANCA-750 se
+// ignoran para esta cuenta: conviven sin molestar.
+export async function siguienteCodigoInterno(): Promise<string> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("skus").select("codigo_interno");
+
+  const maximo = (data ?? []).reduce((acc, fila) => {
+    const codigo = (fila.codigo_interno ?? "").trim();
+    if (!/^\d+$/.test(codigo)) return acc;
+    return Math.max(acc, Number(codigo));
+  }, 0);
+
+  return String(maximo + 1).padStart(5, "0");
+}
+
 export async function crearProductoYSku(
   input: NuevoProductoInput,
 ): Promise<{ error: string } | { id: string }> {
@@ -117,12 +133,28 @@ export async function crearProductoYSku(
     }
   }
 
+  // Si el código interno que vino es puramente numérico y está ocupado, se
+  // avanza al siguiente libre en vez de hacerle perder el intento: es un
+  // identificador interno que nadie memoriza, y el choque pasa siempre que
+  // se cargan varios productos seguidos sin recargar la pantalla. Un código
+  // "hablado" (BRANCA-750) sí es una decisión de la persona: ese no se
+  // toca, se avisa.
+  let codigoInterno = input.sku.codigoInterno;
+  if (/^\d+$/.test(codigoInterno)) {
+    const { data: ocupado } = await supabase
+      .from("skus")
+      .select("id")
+      .eq("codigo_interno", codigoInterno)
+      .maybeSingle();
+    if (ocupado) codigoInterno = await siguienteCodigoInterno();
+  }
+
   const { data: sku, error: skuError } = await supabase
     .from("skus")
     .insert({
       producto_id: productoId,
       nombre: input.sku.nombre,
-      codigo_interno: input.sku.codigoInterno,
+      codigo_interno: codigoInterno,
       codigo_barras: input.sku.codigoBarras,
       volumen: input.sku.volumen,
       unidad_volumen: input.sku.unidadVolumen,
@@ -139,11 +171,18 @@ export async function crearProductoYSku(
     .single();
 
   if (skuError) {
-    if (skuError.code === "23505")
+    // El mensaje de Postgres trae el nombre de la constraint: sirve para
+    // decir CUÁL de los dos códigos choca, que era justo lo que faltaba.
+    if (skuError.code === "23505") {
+      if (skuError.message.includes("codigo_barras"))
+        return {
+          error:
+            "Ese código de barras ya está asignado a otro producto. Escaneálo de nuevo, o buscá ese producto en el catálogo.",
+        };
       return {
-        error:
-          "Ya hay un SKU con ese código interno o de barras. Revisá el código, o buscá el producto en el catálogo: puede estar cargado.",
+        error: `El código interno "${codigoInterno}" ya está usado. Poné otro (o dejá que el sistema lo numere solo).`,
       };
+    }
     return { error: `No se pudo crear el SKU: ${skuError.message}` };
   }
 
