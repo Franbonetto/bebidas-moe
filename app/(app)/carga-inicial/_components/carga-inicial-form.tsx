@@ -1,14 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { presentacionLabel } from "@/app/(app)/productos/_components/productos-table";
 import { SkuPicker, type SkuCatalogo } from "@/app/(app)/compras/_components/sku-picker";
 import { actualizarCodigoBarras } from "@/app/(app)/productos/actions";
 import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
+import {
+  fechaVencimientoAIso,
+  fechaVencimientoDesdeIso,
+  fechaVencimientoValida,
+  formatearFechaVencimiento,
+} from "@/app/(app)/compras/_lib/vencimiento";
 import { datosSkuParaCarga, guardarCargaInicial, type DatosSkuCarga } from "../actions";
+import { EscanerCamara, soportaEscanerCamara } from "./escaner-camara";
 
 type Sucursal = { id: string; nombre: string };
+type Proveedor = { id: string; razon_social: string; nombre_comercial: string | null };
 
 type Cargado = {
   skuId: string;
@@ -31,9 +39,11 @@ const labelClass = "mb-[5px] block text-[12.5px] font-medium text-text-2";
 
 export function CargaInicialForm({
   sucursales,
+  proveedores,
   skus,
 }: {
   sucursales: Sucursal[];
+  proveedores: Proveedor[];
   skus: SkuCatalogo[];
 }) {
   const [sucursalId, setSucursalId] = useState(sucursales[0]?.id ?? "");
@@ -43,6 +53,10 @@ export function CargaInicialForm({
   const [cantidad, setCantidad] = useState("");
   const [costo, setCosto] = useState("");
   const [precio, setPrecio] = useState("");
+  const [vencimiento, setVencimiento] = useState("");
+  const [proveedorId, setProveedorId] = useState("");
+  const [camaraAbierta, setCamaraAbierta] = useState(false);
+  const [avisoEscaneo, setAvisoEscaneo] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cargados, setCargados] = useState<Cargado[]>([]);
@@ -58,12 +72,42 @@ export function CargaInicialForm({
     input?.focus();
   }
 
-  useEffect(() => {
+  // Se resuelve en el cliente y sin efecto: en el servidor no hay cámara, y
+  // el botón no tiene que aparecer en iPhone (Safari no trae el lector
+  // nativo). useSyncExternalStore evita el parpadeo de hidratación que daría
+  // leerlo en el primer render.
+  const hayCamara = useSyncExternalStore(
+    () => () => {},
+    () => soportaEscanerCamara(),
+    () => false,
+  );
+
+  function cambiarSucursal(id: string) {
     // Cambiar de sucursal con un producto a medias cargaría el conteo en el
     // lugar equivocado: se limpia todo.
+    setSucursalId(id);
     setSku(null);
     setDatos(null);
-  }, [sucursalId]);
+    limpiar();
+  }
+
+  // La cámara devuelve el código crudo: se busca igual que la pistola, por
+  // codigo_barras exacto. Si no matchea no se inventa nada -- se avisa y se
+  // sigue a mano.
+  const elegirPorCodigo = useCallback(
+    (codigo: string) => {
+      const encontrado = skus.find((s) => s.codigo_barras === codigo);
+      if (!encontrado) {
+        setAvisoEscaneo(`Leímos ${codigo}, pero no hay ningún producto con ese código todavía.`);
+        return;
+      }
+      setAvisoEscaneo(null);
+      setCamaraAbierta(false);
+      elegirSku(encontrado);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [skus, sucursalId],
+  );
 
   async function elegirSku(elegido: SkuCatalogo) {
     setSku(elegido);
@@ -72,6 +116,8 @@ export function CargaInicialForm({
     setCantidad("");
     setCosto("");
     setPrecio("");
+    setVencimiento("");
+    setProveedorId("");
     setCargandoDatos(true);
     const resultado = await datosSkuParaCarga(elegido.id, sucursalId);
     setCargandoDatos(false);
@@ -82,6 +128,8 @@ export function CargaInicialForm({
     setDatos(resultado);
     setCosto(resultado.costoActual !== null ? String(resultado.costoActual) : "");
     setPrecio(resultado.precioBase !== null ? String(resultado.precioBase) : "");
+    setVencimiento(fechaVencimientoDesdeIso(resultado.vencimientoUltimoLote));
+    setProveedorId(resultado.proveedorId ?? "");
   }
 
   function limpiar() {
@@ -90,6 +138,8 @@ export function CargaInicialForm({
     setCantidad("");
     setCosto("");
     setPrecio("");
+    setVencimiento("");
+    setProveedorId("");
     setError(null);
   }
 
@@ -104,6 +154,10 @@ export function CargaInicialForm({
       setError("Este producto todavía no tiene precio de venta: cargalo ahora.");
       return;
     }
+    if (!fechaVencimientoValida(vencimiento)) {
+      setError("El vencimiento tiene que ser dd/mm/aaaa, o quedar vacío.");
+      return;
+    }
 
     setError(null);
     setGuardando(true);
@@ -113,6 +167,8 @@ export function CargaInicialForm({
       cantidad: cantidadNum,
       costo: costo === "" ? null : Number(costo),
       precio: precio === "" ? null : Number(precio),
+      fecha_vencimiento: fechaVencimientoAIso(vencimiento),
+      proveedor_id: proveedorId || null,
     });
     setGuardando(false);
 
@@ -152,7 +208,7 @@ export function CargaInicialForm({
             <select
               className={inputClass}
               value={sucursalId}
-              onChange={(e) => setSucursalId(e.target.value)}
+              onChange={(e) => cambiarSucursal(e.target.value)}
             >
               {sucursales.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -172,8 +228,32 @@ export function CargaInicialForm({
           onSelect={elegirSku}
           onAsignarCodigoBarras={actualizarCodigoBarras}
         />
+        {hayCamara && (
+          <button
+            type="button"
+            onClick={() => {
+              setAvisoEscaneo(null);
+              setCamaraAbierta((abierta) => !abierta);
+            }}
+            className="mt-2 w-full rounded-[8px] border border-border bg-bg-2 py-[9px] text-[13.5px] font-medium text-text-2"
+          >
+            {camaraAbierta ? "Cerrar cámara" : "Escanear con la cámara"}
+          </button>
+        )}
+
+        {camaraAbierta && (
+          <EscanerCamara onCodigo={elegirPorCodigo} onCerrar={() => setCamaraAbierta(false)} />
+        )}
+
+        {avisoEscaneo && (
+          <p className="mt-2 rounded-[6px] border border-warn/40 bg-warn-bg px-[10px] py-[7px] text-[12.5px] text-warn">
+            {avisoEscaneo} Buscalo por nombre y asignale el código después, con la pistola del
+            mostrador.
+          </p>
+        )}
+
         <p className="mt-2 text-[12px] text-text-3">
-          Escaneá el código con la pistola o buscá por nombre.{" "}
+          Escaneá con la pistola o buscá por nombre.{" "}
           <Link href="/productos/nuevo" className="font-medium text-moe hover:underline">
             ¿No está en el sistema? Darlo de alta
           </Link>
@@ -267,6 +347,42 @@ export function CargaInicialForm({
                   {datos.precioBase !== null
                     ? `Cargado: ${formatoMoneda.format(datos.precioBase)}`
                     : "Sin precio no se puede vender"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Vencimiento</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="dd/mm/aaaa"
+                  maxLength={10}
+                  className={`${inputClass} tabular-nums`}
+                  value={vencimiento}
+                  onChange={(e) => setVencimiento(formatearFechaVencimiento(e.target.value))}
+                />
+                <p className="mt-[3px] text-[11.5px] text-text-3">
+                  Solo si el producto vence. El vino no, la gaseosa sí.
+                </p>
+              </div>
+              <div>
+                <label className={labelClass}>Proveedor</label>
+                <select
+                  className={inputClass}
+                  value={proveedorId}
+                  onChange={(e) => setProveedorId(e.target.value)}
+                >
+                  <option value="">Sin definir</option>
+                  {proveedores.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nombre_comercial ?? p.razon_social}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-[3px] text-[11.5px] text-text-3">
+                  A quién le comprás este producto
                 </p>
               </div>
             </div>

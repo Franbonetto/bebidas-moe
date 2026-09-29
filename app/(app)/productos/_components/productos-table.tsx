@@ -15,6 +15,7 @@ export type SkuRow = {
   id: string;
   nombre: string;
   codigo_interno: string;
+  codigo_barras: string | null;
   tipo_presentacion: "unidad" | "pack" | "cajon" | "estuche";
   volumen: number;
   unidad_volumen: string;
@@ -63,7 +64,12 @@ export function ProductosTable({
 }) {
   const [query, setQuery] = useState("");
   const [categoria, setCategoria] = useState("");
+  // Para la pasada de asignación de códigos con la pistola en el mostrador:
+  // deja a la vista qué falta, en vez de tener que acordarse.
+  const [soloSinCodigo, setSoloSinCodigo] = useState(false);
   const [skuSeleccionado, setSkuSeleccionado] = useState<SkuRow | null>(null);
+
+  const sinCodigoCount = useMemo(() => skus.filter((s) => !s.codigo_barras).length, [skus]);
 
   const categorias = useMemo(() => {
     const nombres = new Set<string>();
@@ -77,19 +83,33 @@ export function ProductosTable({
     const q = query.trim().toLowerCase();
     return skus.filter((sku) => {
       if (categoria && sku.producto?.categoria?.nombre !== categoria) return false;
+      if (soloSinCodigo && sku.codigo_barras) return false;
       if (!q) return true;
       const producto = sku.producto?.nombre.toLowerCase() ?? "";
       const marca = sku.producto?.marca?.nombre.toLowerCase() ?? "";
       const codigo = sku.codigo_interno.toLowerCase();
       return producto.includes(q) || marca.includes(q) || codigo.includes(q);
     });
-  }, [skus, query, categoria]);
+  }, [skus, query, categoria, soloSinCodigo]);
 
   return (
     <div className="overflow-hidden rounded-card border border-border bg-bg">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[14px] py-[11px]">
         <h2 className="text-[13px] font-semibold text-text">Catálogo</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {sinCodigoCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setSoloSinCodigo((v) => !v)}
+              className={`whitespace-nowrap rounded-[6px] border px-[10px] py-[5px] text-[13px] ${
+                soloSinCodigo
+                  ? "border-moe bg-moe-soft font-medium text-moe"
+                  : "border-border bg-bg-2 text-text-2 hover:bg-[#EFEFF1]"
+              }`}
+            >
+              Sin código de barras ({sinCodigoCount})
+            </button>
+          )}
           <select
             value={categoria}
             onChange={(e) => setCategoria(e.target.value)}

@@ -25,15 +25,20 @@ export type CostoSubio = {
 // ordenado por fecha descendente -- así el primer registro de cada SKU es
 // el último lote y el segundo el anterior, sin volver a ordenar acá.
 export function calcularCostosQueSubieron(
-  historial: { sku_id: string; costo_unitario: number; fecha: string }[],
+  historial: { sku_id: string; costo_unitario: number | null; fecha: string }[],
   ventanaDias = 30,
 ): CostoSubio[] {
   const cutoff = Date.now() - ventanaDias * 86_400_000;
   const porSku = new Map<string, { costo_unitario: number; fecha: string }[]>();
 
   for (const fila of historial) {
+    // Los lotes de carga inicial pueden no tener costo (stock viejo del que
+    // no se sabe cuánto se pagó, ver migración 20260930090000). Sin costo no
+    // hay variación que calcular, y dejarlos pasar daría una división por
+    // null en el lote siguiente.
+    if (fila.costo_unitario === null) continue;
     const filas = porSku.get(fila.sku_id) ?? [];
-    filas.push(fila);
+    filas.push({ costo_unitario: fila.costo_unitario, fecha: fila.fecha });
     porSku.set(fila.sku_id, filas);
   }
 

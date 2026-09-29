@@ -9,6 +9,12 @@ export type DatosSkuCarga = {
   costoActual: number | null;
   precioBase: number | null;
   codigoBarras: string | null;
+  // Proveedor ya asociado al SKU (proveedor_skus). Si tiene más de uno se
+  // toma el primero solo para preseleccionarlo -- el resto no se toca.
+  proveedorId: string | null;
+  // Vencimiento del último lote cargado, para que se note si ya pasó por
+  // este producto.
+  vencimientoUltimoLote: string | null;
 };
 
 // Lo que hay que mostrarle antes de que escriba nada: cuánto tiene el
@@ -20,7 +26,13 @@ export async function datosSkuParaCarga(
 ): Promise<{ error: string } | DatosSkuCarga> {
   const supabase = await createClient();
 
-  const [{ data: sku, error: errorSku }, { data: stock }, { data: precio }] = await Promise.all([
+  const [
+    { data: sku, error: errorSku },
+    { data: stock },
+    { data: precio },
+    { data: proveedorSku },
+    { data: lote },
+  ] = await Promise.all([
     supabase.from("skus").select("costo_actual, codigo_barras").eq("id", skuId).maybeSingle(),
     supabase
       .from("stock_sucursal")
@@ -29,6 +41,20 @@ export async function datosSkuParaCarga(
       .eq("sucursal_id", sucursalId)
       .maybeSingle(),
     supabase.from("precios").select("precio_base").eq("sku_id", skuId).maybeSingle(),
+    supabase
+      .from("proveedor_skus")
+      .select("proveedor_id")
+      .eq("sku_id", skuId)
+      .eq("activo", true)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("historial_costos")
+      .select("fecha_vencimiento")
+      .eq("sku_id", skuId)
+      .order("fecha", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   if (errorSku) return { error: errorSku.message };
@@ -39,6 +65,8 @@ export async function datosSkuParaCarga(
     costoActual: sku.costo_actual ?? null,
     precioBase: precio?.precio_base ?? null,
     codigoBarras: sku.codigo_barras ?? null,
+    proveedorId: proveedorSku?.proveedor_id ?? null,
+    vencimientoUltimoLote: lote?.fecha_vencimiento ?? null,
   };
 }
 
@@ -51,6 +79,9 @@ export async function guardarCargaInicial(datos: {
   cantidad: number;
   costo: number | null;
   precio: number | null;
+  // dd/mm/aaaa ya convertido a ISO por el formulario, o null.
+  fecha_vencimiento: string | null;
+  proveedor_id: string | null;
 }): Promise<{ error: string } | { stock: number }> {
   const supabase = await createClient();
 
@@ -71,6 +102,8 @@ export async function guardarCargaInicial(datos: {
     p_sucursal_id: datos.sucursal_id,
     p_cantidad: datos.cantidad,
     p_costo: datos.costo,
+    p_fecha_vencimiento: datos.fecha_vencimiento,
+    p_proveedor_id: datos.proveedor_id,
   });
 
   if (error) return { error: error.message };

@@ -15,6 +15,11 @@ import {
   redondearPeso,
   type TipoComprobante,
 } from "../_lib/comprobante";
+import {
+  fechaVencimientoAIso,
+  fechaVencimientoValida,
+  formatearFechaVencimiento,
+} from "../_lib/vencimiento";
 import { SkuPicker, type SkuCatalogo } from "./sku-picker";
 
 type Proveedor = { id: string; razon_social: string; nombre_comercial: string | null };
@@ -38,30 +43,6 @@ type Linea = {
 const inputClass =
   "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe";
 const labelClass = "mb-[4px] block text-[12px] font-medium text-text-2";
-
-// El <input type="date"> nativo muestra mm/dd/aaaa o dd/mm/aaaa según el
-// idioma configurado en el navegador del que carga, no algo que controlemos
-// desde el HTML (el atributo lang no lo cambia) -- para garantizar
-// dd/mm/aaaa siempre, sin importar esa configuración, se usa un campo de
-// texto con formato controlado (pedido del usuario 2026-09-22).
-function formatearFechaVencimiento(valor: string): string {
-  const digitos = valor.replace(/\D/g, "").slice(0, 8);
-  const dd = digitos.slice(0, 2);
-  const mm = digitos.slice(2, 4);
-  const aaaa = digitos.slice(4, 8);
-  return [dd, mm, aaaa].filter(Boolean).join("/");
-}
-
-function fechaVencimientoValida(valor: string): boolean {
-  return valor === "" || /^\d{2}\/\d{2}\/\d{4}$/.test(valor);
-}
-
-function fechaVencimientoAIso(valor: string): string | null {
-  const m = valor.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return null;
-  const [, dd, mm, aaaa] = m;
-  return `${aaaa}-${mm}-${dd}`;
-}
 
 // Hoy todo el catálogo va al 21% pero el dato vive en la categoría
 // (20260907090000_categorias_alicuota_iva.sql) -- mismo fallback que usa la

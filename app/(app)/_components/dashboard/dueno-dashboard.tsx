@@ -436,7 +436,7 @@ export async function DuenoDashboard() {
   const maxCategoria = barsCategorias[0]?.[1] ?? 0;
 
   const costosSubieron = calcularCostosQueSubieron(
-    (historial ?? []) as { sku_id: string; costo_unitario: number; fecha: string }[],
+    (historial ?? []) as { sku_id: string; costo_unitario: number | null; fecha: string }[],
   );
 
   const historialConVencimiento = (historial ?? []) as {

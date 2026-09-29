@@ -28,17 +28,25 @@ export default async function CargaInicialPage() {
     redirect("/productos");
   }
 
-  const { data: skus } = await supabase
-    .from("skus")
-    .select(
-      `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-       producto:productos ( nombre, marca:marcas ( nombre ) )`,
-    )
-    .eq("activo", true);
+  const [{ data: skus }, { data: proveedores }] = await Promise.all([
+    supabase
+      .from("skus")
+      .select(
+        `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+         producto:productos ( nombre, marca:marcas ( nombre ) )`,
+      )
+      .eq("activo", true),
+    supabase
+      .from("proveedores")
+      .select("id, razon_social, nombre_comercial")
+      .eq("activo", true)
+      .order("razon_social"),
+  ]);
 
   return (
     <CargaInicialForm
       sucursales={sucursalesOperables}
+      proveedores={proveedores ?? []}
       skus={(skus ?? []) as unknown as SkuCatalogo[]}
     />
   );

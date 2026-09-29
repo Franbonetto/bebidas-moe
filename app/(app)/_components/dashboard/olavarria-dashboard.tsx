@@ -93,7 +93,7 @@ export async function OlavarriaDashboard() {
   const sinProveedorCount = productosAComprar.filter((f) => !f.tieneProveedor).length;
 
   const costosSubieron = calcularCostosQueSubieron(
-    (historial ?? []) as { sku_id: string; costo_unitario: number; fecha: string }[],
+    (historial ?? []) as { sku_id: string; costo_unitario: number | null; fecha: string }[],
   );
   const skuPorId = new Map(skusList.map((s) => [s.id, s]));
 
