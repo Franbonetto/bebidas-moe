@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { presentacionLabel } from "../_lib/presentacion";
+import { useRouter } from "next/navigation";
+import { actualizarCodigoBarras } from "../actions";
 import { MovimientosSkuModal } from "./movimientos-sku-modal";
 
 export type Sucursal = {
@@ -68,6 +70,47 @@ export function ProductosTable({
   // deja a la vista qué falta, en vez de tener que acordarse.
   const [soloSinCodigo, setSoloSinCodigo] = useState(false);
   const [skuSeleccionado, setSkuSeleccionado] = useState<SkuRow | null>(null);
+  // Asignación de código de barras con la pistola, fila por fila: se abre un
+  // input en la celda, se escanea (la lectora escribe el código y manda
+  // Enter) y queda vinculado. Es la pasada que se hace en el mostrador
+  // después de contar, filtrando por "Sin código de barras".
+  const [filaAsignando, setFilaAsignando] = useState<string | null>(null);
+  const [codigoInput, setCodigoInput] = useState("");
+  const [errorCodigo, setErrorCodigo] = useState<string | null>(null);
+  const [filaOk, setFilaOk] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+  const router = useRouter();
+
+  function abrirAsignacion(skuId: string, codigoActual: string | null) {
+    setFilaAsignando(skuId);
+    setCodigoInput(codigoActual ?? "");
+    setErrorCodigo(null);
+  }
+
+  function cerrarAsignacion() {
+    setFilaAsignando(null);
+    setCodigoInput("");
+    setErrorCodigo(null);
+  }
+
+  async function guardarCodigo(skuId: string) {
+    const codigo = codigoInput.trim();
+    if (!codigo) {
+      setErrorCodigo("Escaneá o escribí el código.");
+      return;
+    }
+    setGuardando(true);
+    const resultado = await actualizarCodigoBarras(skuId, codigo);
+    setGuardando(false);
+    if ("error" in resultado) {
+      setErrorCodigo(resultado.error);
+      return;
+    }
+    cerrarAsignacion();
+    setFilaOk(skuId);
+    setTimeout(() => setFilaOk((actual) => (actual === skuId ? null : actual)), 2500);
+    router.refresh();
+  }
 
   const sinCodigoCount = useMemo(() => skus.filter((s) => !s.codigo_barras).length, [skus]);
 
@@ -174,6 +217,9 @@ export function ProductosTable({
                 <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
                   Presentación
                 </th>
+                <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
+                  Código de barras
+                </th>
                 {sucursales.map((s) => (
                   <th
                     key={s.id}
@@ -209,6 +255,69 @@ export function ProductosTable({
                     </td>
                     <td className="px-[14px] py-[9px] align-middle text-text-2">
                       {presentacionLabel(sku)}
+                    </td>
+                    {/* La fila entera abre el historial de movimientos: todo
+                        lo de esta celda frena la propagación para que
+                        escanear no dispare el modal. */}
+                    <td
+                      className="px-[14px] py-[9px] align-middle"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {filaAsignando === sku.id ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={codigoInput}
+                            disabled={guardando}
+                            onChange={(e) => setCodigoInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                guardarCodigo(sku.id);
+                              }
+                              if (e.key === "Escape") cerrarAsignacion();
+                            }}
+                            placeholder="Escaneá el código…"
+                            className="w-[170px] rounded-[6px] border border-moe bg-bg px-[8px] py-[4px] text-[12.5px] tabular-nums outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={cerrarAsignacion}
+                            className="text-[11.5px] text-text-3 hover:text-err"
+                          >
+                            Cancelar
+                          </button>
+                          {errorCodigo && (
+                            <span className="text-[11.5px] text-err">{errorCodigo}</span>
+                          )}
+                        </div>
+                      ) : filaOk === sku.id ? (
+                        <span className="text-[12.5px] text-ok">Código asignado ✓</span>
+                      ) : sku.codigo_barras ? (
+                        <span className="flex items-center gap-2">
+                          <span className="tabular-nums text-text-2">{sku.codigo_barras}</span>
+                          {puedeCrear && (
+                            <button
+                              type="button"
+                              onClick={() => abrirAsignacion(sku.id, sku.codigo_barras)}
+                              className="text-[11.5px] text-text-3 underline underline-offset-2 hover:text-moe"
+                            >
+                              cambiar
+                            </button>
+                          )}
+                        </span>
+                      ) : puedeCrear ? (
+                        <button
+                          type="button"
+                          onClick={() => abrirAsignacion(sku.id, null)}
+                          className="rounded-[5px] border border-warn/40 bg-warn-bg px-[8px] py-[3px] text-[11.5px] font-medium text-warn"
+                        >
+                          Asignar
+                        </button>
+                      ) : (
+                        <span className="text-[12.5px] text-text-3">—</span>
+                      )}
                     </td>
                     {cantidades.map((cantidad, i) => (
                       <td
