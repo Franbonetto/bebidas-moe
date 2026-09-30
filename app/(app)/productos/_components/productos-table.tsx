@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { presentacionLabel } from "../_lib/presentacion";
 import { useRouter } from "next/navigation";
-import { actualizarCodigoBarras } from "../actions";
+import { actualizarCodigoBarras, eliminarSku } from "../actions";
 import { MovimientosSkuModal } from "./movimientos-sku-modal";
 
 export type Sucursal = {
@@ -79,7 +79,27 @@ export function ProductosTable({
   const [errorCodigo, setErrorCodigo] = useState<string | null>(null);
   const [filaOk, setFilaOk] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [filaEliminando, setFilaEliminando] = useState<string | null>(null);
+  const [avisoBaja, setAvisoBaja] = useState<string | null>(null);
   const router = useRouter();
+
+  async function confirmarEliminar(sku: SkuRow) {
+    setGuardando(true);
+    const resultado = await eliminarSku(sku.id);
+    setGuardando(false);
+    setFilaEliminando(null);
+
+    if ("error" in resultado) {
+      setAvisoBaja(`No se pudo sacar del catálogo: ${resultado.error}`);
+      return;
+    }
+    setAvisoBaja(
+      "desactivado" in resultado
+        ? `"${sku.producto?.nombre ?? sku.nombre}" tenía movimientos, así que no se borró: quedó dado de baja y ya no aparece en el catálogo ni en el punto de venta.`
+        : null,
+    );
+    router.refresh();
+  }
 
   function abrirAsignacion(skuId: string, codigoActual: string | null) {
     setFilaAsignando(skuId);
@@ -186,6 +206,12 @@ export function ProductosTable({
         </div>
       </div>
 
+      {avisoBaja && (
+        <p className="border-b border-border bg-warn-bg px-[14px] py-[9px] text-[12.5px] text-warn">
+          {avisoBaja}
+        </p>
+      )}
+
       {filtrados.length === 0 ? (
         <div className="px-[14px] py-[26px] text-center">
           {skus.length === 0 ? (
@@ -231,6 +257,9 @@ export function ProductosTable({
                 <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
                   Total
                 </th>
+                {puedeCrear && (
+                  <th className="sticky top-0 z-10 w-[90px] border-b border-border bg-bg-2 px-[14px] py-[7px]" />
+                )}
               </tr>
             </thead>
             <tbody>
@@ -332,6 +361,44 @@ export function ProductosTable({
                     >
                       {total}
                     </td>
+                    {puedeCrear && (
+                      <td
+                        className="px-[14px] py-[9px] text-right align-middle"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {filaEliminando === sku.id ? (
+                          <span className="flex items-center justify-end gap-2 whitespace-nowrap">
+                            <button
+                              type="button"
+                              disabled={guardando}
+                              onClick={() => confirmarEliminar(sku)}
+                              className="text-[12px] font-medium text-err hover:underline disabled:opacity-60"
+                            >
+                              Sí, sacar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setFilaEliminando(null)}
+                              className="text-[12px] text-text-3 hover:text-text"
+                            >
+                              No
+                            </button>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            title="Sacar del catálogo"
+                            onClick={() => {
+                              setAvisoBaja(null);
+                              setFilaEliminando(sku.id);
+                            }}
+                            className="text-[15px] leading-none text-text-3 hover:text-err"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

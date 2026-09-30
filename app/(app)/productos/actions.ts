@@ -266,3 +266,74 @@ export async function obtenerMovimientosSku(
   if (error) return { error: error.message };
   return { movimientos: (data ?? []) as unknown as MovimientoSku[] };
 }
+
+// Sacar un SKU del catálogo (duplicados cargados por error, típico durante
+// la carga inicial -- pedido del usuario 2026-09-30).
+//
+// Dos comportamientos, según si el SKU tiene historia:
+//
+//   - SIN historia (recién creado, nunca se movió): se borra de verdad,
+//     junto con su configuración (precio, recargo, proveedor, la fila en
+//     cero de stock). Es un error de tipeo, no tiene sentido dejarlo.
+//   - CON historia (se vendió, se compró, se contó en un inventario, se le
+//     registró una merma): NO se borra. Se da de baja (activo = false):
+//     desaparece del catálogo, del buscador y del POS, pero los movimientos
+//     y las ventas siguen apuntando a algo que existe. Borrarlo sería
+//     romper la trazabilidad, que es la regla 2 de CLAUDE.md.
+//
+// Si aparece una relación que no está en la lista de abajo, el borrado
+// falla con 23503 y se cae igual a dar de baja: nunca queda a medias.
+export async function eliminarSku(
+  skuId: string,
+): Promise<{ error: string } | { eliminado: true } | { desactivado: true }> {
+  const supabase = await createClient();
+
+  const tablasConHistoria = [
+    "movimientos_stock",
+    "venta_items",
+    "compra_items",
+    "recepcion_items",
+    "historial_costos",
+    "inventario_items",
+    "mermas",
+    "pedido_items",
+    "pedidos_compra_items",
+    "transferencia_items",
+  ] as const;
+
+  const conteos = await Promise.all(
+    tablasConHistoria.map((tabla) =>
+      supabase.from(tabla).select("sku_id", { count: "exact", head: true }).eq("sku_id", skuId),
+    ),
+  );
+
+  const tieneHistoria = conteos.some((r) => (r.count ?? 0) > 0);
+
+  async function darDeBaja(): Promise<{ error: string } | { desactivado: true }> {
+    const { error } = await supabase.from("skus").update({ activo: false }).eq("id", skuId);
+    if (error) return { error: error.message };
+    revalidatePath("/productos");
+    revalidatePath("/vender");
+    return { desactivado: true };
+  }
+
+  if (tieneHistoria) return darDeBaja();
+
+  // Configuración: no es historia, se va con el SKU.
+  for (const tabla of ["precios", "precios_sucursal", "recargos_sku", "proveedor_skus", "stock_sucursal"] as const) {
+    await supabase.from(tabla).delete().eq("sku_id", skuId);
+  }
+
+  const { error } = await supabase.from("skus").delete().eq("id", skuId);
+
+  if (error) {
+    // 23503 = foreign_key_violation: algo más lo referencia (una promoción,
+    // otro SKU que se desarma en este). Se da de baja en vez de fallar.
+    if (error.code === "23503") return darDeBaja();
+    return { error: error.message };
+  }
+
+  revalidatePath("/productos");
+  revalidatePath("/vender");
+  return { eliminado: true };
+}
