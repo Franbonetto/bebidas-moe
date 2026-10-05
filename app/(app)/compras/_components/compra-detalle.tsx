@@ -160,7 +160,7 @@ function ComprobanteForm({
 
   return (
     <div className="mt-3 border-t border-border pt-3">
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {TIPOS_COMPROBANTE.map((t) => {
           const activo = tipo === t;
           return (

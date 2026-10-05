@@ -464,7 +464,7 @@ export function CompraDirectaForm({
 
         <div>
           <label className={labelClass}>¿Con qué vino la mercadería? *</label>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {TIPOS_COMPROBANTE.map((t) => {
               const activo = tipoComprobante === t;
               return (

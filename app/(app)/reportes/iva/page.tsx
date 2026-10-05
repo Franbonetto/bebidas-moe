@@ -278,15 +278,20 @@ export default async function BalanceIvaPage({
                   totalCompras,
                 )}`}
               />
-              <BarRow
-                label="Con Factura B"
-                value={actual.total_compras_sin_credito}
-                max={maxCompras}
-                display={`${formatoMoneda.format(actual.total_compras_sin_credito)} · ${porcentaje(
-                  actual.total_compras_sin_credito,
-                  totalCompras,
-                )}`}
-              />
+              {/* La Factura B ya no se puede elegir al cargar (usuario
+                  2026-10-04), así que esta barra solo aparece si hay compras
+                  viejas cargadas con ese tipo. */}
+              {actual.total_compras_sin_credito > 0 && (
+                <BarRow
+                  label="Con Factura B"
+                  value={actual.total_compras_sin_credito}
+                  max={maxCompras}
+                  display={`${formatoMoneda.format(actual.total_compras_sin_credito)} · ${porcentaje(
+                    actual.total_compras_sin_credito,
+                    totalCompras,
+                  )}`}
+                />
+              )}
               <BarRow
                 label="Con remito"
                 value={actual.total_compras_sin_comprobante}

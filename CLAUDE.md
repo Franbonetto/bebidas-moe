@@ -231,6 +231,14 @@ a la base.
 PostCSS (exit code 0xc0000142 en Windows). El script `dev` de package.json
 usa `next dev --webpack`. No lo cambies a Turbopack.
 
+Desde 2026-10-04, una política de Application Control de Windows además
+bloquea el binario nativo `@next/swc-win32-x64-msvc`: Next cae a WASM y,
+al no tener bindings nativos, `next build` intenta Turbopack y aborta. Para
+compilar localmente hay que correr `npx next build --webpack` (con eso
+compila, solo imprime el warning del binario bloqueado). El script `build`
+de package.json se deja como está: Vercel compila en Linux, donde el
+binario nativo carga bien.
+
 **Toda tabla nueva necesita permisos explícitos.** El proyecto de Supabase
 se creó con "Automatically expose new tables" desactivado, así que las
 tablas nuevas no reciben ningún privilegio para el rol `authenticated` y

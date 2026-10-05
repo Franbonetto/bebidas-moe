@@ -8,7 +8,14 @@
 
 export type TipoComprobante = "factura_a" | "factura_b" | "remito";
 
-export const TIPOS_COMPROBANTE: TipoComprobante[] = ["factura_a", "factura_b", "remito"];
+// Lo que se puede elegir al cargar mercadería. La Factura B salió de la
+// lista (usuario 2026-10-04): a un Responsable Inscripto los proveedores le
+// facturan A, así que la opción solo servía para elegirla por error y perder
+// el crédito fiscal de esa compra.
+//
+// El tipo y la etiqueta se mantienen porque una compra vieja puede tener
+// 'factura_b' cargada y tiene que seguir mostrándose bien.
+export const TIPOS_COMPROBANTE: TipoComprobante[] = ["factura_a", "remito"];
 
 export const TIPO_COMPROBANTE_LABEL: Record<TipoComprobante, string> = {
   factura_a: "Factura A",
