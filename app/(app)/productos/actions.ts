@@ -337,3 +337,84 @@ export async function eliminarSku(
   revalidatePath("/vender");
   return { eliminado: true };
 }
+
+export type EditarSkuInput = {
+  // El nombre del producto es el que se ve en el catálogo y agrupa a todas
+  // las presentaciones; el del SKU es el que busca la vendedora en el punto
+  // de venta (el POS busca por marca + nombre del SKU + presentación). Son
+  // dos campos distintos a propósito y se editan juntos para que no quede
+  // uno al día y el otro viejo.
+  nombreProducto: string;
+  nombreSku: string;
+  tipoPresentacion: "unidad" | "pack" | "cajon" | "estuche";
+  unidadesContenidas: number;
+  volumen: number;
+  unidadVolumen: "ml" | "l" | "un" | "g";
+};
+
+// Corregir nombre y presentación de un SKU ya cargado (pedido del usuario
+// 2026-10-05: hasta ahora un error de tipeo en el alta solo se arreglaba
+// borrando y volviendo a cargar).
+//
+// No toca códigos, precios ni stock: el código de barras tiene su propia
+// acción en la misma pantalla, y el stock solo se mueve con un movimiento
+// (regla 1). Cambiar la presentación NO genera ningún movimiento porque no
+// cambia la cantidad de nada: el SKU sigue siendo el mismo, se corrige cómo
+// se describe.
+export async function editarSku(
+  skuId: string,
+  input: EditarSkuInput,
+): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  const nombreProducto = input.nombreProducto.trim();
+  const nombreSku = input.nombreSku.trim();
+
+  if (!nombreProducto) return { error: "El nombre del producto no puede estar vacío." };
+  if (!nombreSku) return { error: "El nombre del SKU no puede estar vacío." };
+  if (!Number.isFinite(input.volumen) || input.volumen <= 0)
+    return { error: "El volumen tiene que ser mayor a cero." };
+  if (!Number.isInteger(input.unidadesContenidas) || input.unidadesContenidas <= 0)
+    return { error: "Las unidades contenidas tienen que ser un número entero mayor a cero." };
+
+  const { data: sku, error: errorSku } = await supabase
+    .from("skus")
+    .select("producto_id")
+    .eq("id", skuId)
+    .single();
+
+  if (errorSku) return { error: errorSku.message };
+
+  // El nombre del producto va primero porque es el único con restricción de
+  // unicidad (marca + nombre): si choca, no se cambió nada todavía.
+  const { error: errorProducto } = await supabase
+    .from("productos")
+    .update({ nombre: nombreProducto })
+    .eq("id", sku.producto_id);
+
+  if (errorProducto) {
+    if (errorProducto.code === "23505")
+      return { error: "Esa marca ya tiene otro producto con ese nombre." };
+    return { error: errorProducto.message };
+  }
+
+  const { error } = await supabase
+    .from("skus")
+    .update({
+      nombre: nombreSku,
+      tipo_presentacion: input.tipoPresentacion,
+      unidades_contenidas: input.unidadesContenidas,
+      volumen: input.volumen,
+      unidad_volumen: input.unidadVolumen,
+    })
+    .eq("id", skuId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/productos");
+  revalidatePath("/precios");
+  revalidatePath("/vender");
+  revalidatePath("/compras");
+  revalidatePath("/envios");
+  return { ok: true };
+}

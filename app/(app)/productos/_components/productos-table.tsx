@@ -6,6 +6,7 @@ import { presentacionLabel } from "../_lib/presentacion";
 import { useRouter } from "next/navigation";
 import { actualizarCodigoBarras, eliminarSku } from "../actions";
 import { MovimientosSkuModal } from "./movimientos-sku-modal";
+import { EditarSkuModal } from "./editar-sku-modal";
 
 export type Sucursal = {
   id: string;
@@ -80,6 +81,7 @@ export function ProductosTable({
   const [filaOk, setFilaOk] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [filaEliminando, setFilaEliminando] = useState<string | null>(null);
+  const [skuEditando, setSkuEditando] = useState<SkuRow | null>(null);
   const [avisoBaja, setAvisoBaja] = useState<string | null>(null);
   const router = useRouter();
 
@@ -142,8 +144,22 @@ export function ProductosTable({
     return [...nombres].sort((a, b) => a.localeCompare(b, "es"));
   }, [skus]);
 
+  // Un escaneo con la pistola escribe exactamente el código de barras de un
+  // SKU. Si ese SKU existe pero los filtros lo esconden, la pantalla queda
+  // vacía y parece que el producto no está cargado -- y el filtro que lo
+  // esconde es justo "Sin código de barras", el que se usa mientras se
+  // codifica (problema que trajo el usuario el 2026-10-05). Por eso un
+  // código de barras exacto gana sobre los filtros: si lo escaneaste, lo
+  // querés ver.
+  const skuEscaneado = useMemo(() => {
+    const q = query.trim();
+    if (!q) return null;
+    return skus.find((sku) => sku.codigo_barras === q) ?? null;
+  }, [skus, query]);
+
   const filtrados = useMemo(() => {
     const q = query.trim().toLowerCase();
+    if (skuEscaneado) return [skuEscaneado];
     return skus.filter((sku) => {
       if (categoria && sku.producto?.categoria?.nombre !== categoria) return false;
       if (soloSinCodigo && sku.codigo_barras) return false;
@@ -151,9 +167,15 @@ export function ProductosTable({
       const producto = sku.producto?.nombre.toLowerCase() ?? "";
       const marca = sku.producto?.marca?.nombre.toLowerCase() ?? "";
       const codigo = sku.codigo_interno.toLowerCase();
-      return producto.includes(q) || marca.includes(q) || codigo.includes(q);
+      const barras = sku.codigo_barras?.toLowerCase() ?? "";
+      return (
+        producto.includes(q) ||
+        marca.includes(q) ||
+        codigo.includes(q) ||
+        (barras !== "" && barras.includes(q))
+      );
     });
-  }, [skus, query, categoria, soloSinCodigo]);
+  }, [skus, query, categoria, soloSinCodigo, skuEscaneado]);
 
   return (
     <div className="overflow-hidden rounded-card border border-border bg-bg">
@@ -189,7 +211,7 @@ export function ProductosTable({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por producto, marca o código…"
+            placeholder="Buscar o escanear: producto, marca o código…"
             className="w-[240px] rounded-[6px] border border-border bg-bg-2 px-[10px] py-[5px] text-[13px] text-text outline-none focus:border-moe"
           />
           <span className="whitespace-nowrap text-[12px] text-text-3">
@@ -209,6 +231,13 @@ export function ProductosTable({
       {avisoBaja && (
         <p className="border-b border-border bg-warn-bg px-[14px] py-[9px] text-[12.5px] text-warn">
           {avisoBaja}
+        </p>
+      )}
+
+      {skuEscaneado && (
+        <p className="border-b border-border bg-info-bg px-[14px] py-[9px] text-[12.5px] text-info">
+          Ese código ya está asignado a este producto
+          {soloSinCodigo || categoria ? ", que los filtros estaban escondiendo." : "."}
         </p>
       )}
 
@@ -258,7 +287,7 @@ export function ProductosTable({
                   Total
                 </th>
                 {puedeCrear && (
-                  <th className="sticky top-0 z-10 w-[90px] border-b border-border bg-bg-2 px-[14px] py-[7px]" />
+                  <th className="sticky top-0 z-10 w-[130px] border-b border-border bg-bg-2 px-[14px] py-[7px]" />
                 )}
               </tr>
             </thead>
@@ -385,17 +414,30 @@ export function ProductosTable({
                             </button>
                           </span>
                         ) : (
-                          <button
-                            type="button"
-                            title="Sacar del catálogo"
-                            onClick={() => {
-                              setAvisoBaja(null);
-                              setFilaEliminando(sku.id);
-                            }}
-                            className="text-[15px] leading-none text-text-3 hover:text-err"
-                          >
-                            ✕
-                          </button>
+                          <span className="flex items-center justify-end gap-3 whitespace-nowrap">
+                            <button
+                              type="button"
+                              title="Editar nombre y presentación"
+                              onClick={() => {
+                                setAvisoBaja(null);
+                                setSkuEditando(sku);
+                              }}
+                              className="text-[12px] text-text-3 underline underline-offset-2 hover:text-moe"
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              title="Sacar del catálogo"
+                              onClick={() => {
+                                setAvisoBaja(null);
+                                setFilaEliminando(sku.id);
+                              }}
+                              className="text-[15px] leading-none text-text-3 hover:text-err"
+                            >
+                              ✕
+                            </button>
+                          </span>
                         )}
                       </td>
                     )}
@@ -413,6 +455,17 @@ export function ProductosTable({
           nombre={skuSeleccionado.producto?.nombre ?? skuSeleccionado.nombre}
           presentacion={presentacionLabel(skuSeleccionado)}
           onClose={() => setSkuSeleccionado(null)}
+        />
+      )}
+
+      {skuEditando && (
+        <EditarSkuModal
+          sku={skuEditando}
+          onClose={() => setSkuEditando(null)}
+          onGuardado={() => {
+            setSkuEditando(null);
+            router.refresh();
+          }}
         />
       )}
     </div>
