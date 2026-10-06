@@ -57,6 +57,12 @@ export function CargaInicialForm({
   const [cantidad, setCantidad] = useState("");
   const [costo, setCosto] = useState("");
   const [precio, setPrecio] = useState("");
+  // Precio final en la sucursal satélite. Arranca en el calculado (precio
+  // base + recargo de la categoría) y sigue al precio base mientras no lo
+  // toquen a mano; si lo pisan, deja de seguirlo y se guarda como
+  // excepción. Ver decisión del usuario 2026-10-05.
+  const [precioLaprida, setPrecioLaprida] = useState("");
+  const [lapridaTocado, setLapridaTocado] = useState(false);
   const [vencimiento, setVencimiento] = useState("");
   // Segundo vencimiento en adelante: {cantidad, fecha} por lote. Vacío =
   // una sola fecha (el caso normal), que usa el campo de arriba.
@@ -125,6 +131,8 @@ export function CargaInicialForm({
     setCantidad("");
     setCosto("");
     setPrecio("");
+    setPrecioLaprida("");
+    setLapridaTocado(false);
     setVencimiento("");
     setLotes([]);
     setProveedorId("");
@@ -140,6 +148,10 @@ export function CargaInicialForm({
     setDatos(resultado);
     setCosto(resultado.costoActual !== null ? String(resultado.costoActual) : "");
     setPrecio(resultado.precioBase !== null ? String(resultado.precioBase) : "");
+    const lap = resultado.laprida;
+    const sugerido = lap?.override ?? lap?.precioCalculado ?? null;
+    setPrecioLaprida(sugerido !== null ? String(sugerido) : "");
+    setLapridaTocado(lap?.override != null);
     setVencimiento(fechaVencimientoDesdeIso(resultado.vencimientoUltimoLote));
     setProveedorId(resultado.proveedorId ?? "");
     setStockMinimo(String(resultado.stockMinimo));
@@ -152,12 +164,40 @@ export function CargaInicialForm({
     setCantidad("");
     setCosto("");
     setPrecio("");
+    setPrecioLaprida("");
+    setLapridaTocado(false);
     setVencimiento("");
     setLotes([]);
     setProveedorId("");
     setStockMinimo("");
     setStockObjetivo("");
     setError(null);
+  }
+
+  // El sugerido para la sucursal satélite se recalcula en vivo contra lo
+  // que haya tipeado en el precio base, para que cargar el precio por
+  // primera vez también proponga el de Laprida. El servidor lo vuelve a
+  // calcular al guardar: esto es solo la sugerencia en pantalla.
+  const precioNum = precio === "" ? NaN : Number(precio);
+  const lapridaCalculado =
+    datos?.laprida && Number.isFinite(precioNum)
+      ? precioNum + datos.laprida.recargoPorUnidad * datos.laprida.unidadesContenidas
+      : null;
+  const lapridaEsExcepcion =
+    lapridaCalculado !== null &&
+    precioLaprida !== "" &&
+    Math.abs(Number(precioLaprida) - lapridaCalculado) >= 0.005;
+
+  function cambiarPrecioBase(valor: string) {
+    setPrecio(valor);
+    // Mientras no lo hayan pisado a mano, el de Laprida sigue al base.
+    if (lapridaTocado || !datos?.laprida) return;
+    const n = valor === "" ? NaN : Number(valor);
+    setPrecioLaprida(
+      Number.isFinite(n)
+        ? String(n + datos.laprida.recargoPorUnidad * datos.laprida.unidadesContenidas)
+        : "",
+    );
   }
 
   async function guardar() {
@@ -198,6 +238,7 @@ export function CargaInicialForm({
       cantidad: cantidadNum,
       costo: costo === "" ? null : Number(costo),
       precio: precio === "" ? null : Number(precio),
+      precio_laprida: precioLaprida === "" ? null : Number(precioLaprida),
       lotes: lotesParaGuardar,
       proveedor_id: proveedorId || null,
       stock_minimo: stockMinimo === "" ? null : Number(stockMinimo),
@@ -391,7 +432,7 @@ export function CargaInicialForm({
                     datos.precioBase === null ? "border-warn/50" : ""
                   }`}
                   value={precio}
-                  onChange={(e) => setPrecio(e.target.value)}
+                  onChange={(e) => cambiarPrecioBase(e.target.value)}
                 />
                 <p className="mt-[3px] text-[11.5px] text-text-3">
                   {datos.precioBase !== null
@@ -400,6 +441,51 @@ export function CargaInicialForm({
                 </p>
               </div>
             </div>
+
+            {datos.laprida && (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Precio en {datos.laprida.nombre}</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.01"
+                    className={`${inputClass} tabular-nums ${
+                      lapridaEsExcepcion ? "border-warn/50" : ""
+                    }`}
+                    value={precioLaprida}
+                    onChange={(e) => {
+                      setLapridaTocado(true);
+                      setPrecioLaprida(e.target.value);
+                    }}
+                  />
+                  <p className="mt-[3px] text-[11.5px] text-text-3">
+                    {lapridaCalculado !== null
+                      ? `Le corresponde ${formatoMoneda.format(lapridaCalculado)} por el recargo de la categoría`
+                      : "Se calcula solo cuando cargues el precio de venta"}
+                  </p>
+                </div>
+                <div className="flex items-end">
+                  {lapridaEsExcepcion && (
+                    <p className="rounded-[6px] bg-warn-bg px-[10px] py-[7px] text-[11.5px] text-warn">
+                      Queda como excepción: este producto deja de seguir el recargo de la
+                      categoría y hay que tocarlo a mano cada vez que cambie el precio.{" "}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLapridaTocado(false);
+                          setPrecioLaprida(String(lapridaCalculado));
+                        }}
+                        className="underline underline-offset-2"
+                      >
+                        Volver al calculado
+                      </button>
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div>
