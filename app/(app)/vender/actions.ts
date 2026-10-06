@@ -173,15 +173,21 @@ export async function confirmarDevolucion(input: {
   return { id: (data as { id: string }).id };
 }
 
+// El empleado es obligatorio (decisión del usuario 2026-10-06): la cuenta
+// con la que se entra al sistema son tres, pero el mostrador lo atienden
+// varias personas. Sin esto, una diferencia de caja no se le puede atribuir
+// a nadie. Mismo criterio que la merma.
 export async function abrirCaja(
   sucursalId: string,
   montoApertura: number,
+  empleadoId: string,
 ): Promise<{ error: string } | { ok: true }> {
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("abrir_caja", {
     p_sucursal_id: sucursalId,
     p_monto_apertura: montoApertura,
+    p_empleado_id: empleadoId,
   });
 
   if (error) return { error: error.message };
@@ -191,15 +197,18 @@ export async function abrirCaja(
   return { ok: true };
 }
 
+// Puede ser una persona distinta de la que abrió: el turno cambia de manos.
 export async function cerrarCaja(
   cajaId: string,
   efectivoDeclarado: number,
+  empleadoId: string,
 ): Promise<{ error: string } | { ok: true }> {
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("cerrar_caja", {
     p_caja_id: cajaId,
     p_efectivo_declarado: efectivoDeclarado,
+    p_empleado_id: empleadoId,
   });
 
   if (error) return { error: error.message };

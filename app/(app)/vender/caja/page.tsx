@@ -41,12 +41,34 @@ export default async function CajaPage({
   const sucursal =
     sucursalesOperables.find((s) => s.id === sucursalParam) ?? sucursalesOperables[0];
 
+  // Supabase devuelve las relaciones anidadas como objeto o como array según
+  // el caso; se normaliza acá para no ensuciar el JSX.
+  const nombreEmpleado = (rel: unknown): string | null => {
+    const fila = Array.isArray(rel) ? rel[0] : rel;
+    return (fila as { nombre?: string } | null)?.nombre ?? null;
+  };
+
   const { data: caja } = await supabase
     .from("cajas")
-    .select("id, estado, monto_apertura, efectivo_sistema, efectivo_declarado, diferencia, cantidad_tickets")
+    .select(
+      `id, estado, monto_apertura, efectivo_sistema, efectivo_declarado, diferencia, cantidad_tickets,
+       empleado_apertura:empleados!cajas_empleado_apertura_id_fkey ( nombre ),
+       empleado_cierre:empleados!cajas_empleado_cierre_id_fkey ( nombre )`,
+    )
     .eq("sucursal_id", sucursal.id)
     .eq("fecha", new Date().toISOString().slice(0, 10))
     .maybeSingle();
+
+  const nombreApertura = nombreEmpleado(caja?.empleado_apertura);
+  const nombreCierre = nombreEmpleado(caja?.empleado_cierre);
+
+  // Quién cierra la caja: puede ser otra persona que la que la abrió.
+  const { data: empleados } = await supabase
+    .from("empleados")
+    .select("id, nombre")
+    .eq("sucursal_id", sucursal.id)
+    .eq("activo", true)
+    .order("nombre");
 
   // Desglose por medio: sale de venta_pagos, no de ventas.medio_pago/total
   // -- una venta "mixta" (pago dividido, ver
@@ -209,11 +231,14 @@ export default async function CajaPage({
 
             <p className="mb-4 text-[12.5px] text-text-3">
               {caja.cantidad_tickets ?? cantidadVentasHoy ?? 0} ticket(s) hoy.
+              {nombreApertura && ` · Abrió ${nombreApertura}`}
+              {nombreCierre && ` · Cerró ${nombreCierre}`}
             </p>
 
             {caja.estado === "abierta" ? (
               <CerrarCajaForm
                 cajaId={caja.id}
+                empleados={empleados ?? []}
                 efectivoEsperado={
                   (caja.monto_apertura ?? 0) +
                   (totalPorMedio.get("efectivo") ?? 0) -

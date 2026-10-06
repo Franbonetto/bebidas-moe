@@ -91,6 +91,15 @@ export default async function EnviosPage({
   const { skusPos, combos, promosCantidad, puedeFacturar, cajaHoy, cantidadTicketsHoy } =
     await cargarDatosVenta(supabase, sucursal);
 
+  // Envíos usa el mismo POS, así que también necesita la caja abierta y, con
+  // ella, quién la abre.
+  const { data: empleados } = await supabase
+    .from("empleados")
+    .select("id, nombre")
+    .eq("sucursal_id", sucursal.id)
+    .eq("activo", true)
+    .order("nombre");
+
   return (
     <div>
       {sucursalesOperables.length > 1 && (
@@ -121,6 +130,7 @@ export default async function EnviosPage({
         estadoCaja={!cajaHoy ? "sin_abrir" : cajaHoy.estado === "abierta" ? "abierta" : "cerrada"}
         cajaId={cajaHoy?.id ?? null}
         cantidadTicketsHoy={cantidadTicketsHoy}
+        empleados={empleados ?? []}
         modoEnvio
       />
     </div>

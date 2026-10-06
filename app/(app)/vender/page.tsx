@@ -36,6 +36,15 @@ export default async function VenderPage({
   const { skusPos, combos, promosCantidad, puedeFacturar, cajaHoy, cantidadTicketsHoy } =
     await cargarDatosVenta(supabase, sucursal);
 
+  // Quién abre la caja (empleados de esta sucursal), que no es lo mismo que
+  // con qué cuenta se entró al sistema -- ver 20261008090000_empleado_caja.
+  const { data: empleados } = await supabase
+    .from("empleados")
+    .select("id, nombre")
+    .eq("sucursal_id", sucursal.id)
+    .eq("activo", true)
+    .order("nombre");
+
   return (
     <div>
       {sucursalesOperables.length > 1 && (
@@ -69,6 +78,7 @@ export default async function VenderPage({
         estadoCaja={!cajaHoy ? "sin_abrir" : cajaHoy.estado === "abierta" ? "abierta" : "cerrada"}
         cajaId={cajaHoy?.id ?? null}
         cantidadTicketsHoy={cantidadTicketsHoy}
+        empleados={empleados ?? []}
       />
     </div>
   );

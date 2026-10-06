@@ -20,7 +20,7 @@ import {
   type PagoVenta,
 } from "../actions";
 import { formatoMoneda } from "../_lib/formato";
-import { AbrirCajaForm } from "./abrir-caja-form";
+import { AbrirCajaForm, type EmpleadoOpcion } from "./abrir-caja-form";
 
 export type SkuPos = {
   id: string;
@@ -120,6 +120,7 @@ export function PosClient({
   estadoCaja,
   cajaId,
   cantidadTicketsHoy,
+  empleados,
   modoEnvio = false,
 }: {
   sucursalId: string;
@@ -131,6 +132,7 @@ export function PosClient({
   estadoCaja: "sin_abrir" | "abierta" | "cerrada";
   cajaId: string | null;
   cantidadTicketsHoy: number;
+  empleados: EmpleadoOpcion[];
   // Envíos (2026-09-21): mismo motor de venta, pero pide motomandado y
   // dirección a mano, nunca factura automático (el ticket impreso tiene
   // que ser siempre el interno, nunca la factura ARCA), y esconde los
@@ -674,7 +676,13 @@ export function PosClient({
   }, [lineas, lineaSeleccionada, pagos, restante, tickets, ticketActivoId, cajaId, mostrarPago]);
 
   if (estadoCaja === "sin_abrir") {
-    return <AbrirCajaForm sucursalId={sucursalId} sucursalNombre={sucursalNombre} />;
+    return (
+      <AbrirCajaForm
+        sucursalId={sucursalId}
+        sucursalNombre={sucursalNombre}
+        empleados={empleados}
+      />
+    );
   }
 
   // Selector de medios de pago -- reusado en el panel siempre visible y en
