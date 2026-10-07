@@ -21,6 +21,12 @@ export type NuevoProductoInput = {
     tipoEnvase: { id: string } | { nombreNueva: string; esGenerico: boolean; valorDeposito: number } | null;
     desarmaEnSkuId: string | null;
     desarmaEnCantidad: number | null;
+    // Presentaciones que NO existen todavía y hay que crear acá mismo, de
+    // afuera hacia adentro: para una cerveza que entra en x24 la cadena es
+    // [pack x6, unidad]. Alternativa a desarmaEnSkuId, no se usan las dos
+    // juntas -- pedido del usuario 2026-10-06: cargar la cascada entera en
+    // una sola pantalla en vez de tres altas en orden inverso.
+    desarmaCadena: SkuDerivado[];
     stockMinimo: number;
     stockObjetivo: number;
   };
@@ -28,6 +34,43 @@ export type NuevoProductoInput = {
   // asociado a un SKU especifico, no solo a traves de una compra puntual).
   proveedores: { proveedorId: string; costoReferencia: number | null }[];
 };
+
+// Una presentación creada al vuelo desde el desarme. Hereda del SKU
+// principal lo que no cambia (producto, volumen, unidad) y solo pide lo que
+// sí: qué es, cuántas unidades trae y con qué código se escanea.
+export type SkuDerivado = {
+  nombre: string;
+  codigoBarras: string | null;
+  tipoPresentacion: "unidad" | "pack" | "cajon" | "estuche";
+  unidadesContenidas: number;
+  // Cuántos de ESTA presentación produce desarmar una del nivel de arriba.
+  // El x24 se desarma en 4 packs x6; el x6, en 6 unidades.
+  factor: number;
+};
+
+// Inserta un SKU y traduce los choques de unicidad a algo que se entienda
+// desde el mostrador. Lo usan tanto el SKU principal como las
+// presentaciones que se crean en cascada desde el desarme.
+async function insertarSku(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  campos: Record<string, unknown>,
+): Promise<{ error: string } | { id: string }> {
+  const { data, error } = await supabase.from("skus").insert(campos).select("id").single();
+
+  if (error) {
+    if (error.code === "23505") {
+      if (error.message.includes("codigo_barras"))
+        return {
+          error:
+            "ese código de barras ya está asignado a otro producto. Escaneálo de nuevo, o buscá ese producto en el catálogo.",
+        };
+      return { error: "el código interno ya está usado." };
+    }
+    return { error: error.message };
+  }
+
+  return { id: data.id };
+}
 
 // Siguiente código interno libre, mirando solo los que son puramente
 // numéricos (00001, 00002, ...). Los códigos "hablados" tipo BRANCA-750 se
@@ -133,6 +176,62 @@ export async function crearProductoYSku(
     }
   }
 
+  // Las presentaciones del desarme se crean de adentro hacia afuera: el x24
+  // necesita que el x6 ya exista para poder apuntarle, y el x6 lo mismo con
+  // la unidad. Por eso la cadena (que llega de afuera hacia adentro) se
+  // recorre al revés.
+  //
+  // Si algo falla a mitad de camino se borran las que se acaban de crear:
+  // son SKU recién nacidos, sin movimientos ni precios, así que borrarlos es
+  // limpio. supabase-js no da transacciones entre inserts, y dejar media
+  // cascada cargada es peor que no cargar nada.
+  const creadosEnCascada: string[] = [];
+
+  async function deshacerCascada() {
+    if (creadosEnCascada.length > 0) {
+      await supabase.from("skus").delete().in("id", creadosEnCascada);
+    }
+  }
+
+  let desarmaEnSkuId = input.sku.desarmaEnSkuId;
+  let desarmaEnCantidad = input.sku.desarmaEnCantidad;
+
+  for (const derivado of [...input.sku.desarmaCadena].reverse()) {
+    const resultado = await insertarSku(supabase, {
+      producto_id: productoId,
+      nombre: derivado.nombre,
+      codigo_interno: await siguienteCodigoInterno(),
+      codigo_barras: derivado.codigoBarras,
+      // Lo que no cambia entre presentaciones del mismo producto: el
+      // contenido de cada envase es el mismo (una lata de 354 ml sigue
+      // siendo de 354 ml esté suelta o en un pack).
+      volumen: input.sku.volumen,
+      unidad_volumen: input.sku.unidadVolumen,
+      tipo_presentacion: derivado.tipoPresentacion,
+      unidades_contenidas: derivado.unidadesContenidas,
+      // El envase retornable se carga después editando el SKU: meterlo acá
+      // convertía el bloque chico en otro formulario completo.
+      es_retornable: false,
+      tipo_envase_id: null,
+      // La de más adentro no se desarma en nada; las otras apuntan a la que
+      // se acaba de crear en la vuelta anterior.
+      desarma_en_sku_id: desarmaEnSkuId,
+      desarma_en_cantidad: desarmaEnSkuId ? desarmaEnCantidad : null,
+      // Se cargan después, al contar (Carga inicial).
+      stock_minimo: 0,
+      stock_objetivo: 0,
+    });
+
+    if ("error" in resultado) {
+      await deshacerCascada();
+      return { error: `No se pudo crear "${derivado.nombre}": ${resultado.error}` };
+    }
+
+    creadosEnCascada.push(resultado.id);
+    desarmaEnSkuId = resultado.id;
+    desarmaEnCantidad = derivado.factor;
+  }
+
   // Si el código interno que vino es puramente numérico y está ocupado, se
   // avanza al siguiente libre en vez de hacerle perder el intento: es un
   // identificador interno que nadie memoriza, y el choque pasa siempre que
@@ -162,8 +261,8 @@ export async function crearProductoYSku(
       unidades_contenidas: input.sku.unidadesContenidas,
       es_retornable: input.sku.esRetornable,
       tipo_envase_id: input.sku.esRetornable ? tipoEnvaseId : null,
-      desarma_en_sku_id: input.sku.desarmaEnSkuId,
-      desarma_en_cantidad: input.sku.desarmaEnSkuId ? input.sku.desarmaEnCantidad : null,
+      desarma_en_sku_id: desarmaEnSkuId,
+      desarma_en_cantidad: desarmaEnSkuId ? desarmaEnCantidad : null,
       stock_minimo: input.sku.stockMinimo,
       stock_objetivo: input.sku.stockObjetivo,
     })
@@ -171,6 +270,7 @@ export async function crearProductoYSku(
     .single();
 
   if (skuError) {
+    await deshacerCascada();
     // El mensaje de Postgres trae el nombre de la constraint: sirve para
     // decir CUÁL de los dos códigos choca, que era justo lo que faltaba.
     if (skuError.code === "23505") {
@@ -195,7 +295,9 @@ export async function crearProductoYSku(
       })),
     );
     if (proveedorSkusError)
-      return { error: `El SKU se creó, pero no se pudo asociar el proveedor: ${proveedorSkusError.message}` };
+      return {
+        error: `El SKU se creó, pero no se pudo asociar el proveedor: ${proveedorSkusError.message}`,
+      };
   }
 
   revalidatePath("/productos");

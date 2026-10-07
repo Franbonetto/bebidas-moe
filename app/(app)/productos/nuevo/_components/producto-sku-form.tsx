@@ -20,6 +20,35 @@ export type SkuOpcion = {
   producto: { nombre: string; marca: { nombre: string } | null } | null;
 };
 
+type DerivadoForm = {
+  nombre: string;
+  codigoBarras: string;
+  tipoPresentacion: "unidad" | "pack" | "cajon" | "estuche";
+  unidadesContenidas: string;
+  factor: string;
+};
+
+// Los valores que vienen puestos son los de la cascada de cerveza, que es
+// el caso para el que se hizo esto: un x24 se desarma en 4 packs x6, y cada
+// x6 en 6 unidades. Se pueden pisar.
+function derivadoPorNivel(nivel: number, nombreProducto: string): DerivadoForm {
+  return nivel === 0
+    ? {
+        nombre: nombreProducto ? `${nombreProducto} pack x6` : "",
+        codigoBarras: "",
+        tipoPresentacion: "pack",
+        unidadesContenidas: "6",
+        factor: "4",
+      }
+    : {
+        nombre: nombreProducto ? `${nombreProducto} unidad` : "",
+        codigoBarras: "",
+        tipoPresentacion: "unidad",
+        unidadesContenidas: "1",
+        factor: "6",
+      };
+}
+
 const inputClass =
   "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe";
 const labelClass = "mb-[4px] block text-[12px] font-medium text-text-2";
@@ -84,6 +113,10 @@ export function ProductoSkuForm({
   }, [productos, productoQuery]);
 
   const productoSeleccionado = productos.find((p) => p.id === productoId) ?? null;
+  const nombreProductoActual =
+    productoModo === "existente"
+      ? (productoSeleccionado?.nombre ?? "")
+      : productoNombreNuevo.trim();
 
   // ---- Marca / categoría (solo para producto nuevo) ----
   const [marcaModo, setMarcaModo] = useState<"existente" | "nueva">(marcas.length > 0 ? "existente" : "nueva");
@@ -125,9 +158,18 @@ export function ProductoSkuForm({
 
   // ---- Desarme ----
   const [seDesarma, setSeDesarma] = useState(false);
+  // "existente" = apuntar a un SKU ya cargado (lo de siempre).
+  // "nueva" = crear las presentaciones acá mismo, en cascada. Pedido del
+  // usuario 2026-10-06: cargar una cerveza era dar de alta tres veces y en
+  // orden inverso (unidad, después x6, después x24) porque el desarme solo
+  // aceptaba un SKU que ya existiera.
+  const [desarmaModo, setDesarmaModo] = useState<"existente" | "nueva">("nueva");
   const [desarmaEnSkuId, setDesarmaEnSkuId] = useState("");
   const [desarmaQuery, setDesarmaQuery] = useState("");
   const [desarmaEnCantidad, setDesarmaEnCantidad] = useState("");
+  // De afuera hacia adentro: [pack x6, unidad]. Dos niveles alcanzan para
+  // la cascada documentada (x24 -> 4x x6 -> 6x unidad).
+  const [derivados, setDerivados] = useState<DerivadoForm[]>([]);
 
   const desarmaSkuResultados = useMemo(() => {
     const q = desarmaQuery.trim().toLowerCase();
@@ -185,10 +227,29 @@ export function ProductoSkuForm({
     }
 
     if (seDesarma) {
-      if (!desarmaEnSkuId) return "Elegí en qué SKU se desarma.";
-      const cantidad = Number(desarmaEnCantidad);
-      if (!Number.isInteger(cantidad) || cantidad <= 0)
-        return "La cantidad de desarme tiene que ser un entero mayor a cero.";
+      if (desarmaModo === "existente") {
+        if (!desarmaEnSkuId) return "Elegí en qué SKU se desarma.";
+        const cantidad = Number(desarmaEnCantidad);
+        if (!Number.isInteger(cantidad) || cantidad <= 0)
+          return "La cantidad de desarme tiene que ser un entero mayor a cero.";
+      } else {
+        if (derivados.length === 0)
+          return "Agregá la presentación en la que se desarma, o elegí una que ya exista.";
+        for (const d of derivados) {
+          if (!d.nombre.trim()) return "Cada presentación del desarme necesita un nombre.";
+          const factor = Number(d.factor);
+          if (!Number.isInteger(factor) || factor <= 0)
+            return `"${d.nombre.trim()}": cuántas produce el desarme tiene que ser un entero mayor a cero.`;
+          const unidades = Number(d.unidadesContenidas);
+          if (!Number.isInteger(unidades) || unidades <= 0)
+            return `"${d.nombre.trim()}": las unidades contenidas tienen que ser un entero mayor a cero.`;
+        }
+        const codigos = derivados.map((d) => d.codigoBarras.trim()).filter(Boolean);
+        if (new Set(codigos).size !== codigos.length)
+          return "Hay dos presentaciones del desarme con el mismo código de barras.";
+        if (codigoBarras.trim() && codigos.includes(codigoBarras.trim()))
+          return "Una presentación del desarme tiene el mismo código de barras que el pack principal.";
+      }
     }
 
     const proveedorIdsUsados = new Set<string>();
@@ -239,8 +300,19 @@ export function ProductoSkuForm({
                 esGenerico: tipoEnvaseEsGenerico,
                 valorDeposito: Number(tipoEnvaseValorDeposito),
               },
-        desarmaEnSkuId: seDesarma ? desarmaEnSkuId : null,
-        desarmaEnCantidad: seDesarma ? Number(desarmaEnCantidad) : null,
+        desarmaEnSkuId: seDesarma && desarmaModo === "existente" ? desarmaEnSkuId : null,
+        desarmaEnCantidad:
+          seDesarma && desarmaModo === "existente" ? Number(desarmaEnCantidad) : null,
+        desarmaCadena:
+          seDesarma && desarmaModo === "nueva"
+            ? derivados.map((d) => ({
+                nombre: d.nombre.trim(),
+                codigoBarras: d.codigoBarras.trim() || null,
+                tipoPresentacion: d.tipoPresentacion,
+                unidadesContenidas: Number(d.unidadesContenidas),
+                factor: Number(d.factor),
+              }))
+            : [],
         stockMinimo: Number(stockMinimo),
         stockObjetivo: Number(stockObjetivo),
       },
@@ -638,6 +710,163 @@ export function ProductoSkuForm({
         </label>
 
         {seDesarma && (
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              className={modoBtnClass(desarmaModo === "nueva")}
+              onClick={() => setDesarmaModo("nueva")}
+            >
+              Crearla ahora
+            </button>
+            <button
+              type="button"
+              className={modoBtnClass(desarmaModo === "existente")}
+              onClick={() => setDesarmaModo("existente")}
+            >
+              Ya existe en el catálogo
+            </button>
+          </div>
+        )}
+
+        {seDesarma && desarmaModo === "nueva" && (
+          <div className="mt-3">
+            {derivados.length === 0 && (
+              <p className="mb-2 text-[12px] text-text-3">
+                Agregá en qué se desarma este pack. Se crea como producto nuevo con su propio
+                código de barras y su propio stock, sin salir de esta pantalla.
+              </p>
+            )}
+
+            {derivados.map((d, i) => (
+              <div key={i} className="mb-2 rounded-[6px] border border-border bg-bg-2 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[12px] font-medium text-text-2">
+                    {i === 0 ? "Se desarma en" : "Y eso se desarma en"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDerivados(derivados.slice(0, i))}
+                    className="text-[11.5px] text-text-3 hover:text-err"
+                  >
+                    Quitar
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-[1fr_120px] gap-2">
+                  <div>
+                    <label className={labelClass}>Nombre *</label>
+                    <input
+                      type="text"
+                      value={d.nombre}
+                      onChange={(e) =>
+                        setDerivados(
+                          derivados.map((x, j) => (j === i ? { ...x, nombre: e.target.value } : x)),
+                        )
+                      }
+                      placeholder="Ej. Quilmes Clásica pack x6"
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Cuántas produce *</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={d.factor}
+                      onChange={(e) =>
+                        setDerivados(
+                          derivados.map((x, j) => (j === i ? { ...x, factor: e.target.value } : x)),
+                        )
+                      }
+                      className={`${inputClass} tabular-nums`}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-2 grid grid-cols-[1fr_140px_120px] gap-2">
+                  <div>
+                    <label className={labelClass}>Código de barras</label>
+                    <input
+                      type="text"
+                      value={d.codigoBarras}
+                      onChange={(e) =>
+                        setDerivados(
+                          derivados.map((x, j) =>
+                            j === i ? { ...x, codigoBarras: e.target.value } : x,
+                          ),
+                        )
+                      }
+                      placeholder="Escaneálo acá (opcional)"
+                      className={`${inputClass} tabular-nums`}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Presentación</label>
+                    <select
+                      value={d.tipoPresentacion}
+                      onChange={(e) =>
+                        setDerivados(
+                          derivados.map((x, j) =>
+                            j === i
+                              ? { ...x, tipoPresentacion: e.target.value as DerivadoForm["tipoPresentacion"] }
+                              : x,
+                          ),
+                        )
+                      }
+                      className={inputClass}
+                    >
+                      <option value="unidad">Unidad</option>
+                      <option value="pack">Pack</option>
+                      <option value="cajon">Cajón</option>
+                      <option value="estuche">Estuche</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Unidades *</label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={d.unidadesContenidas}
+                      onChange={(e) =>
+                        setDerivados(
+                          derivados.map((x, j) =>
+                            j === i ? { ...x, unidadesContenidas: e.target.value } : x,
+                          ),
+                        )
+                      }
+                      className={`${inputClass} tabular-nums`}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {derivados.length < 2 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setDerivados([...derivados, derivadoPorNivel(derivados.length, nombreProductoActual)])
+                }
+                className={modoBtnClass(false)}
+              >
+                {derivados.length === 0 ? "+ En qué se desarma" : "+ Y eso también se desarma"}
+              </button>
+            )}
+
+            {/* El volumen y la unidad no se piden: una lata de 354 ml sigue
+                siendo de 354 ml suelta o en un pack, así que se heredan del
+                pack principal. El envase retornable y los mínimos de stock
+                se cargan después (Editar / Carga inicial). */}
+            {derivados.length > 0 && (
+              <p className="mt-2 text-[11.5px] text-text-3">
+                Heredan el producto, la marca y el contenido ({volumen || "—"} {unidadVolumen}). El
+                stock se carga después, al contar.
+              </p>
+            )}
+          </div>
+        )}
+
+        {seDesarma && desarmaModo === "existente" && (
           <div className="mt-3 grid grid-cols-[1fr_140px] gap-2">
             <div>
               <label className={labelClass}>Se desarma en *</label>
