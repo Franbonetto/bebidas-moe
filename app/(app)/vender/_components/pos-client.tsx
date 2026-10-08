@@ -296,6 +296,25 @@ export function PosClient({
   totalOtroMedio += depositoTotal;
   totalEfectivo += depositoTotal;
 
+  // Un combo se cobra como un todo: el reparto entre sus productos es una
+  // cuenta interna (venta_items guarda un precio por línea), no un precio
+  // que alguien haya decidido. Así que en pantalla no se muestra por
+  // producto -- se muestra el nombre del combo y su total, igual que en el
+  // ticket impreso (usuario 2026-10-08: "no quiero que figuren esos precios
+  // hechos al azar").
+  const combosDelTicket = new Map<string, { nombre: string; total: number }>();
+  for (const tramos of tramosPorSku.values()) {
+    for (const t of tramos) {
+      if (t.origen !== "combo" || !t.promocionId) continue;
+      const actual = combosDelTicket.get(t.promocionId) ?? {
+        nombre: t.promocionNombre ?? "Combo",
+        total: 0,
+      };
+      actual.total += t.precioUnitario * t.cantidad;
+      combosDelTicket.set(t.promocionId, actual);
+    }
+  }
+
   const hayDescuento = Math.round(totalEfectivo) < Math.round(totalOtroMedio);
   const cantidadUnidades =
     lineas.reduce((acc, l) => acc + l.cantidad, 0) +
@@ -1118,7 +1137,12 @@ export function PosClient({
                         </small>
                       </div>
                       <div className="whitespace-nowrap text-right text-[15px] tabular-nums text-text">
-                        {formatoMoneda.format(subtotal)}
+                        {/* Si la línea entró entera por un combo, el importe
+                            va abajo con el nombre del combo, no acá: el
+                            número por producto sería el reparto interno. */}
+                        {tramos.length > 0 && tramos.every((t) => t.origen === "combo")
+                          ? "—"
+                          : formatoMoneda.format(subtotal)}
                       </div>
 
                       <div className="col-span-2 mt-[3px] flex flex-wrap items-center gap-[7px]">
@@ -1202,6 +1226,20 @@ export function PosClient({
                 );
               })
             )}
+
+            {[...combosDelTicket.entries()].map(([id, combo]) => (
+              <div key={id} className="border-b border-[#F1F1F3] bg-ok-bg/30 px-[15px] py-[10px]">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-medium text-text">{combo.nombre}</p>
+                    <p className="text-[13px] text-text-3">Promoción · precio en efectivo</p>
+                  </div>
+                  <span className="shrink-0 text-[15px] font-medium tabular-nums text-text">
+                    {formatoMoneda.format(combo.total)}
+                  </span>
+                </div>
+              </div>
+            ))}
 
             {particulares.map((p) => (
               <div
