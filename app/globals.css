@@ -68,8 +68,12 @@ body {
     display: none !important;
   }
 
+  /* 48mm, no 58: es el ancho que la XP-58 imprime de verdad. Declarando la
+     página del ancho del papel (58) quedaba espacio a los costados y el
+     contenido terminaba corrido, perdiendo los importes de la derecha.
+     Con la página del ancho del cabezal no hay margen donde perderse. */
   @page {
-    size: 58mm auto;
+    size: 48mm auto;
     margin: 0;
   }
 
@@ -106,5 +110,25 @@ body {
        en papel el 2026-10-08). */
     margin: 0 !important;
     padding: 0 !important;
+    /* El formulario de Windows tiene alto fijo (58x80mm). Si el ticket mide
+       más que eso, Chrome lo parte en dos páginas y la impresora avanza las
+       dos: así quedaban "Medio de pago" y la leyenda del pie solos en una
+       segunda hoja, con el blanco en el medio (visto en papel el
+       2026-10-08). Por eso el ticket se comprime a lo alto: cuanto más
+       corto, más chance de entrar en una sola. */
+    line-height: 1.25 !important;
+  }
+
+  /* Separadores punteados: 1.5mm de aire en vez de los 12px de pantalla. */
+  .ticket-print .border-dashed {
+    margin-top: 1.5mm !important;
+    margin-bottom: 1.5mm !important;
+  }
+
+  /* Nada de huecos extra entre bloques. */
+  .ticket-print .mt-1,
+  .ticket-print .mt-2,
+  .ticket-print .mt-3 {
+    margin-top: 0.8mm !important;
   }
 }
