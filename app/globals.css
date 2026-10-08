@@ -93,7 +93,11 @@ body {
      rollo tiene que ocupar el ancho del papel (80mm ≈ 302px), si no el
      contenido se desborda y el motor de impresión agrega una hoja. */
   .ticket-print {
-    width: 48mm !important;
+    /* 52mm sobre un papel de 58: el driver declara 48mm imprimibles, pero a
+       48 el ticket quedaba muy angosto y partia los nombres en tres lineas
+       (usuario 2026-10-08). Si algo sale cortado contra los bordes, bajar a
+       48mm y aceptar el corte de linea. */
+    width: 52mm !important;
     max-width: none !important;
     margin: 0 auto !important;
     padding: 0 !important;
