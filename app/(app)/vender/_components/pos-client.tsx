@@ -407,7 +407,15 @@ export function PosClient({
   function cambiarMedioPago(index: number, medio: MedioPago) {
     actualizarTicketActivo((t) => ({
       ...t,
-      pagos: t.pagos.map((p, i) => (i === index ? { ...p, medioPago: medio } : p)),
+      pagos: t.pagos.map((p, i) => {
+        if (i !== index) return p;
+        // Con un solo medio el monto es el total de ese medio: cambiar de
+        // efectivo a QR tiene que recalcularlo, porque el precio de la
+        // promoción deja de aplicar. Con pago dividido no se toca: ahí los
+        // montos los reparte la persona a mano.
+        if (t.pagos.length !== 1) return { ...p, medioPago: medio };
+        return { medioPago: medio, monto: medio === "efectivo" ? totalEfectivo : totalOtroMedio };
+      }),
     }));
   }
 
@@ -1166,10 +1174,19 @@ export function PosClient({
                       <div className="whitespace-nowrap text-right text-[15px] tabular-nums text-text">
                         {/* Si la línea entró entera por un combo, el importe
                             va abajo con el nombre del combo, no acá: el
-                            número por producto sería el reparto interno. */}
-                        {tramos.length > 0 && tramos.every((t) => t.origen === "combo")
+                            número por producto sería el reparto interno.
+                            Salvo que se pague con otro medio, donde el combo
+                            no aplica y cada producto vale su precio de
+                            lista. */}
+                        {tramos.length > 0 &&
+                        tramos.every((t) => t.origen === "combo") &&
+                        !(pagos.length > 0 && !esEfectivoPuro)
                           ? "—"
-                          : formatoMoneda.format(subtotal)}
+                          : formatoMoneda.format(
+                              pagos.length > 0 && !esEfectivoPuro
+                                ? (sku.precioOtroMedio ?? 0) * l.cantidad
+                                : subtotal,
+                            )}
                       </div>
 
                       <button
@@ -1228,9 +1245,19 @@ export function PosClient({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-medium text-text">{combo.nombre}</p>
-                    <p className="text-[13px] text-text-3">Promoción · precio en efectivo</p>
+                    <p className="text-[13px] text-text-3">
+                      {pagos.length > 0 && !esEfectivoPuro
+                        ? "Promoción · no aplica con este medio de pago"
+                        : "Promoción · precio en efectivo"}
+                    </p>
                   </div>
-                  <span className="shrink-0 text-[15px] font-medium tabular-nums text-text">
+                  <span
+                    className={`shrink-0 text-[15px] font-medium tabular-nums ${
+                      pagos.length > 0 && !esEfectivoPuro
+                        ? "text-text-3 line-through"
+                        : "text-text"
+                    }`}
+                  >
                     {formatoMoneda.format(combo.total)}
                   </span>
                 </div>
@@ -1309,7 +1336,8 @@ export function PosClient({
 
             {hayDescuento && pagos.length > 0 && !esEfectivoPuro && (
               <p className="mb-[9px] text-[13px] text-warn">
-                Sin el descuento por pagar en efectivo ({formatoMoneda.format(totalEfectivo)}).
+                <span className="tabular-nums line-through">{formatoMoneda.format(totalEfectivo)}</span>{" "}
+                era pagando en efectivo.
               </p>
             )}
 
