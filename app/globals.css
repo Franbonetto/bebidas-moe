@@ -76,5 +76,25 @@ body {
   body {
     margin: 0;
     padding: 0;
+    /* El layout raíz pone h-full en el <html> y min-h-full flex en el
+       <body> para que la app ocupe la ventana. Al imprimir eso obliga a la
+       hoja a tener el alto completo de la página aunque el ticket sean diez
+       líneas, y la térmica arrastra todo ese papel antes de escribir --
+       pedido del usuario 2026-10-08: "deja salir papel hasta lo último y
+       ahí recién escribe". Acá se devuelve el alto a automático, que es lo
+       que hace que el rollo corte apenas termina el contenido. */
+    height: auto !important;
+    min-height: 0 !important;
+    display: block !important;
+  }
+
+  /* En pantalla el ticket se limita a 380px para que se lea cómodo; en el
+     rollo tiene que ocupar el ancho del papel (80mm ≈ 302px), si no el
+     contenido se desborda y el motor de impresión agrega una hoja. */
+  .ticket-print {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 3mm !important;
   }
 }

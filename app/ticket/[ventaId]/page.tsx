@@ -162,7 +162,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
   const cuitEmisor = facturado ? configArca().cuit : null;
 
   return (
-    <div className="mx-auto max-w-[380px] p-4 text-[13px] text-text">
+    <div className="ticket-print mx-auto max-w-[380px] p-4 text-[13px] text-text">
       <div className="no-print mb-4 flex justify-end">
         <ImprimirBoton />
       </div>
