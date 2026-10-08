@@ -122,7 +122,13 @@ La lata individual incluye recargo por frío. Su precio NO es el del x6 dividido
 ```
 1. Combo  →  2. Cantidad (2x)  →  3. Promocional  →  4. Efectivo  →  5. Base
 ```
-Vigencia opcional (sin fechas = permanente).
+El precio que se carga es el **total de la promo**, y va **por sucursal** (Olavarría y
+Laprida no manejan los mismos precios). En un combo, el reparto entre sus productos lo
+calcula el sistema y no se muestra en ninguna pantalla: el ticket dice el nombre de la
+promoción y su total.
+
+Vigencia opcional (sin fechas = permanente, y el formulario lo dice así: "Activa sin
+fecha límite").
 **Advertir siempre** si el precio final queda bajo el costo (avisar, no bloquear).
 Al encargado de Laprida se le advierte sin mostrarle el número del costo.
 
@@ -132,10 +138,20 @@ Las promociones aplican solo pagando en efectivo.
 
 ### POS
 - Medio de pago **al final**, antes de cobrar.
-- Si hay promociones en el ticket, mostrar los dos totales (efectivo / otro medio).
-  Si no hay promociones, un solo total.
+- **Un solo total a la vista** (cambiado el 2026-10-08: antes se mostraban los dos
+  y confundía). Mientras no se eligió medio de pago se muestra el de efectivo, que
+  es como se cobra la mayoría de las ventas, con una línea al pie aclarando cuánto
+  sería con otro medio. Al elegir un medio que no es efectivo, el número grande pasa
+  a ser el de ese medio y se avisa que perdió el descuento.
 - Sin stock: **permitir vender**, advertir, y marcar el SKU para revisión de inventario.
 - Caja diaria por sucursal.
+- **La venta no se factura sola.** El ticket que se imprime siempre es el interno
+  (fecha, hora, productos, total, dirección de la sucursal) con la leyenda
+  "Documento no válido como factura". Si el cliente pide factura, se emite a mano
+  desde `/vender/facturar`.
+- **Producto particular:** una línea sin SKU, con descripción y precio escritos a
+  mano (picada, canasta de regalería). No descuenta stock —no hay nada que
+  descontar—, no entra en promociones y va al 21% si se factura.
 
 ### Costo
 Historial completo por lote/recepción. El stock **no** rastrea de qué lote sale cada

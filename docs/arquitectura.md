@@ -237,11 +237,11 @@ la fecha de última actualización de cada recargo** para que sea evidente cuán
 ### Flujo del mostrador
 
 ```
-Buscar/agregar productos → ticket con los dos totales posibles (si aplica)
+Buscar/agregar productos → ticket con el total en efectivo
 → Medio de pago AL FINAL, antes de cobrar → confirmar → descuenta stock + registra venta
 ```
 
-- Medio de pago al final: mientras se escanean productos no se sabe qué medio va a usar el cliente, así que el ticket muestra los dos totales (efectivo / otro medio) cuando hay promociones o descuentos que solo aplican en efectivo. Si no hay ninguno, un solo total. El medio se elige recién antes de cobrar y es modificable hasta ese momento.
+- Medio de pago al final: mientras se escanean productos no se sabe qué medio va a usar el cliente. **Hasta el 2026-10-08 el ticket mostraba los dos totales posibles (efectivo / otro medio); se cambió a uno solo porque tres números en pantalla confundían a la vendedora.** Ahora se muestra el total en efectivo, y cuando hay promociones o descuentos que solo aplican en efectivo, una línea al pie aclara cuánto sería con otro medio. Al elegir un medio que no es efectivo, el total pasa a ser el de ese medio y el aviso explica que perdió el descuento. El medio se elige recién antes de cobrar y es modificable hasta ese momento.
 - **Búsqueda** por fragmentos (`jw dou` encuentra Johnnie Walker Double Black), más vendidos primero, grilla de accesos rápidos configurable. Compatible con lector de código de barras cuando lo compren.
 - **Sin stock:** permite vender, advierte, y marca el producto para revisión de inventario.
 - **Caja diaria por sucursal:** total, desglose por medio de pago, cantidad de tickets, diferencia entre sistema y efectivo real.
@@ -764,8 +764,27 @@ promociones
 
 promocion_items
   id, promocion_id, sku_id
-  cantidad_requerida, precio_promocional
+  cantidad_requerida
+
+promocion_precios                ← desde 2026-10-08
+  promocion_id, sucursal_id
+  precio_total                   ← lo que paga el cliente por la promo completa
 ```
+
+**El precio de una promoción es su total, y es por sucursal.** Hasta el 2026-10-08
+cada `promocion_item` llevaba su propio `precio_promocional` y había que repartir el
+precio del combo a mano entre sus productos. Ahora se carga el total y el reparto lo
+hace el sistema, en proporción al precio de lista de cada producto, con el redondeo
+acumulado en la última línea para que la suma dé exactamente el total cargado.
+
+Ese reparto existe porque `venta_items` guarda un precio por línea (lo necesitan el
+IVA de la factura y el aviso de precio bajo el costo), pero **es una cuenta interna y
+no se muestra**: el ticket —el del POS y el impreso— dice el nombre de la promoción y
+su total, no el desglose por producto.
+
+Una promo que corre en las dos sucursales lleva dos filas en `promocion_precios`,
+porque Olavarría y Laprida no manejan los mismos precios. Si no hay fila para una
+sucursal, la promo no corre ahí.
 
 ## 2.8 Ventas
 
