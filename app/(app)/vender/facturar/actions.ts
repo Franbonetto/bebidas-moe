@@ -404,34 +404,3 @@ export async function verificarComprobanteArca(
   }
 }
 
-// Facturación automática al confirmar una venta, para cualquier sucursal
-// con punto de venta ARCA activo: siempre Factura B, Consumidor Final --
-// no se le pide nada al cliente en el momento. Si alguien quiere Factura A
-// con su CUIT, se hace aparte desde /vender/facturar como ya funciona.
-// Pensada para no interrumpir el cobro: quien llama (confirmarVenta)
-// ignora el resultado si falla -- la venta ya está confirmada de todos
-// modos, y el comprobante queda para reintentar desde /vender/facturar
-// igual que cualquier rechazo manual.
-export async function facturarVentaAutomatico(
-  ventaId: string,
-): Promise<{ error: string } | { ok: true }> {
-  const supabase = await createClient();
-
-  const { data: condicion, error: errorCondicion } = await supabase
-    .from("condicion_iva")
-    .select("id")
-    .ilike("nombre", "%consumidor final%")
-    .maybeSingle();
-
-  if (errorCondicion) return { error: errorCondicion.message };
-  if (!condicion) {
-    return { error: "No se sincronizó todavía el catálogo de condiciones de IVA (falta 'Consumidor Final')" };
-  }
-
-  return facturarVenta(ventaId, {
-    tipoCbte: "B",
-    condicionIvaReceptorId: condicion.id,
-    cuitReceptor: null,
-    razonSocialReceptor: null,
-  });
-}

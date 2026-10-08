@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { facturarVentaAutomatico } from "./facturar/actions";
 
 export type LineaVenta = {
   // null en un producto particular, que va con descripcion en su lugar
@@ -61,45 +60,15 @@ export async function confirmarVenta(
 
   const ventaId = (data as { id: string }).id;
 
-  // Facturación automática para cualquier sucursal que tenga un punto de
-  // venta ARCA activo configurado (antes: solo Olavarría, hardcodeado).
-  // Si falla (ARCA caído, rechazo, etc.) no se propaga como error acá --
-  // la venta ya está confirmada y cobrada; queda para reintentar desde
-  // /vender/facturar, mismo criterio que un rechazo manual cualquiera.
+  // No se factura sola ninguna venta (decisión del usuario 2026-10-08). La
+  // mayoría de los clientes no pide factura, y emitir una por cada venta
+  // llenaba ARCA de comprobantes que nadie se lleva. Si el cliente la pide,
+  // la vendedora va a /vender/facturar y la emite ahí.
   //
-  // Un envío NUNCA se factura solo (pedido del usuario 2026-09-21): el
-  // ticket que se imprime tiene que ser siempre el interno, nunca la
-  // factura ARCA. Si alguna vez hace falta facturar un envío puntual,
-  // queda la vía manual de /vender/facturar -- esto solo evita el disparo
-  // automático.
-  const { data: puntoVenta } = envio
-    ? { data: null }
-    : await supabase
-        .from("puntos_venta")
-        .select("id")
-        .eq("sucursal_id", sucursalId)
-        .eq("activo", true)
-        .maybeSingle();
-  let comprobante: ComprobanteResumen | null = null;
-
-  if (puntoVenta) {
-    await facturarVentaAutomatico(ventaId).catch(() => {});
-
-    const { data: comprobanteRow } = await supabase
-      .from("comprobantes_fiscales")
-      .select("tipo_cbte, numero_comprobante, cae, vencimiento_cae, estado")
-      .eq("venta_id", ventaId)
-      .maybeSingle();
-
-    if (comprobanteRow?.estado === "autorizado" && comprobanteRow.cae && comprobanteRow.numero_comprobante) {
-      comprobante = {
-        tipoCbte: comprobanteRow.tipo_cbte as "A" | "B",
-        numeroComprobante: comprobanteRow.numero_comprobante,
-        cae: comprobanteRow.cae,
-        vencimientoCae: comprobanteRow.vencimiento_cae ?? "",
-      };
-    }
-  }
+  // El ticket que se imprime siempre es el interno (fecha, productos,
+  // total, dirección de la sucursal), con la leyenda de que no es válido
+  // como factura.
+  const comprobante: ComprobanteResumen | null = null;
 
   revalidatePath("/vender");
   revalidatePath("/envios");

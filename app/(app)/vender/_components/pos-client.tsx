@@ -1122,12 +1122,39 @@ export function PosClient({
                   <div
                     key={l.skuId}
                     onClick={() => setLineaSeleccionada(l.skuId)}
-                    className={`cursor-pointer border-b border-[#F1F1F3] px-[15px] py-[10px] ${
+                    className={`cursor-pointer border-b border-[#F1F1F3] px-[15px] py-[6px] ${
                       seleccionada ? "bg-moe-soft/40" : ""
                     }`}
                   >
-                    <div className="grid grid-cols-[1fr_auto] items-start gap-x-[10px] gap-y-[4px]">
-                      <div className="text-[15px] font-medium leading-tight text-text">
+                    <div className="grid grid-cols-[auto_1fr_auto_auto] items-center gap-x-[10px] gap-y-[2px]">
+                      <div
+                        className="flex items-center gap-[5px]"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => ajustarCantidad(l.skuId, -1)}
+                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[14.5px] text-text-2 hover:bg-bg-2"
+                        >
+                          −
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => abrirEdicionCantidad(l.skuId)}
+                          className="min-w-[26px] rounded-[5px] px-[4px] text-center text-[14.5px] font-medium tabular-nums hover:bg-bg-2"
+                          title="Editar cantidad (F6)"
+                        >
+                          {l.cantidad}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => ajustarCantidad(l.skuId, 1)}
+                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[14.5px] text-text-2 hover:bg-bg-2"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <div className="min-w-0 text-[15px] font-medium leading-tight text-text">
                         {sku.nombre}
                         <small className="mt-[1px] block text-[13px] font-normal text-text-3">
                           {sku.marcaNombre} · {presentacionLabel(sku.presentacion)} · {sku.codigoInterno} ·{" "}
@@ -1145,70 +1172,39 @@ export function PosClient({
                           : formatoMoneda.format(subtotal)}
                       </div>
 
-                      <div className="col-span-2 mt-[3px] flex flex-wrap items-center gap-[7px]">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            ajustarCantidad(l.skuId, -1);
-                          }}
-                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[14.5px] text-text-2 hover:bg-bg-2"
-                        >
-                          −
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            abrirEdicionCantidad(l.skuId);
-                          }}
-                          className="min-w-[26px] rounded-[5px] px-[4px] text-center text-[14.5px] font-medium tabular-nums hover:bg-bg-2"
-                          title="Editar cantidad (F6)"
-                        >
-                          {l.cantidad}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            ajustarCantidad(l.skuId, 1);
-                          }}
-                          className="grid h-[22px] w-[22px] place-items-center rounded-[5px] border border-border text-[14.5px] text-text-2 hover:bg-bg-2"
-                        >
-                          +
-                        </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          quitarLinea(l.skuId);
+                        }}
+                        className="text-[13px] text-text-3 hover:text-err"
+                      >
+                        Quitar
+                      </button>
 
-                        {sku.esRetornable && (
-                          <label
-                            className="ml-1 flex items-center gap-1 text-[13px] text-text-2"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={Boolean(envaseChecked[l.skuId])}
-                              onChange={() => alternarEnvase(l.skuId)}
-                            />
-                            Con envase
-                          </label>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            quitarLinea(l.skuId);
-                          }}
-                          className="ml-auto text-[13px] text-text-3 hover:text-err"
+                      {/* El envase solo ocupa su renglón cuando el producto
+                          es retornable: para el resto no hay nada que poner
+                          y la fila queda en dos líneas. */}
+                      {sku.esRetornable && (
+                        <label
+                          className="col-span-4 mt-[2px] flex w-fit items-center gap-1 text-[13px] text-text-2"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          Quitar
-                        </button>
-                      </div>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(envaseChecked[l.skuId])}
+                            onChange={() => alternarEnvase(l.skuId)}
+                          />
+                          Con envase
+                        </label>
+                      )}
 
                       {tramos.map((t, i) =>
                         t.origen === "combo" || t.origen === "cantidad" ? (
                           <span
                             key={i}
-                            className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-ok-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-ok"
+                            className="col-span-4 mt-[1px] inline-block w-fit rounded-[4px] bg-ok-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-ok"
                           >
                             {t.cantidad} × {t.promocionNombre ?? ORIGEN_LABEL[t.origen]}
                           </span>
@@ -1216,7 +1212,7 @@ export function PosClient({
                       )}
 
                       {tramos.some((t) => t.bajoCosto) && (
-                        <span className="col-span-2 mt-[2px] inline-block w-fit rounded-[4px] bg-orange-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-orange">
+                        <span className="col-span-4 mt-[1px] inline-block w-fit rounded-[4px] bg-orange-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-orange">
                           Precio por debajo del costo
                         </span>
                       )}
@@ -1297,28 +1293,30 @@ export function PosClient({
               </div>
             )}
 
-            {hayDescuento ? (
-              <>
-                <div className="mb-[5px] flex items-baseline justify-between">
-                  <span className="text-[14.5px] font-medium text-text-2">Total en efectivo</span>
-                  <span className="text-[22px] font-semibold tabular-nums text-text">
-                    {formatoMoneda.format(totalEfectivo)}
-                  </span>
-                </div>
-                <div className="mb-[9px] flex items-baseline justify-between">
-                  <span className="text-[14.5px] font-medium text-text-2">Total en otro medio</span>
-                  <span className="text-[17px] font-medium tabular-nums text-text-2">
-                    {formatoMoneda.format(totalOtroMedio)}
-                  </span>
-                </div>
-              </>
-            ) : (
-              <div className="mb-[9px] flex items-baseline justify-between">
-                <span className="text-[14.5px] font-medium text-text-2">Total</span>
-                <span className="text-[24px] font-semibold tabular-nums text-text">
-                  {formatoMoneda.format(totalOtroMedio)}
-                </span>
-              </div>
+            {/* Un solo total a la vista (usuario 2026-10-08: tres números se
+                prestaban a confusión). Mientras no se eligió medio de pago
+                se muestra el de efectivo, que es lo que se cobra en la
+                mayoría de las ventas; apenas se elige otro, el número pasa a
+                ser el de ese medio y se avisa por qué subió. */}
+            <div className="mb-[9px] flex items-baseline justify-between">
+              <span className="text-[14.5px] font-medium text-text-2">
+                {pagos.length === 0 || esEfectivoPuro ? "Total en efectivo" : "Total"}
+              </span>
+              <span className="text-[24px] font-semibold tabular-nums text-text">
+                {formatoMoneda.format(pagos.length === 0 ? totalEfectivo : totalACobrar)}
+              </span>
+            </div>
+
+            {hayDescuento && pagos.length > 0 && !esEfectivoPuro && (
+              <p className="mb-[9px] text-[13px] text-warn">
+                Sin el descuento por pagar en efectivo ({formatoMoneda.format(totalEfectivo)}).
+              </p>
+            )}
+
+            {hayDescuento && pagos.length === 0 && (
+              <p className="mb-[9px] text-[13px] text-text-3">
+                Con otro medio de pago son {formatoMoneda.format(totalOtroMedio)}.
+              </p>
             )}
 
             {error && <p className="mb-2 text-[14px] text-err">{error}</p>}

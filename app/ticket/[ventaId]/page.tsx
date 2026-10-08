@@ -51,7 +51,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
   const { data: venta } = await supabase
     .from("ventas")
     .select(
-      "id, fecha, medio_pago, subtotal, descuentos, deposito_envases, total, sucursal_id, es_envio, motomandado, direccion_envio, sucursal:sucursales ( nombre )",
+      "id, fecha, medio_pago, subtotal, descuentos, deposito_envases, total, sucursal_id, es_envio, motomandado, direccion_envio, sucursal:sucursales ( nombre, direccion )",
     )
     .eq("id", ventaId)
     .maybeSingle<{
@@ -66,7 +66,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
       es_envio: boolean;
       motomandado: string | null;
       direccion_envio: string | null;
-      sucursal: { nombre: string } | null;
+      sucursal: { nombre: string; direccion: string | null } | null;
     }>();
 
   if (!venta) notFound();
@@ -169,6 +169,11 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
 
       <div className="text-center">
         <p className="text-[15px] font-bold">Bebidas Moe</p>
+        {/* La dirección sale de sucursales.direccion: cada sucursal imprime
+            la suya, no se hardcodea ninguna. */}
+        {venta.sucursal?.direccion && (
+          <p className="text-[12px] text-text-3">{venta.sucursal.direccion}</p>
+        )}
         <p className="text-[12px] text-text-3">{venta.sucursal?.nombre}</p>
         <p className="mt-1 text-[11.5px] text-text-3">{formatoFechaHora.format(new Date(venta.fecha))}</p>
       </div>
@@ -262,8 +267,8 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
           )}
         </div>
       ) : (
-        <p className="text-center text-[11.5px] text-text-3">
-          Comprobante no fiscal — sin CAE de ARCA todavía.
+        <p className="text-center text-[11.5px] font-medium text-text-2">
+          Documento no válido como factura
         </p>
       )}
     </div>
