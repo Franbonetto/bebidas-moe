@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { crearProductoYSku, type NuevoProductoInput } from "../../actions";
+import { crearProductoYSku, editarSkuCompleto, type NuevoProductoInput } from "../../actions";
 
 export type MarcaOpcion = { id: string; nombre: string };
 export type CategoriaOpcion = { id: string; nombre: string; categoria_padre_id: string | null };
@@ -79,6 +79,35 @@ function siguienteCodigoLibre(skus: SkuOpcion[]): string {
   return String(maximo + 1).padStart(5, "0");
 }
 
+// Mismo formulario, dos usos: alta (sin skuEditar) y edición (con). En
+// edición viene todo cargado y se guarda con editarSkuCompleto() -- pedido
+// del usuario 2026-10-08, el cuadrito de nombre y presentación se quedaba
+// corto.
+export type SkuParaEditar = {
+  id: string;
+  nombre: string;
+  codigoInterno: string;
+  codigoBarras: string;
+  volumen: string;
+  unidadVolumen: "ml" | "l" | "un" | "g";
+  tipoPresentacion: "unidad" | "pack" | "cajon" | "estuche";
+  unidadesContenidas: string;
+  stockMinimo: string;
+  stockObjetivo: string;
+  esRetornable: boolean;
+  tipoEnvaseId: string;
+  desarmaEnSkuId: string;
+  desarmaEnCantidad: string;
+  productoNombre: string;
+  marcaId: string;
+  categoriaId: string;
+  // Cuántas otras presentaciones cuelgan del mismo producto. Si hay, tocar
+  // el nombre/marca/categoría separa esta en un producto propio en vez de
+  // cambiárselo a todas.
+  hermanas: number;
+  proveedores: { proveedorId: string; costoReferencia: string }[];
+};
+
 export function ProductoSkuForm({
   marcas,
   categorias,
@@ -86,6 +115,7 @@ export function ProductoSkuForm({
   tiposEnvase,
   skus,
   proveedores,
+  skuEditar,
 }: {
   marcas: MarcaOpcion[];
   categorias: CategoriaOpcion[];
@@ -93,16 +123,20 @@ export function ProductoSkuForm({
   tiposEnvase: TipoEnvaseOpcion[];
   skus: SkuOpcion[];
   proveedores: ProveedorOpcion[];
+  skuEditar?: SkuParaEditar;
 }) {
+  const editando = skuEditar != null;
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   // ---- Producto ----
   const [productoModo, setProductoModo] = useState<"existente" | "nuevo">("nuevo");
+  // Editando nunca se usa el buscador de "producto existente": los campos de
+  // nombre, marca y categoría se editan directo, que es la rama "nuevo".
   const [productoId, setProductoId] = useState("");
   const [productoQuery, setProductoQuery] = useState("");
-  const [productoNombreNuevo, setProductoNombreNuevo] = useState("");
+  const [productoNombreNuevo, setProductoNombreNuevo] = useState(skuEditar?.productoNombre ?? "");
 
   const productosFiltrados = useMemo(() => {
     const q = productoQuery.trim().toLowerCase();
@@ -120,53 +154,63 @@ export function ProductoSkuForm({
 
   // ---- Marca / categoría (solo para producto nuevo) ----
   const [marcaModo, setMarcaModo] = useState<"existente" | "nueva">(marcas.length > 0 ? "existente" : "nueva");
-  const [marcaId, setMarcaId] = useState("");
+  const [marcaId, setMarcaId] = useState(skuEditar?.marcaId ?? "");
   const [marcaNombreNueva, setMarcaNombreNueva] = useState("");
 
   const [categoriaModo, setCategoriaModo] = useState<"existente" | "nueva">(
     categorias.length > 0 ? "existente" : "nueva",
   );
-  const [categoriaId, setCategoriaId] = useState("");
+  const [categoriaId, setCategoriaId] = useState(skuEditar?.categoriaId ?? "");
   const [categoriaNombreNueva, setCategoriaNombreNueva] = useState("");
   const [categoriaPadreId, setCategoriaPadreId] = useState("");
 
   // ---- SKU ----
-  const [nombreSku, setNombreSku] = useState("");
+  const [nombreSku, setNombreSku] = useState(skuEditar?.nombre ?? "");
   // Arranca con el siguiente número libre: es un identificador interno que
   // nadie memoriza y tipearlo a mano solo servía para chocar con uno ya
   // usado (pasó cargando el catálogo, 2026-09-29). Se puede pisar a mano si
   // se quiere un código hablado tipo BRANCA-750.
-  const [codigoInterno, setCodigoInterno] = useState(() => siguienteCodigoLibre(skus));
-  const [codigoBarras, setCodigoBarras] = useState("");
+  const [codigoInterno, setCodigoInterno] = useState(
+    () => skuEditar?.codigoInterno ?? siguienteCodigoLibre(skus),
+  );
+  const [codigoBarras, setCodigoBarras] = useState(skuEditar?.codigoBarras ?? "");
   const nombreSkuRef = useRef<HTMLInputElement>(null);
-  const [volumen, setVolumen] = useState("");
-  const [unidadVolumen, setUnidadVolumen] = useState<"ml" | "l" | "un" | "g">("ml");
-  const [tipoPresentacion, setTipoPresentacion] = useState<"unidad" | "pack" | "cajon" | "estuche">("unidad");
-  const [unidadesContenidas, setUnidadesContenidas] = useState("1");
-  const [stockMinimo, setStockMinimo] = useState("0");
-  const [stockObjetivo, setStockObjetivo] = useState("0");
+  const [volumen, setVolumen] = useState(skuEditar?.volumen ?? "");
+  const [unidadVolumen, setUnidadVolumen] = useState<"ml" | "l" | "un" | "g">(
+    skuEditar?.unidadVolumen ?? "ml",
+  );
+  const [tipoPresentacion, setTipoPresentacion] = useState<"unidad" | "pack" | "cajon" | "estuche">(
+    skuEditar?.tipoPresentacion ?? "unidad",
+  );
+  const [unidadesContenidas, setUnidadesContenidas] = useState(skuEditar?.unidadesContenidas ?? "1");
+  const [stockMinimo, setStockMinimo] = useState(skuEditar?.stockMinimo ?? "0");
+  const [stockObjetivo, setStockObjetivo] = useState(skuEditar?.stockObjetivo ?? "0");
 
   // ---- Retornable ----
-  const [esRetornable, setEsRetornable] = useState(false);
+  const [esRetornable, setEsRetornable] = useState(skuEditar?.esRetornable ?? false);
   const [tipoEnvaseModo, setTipoEnvaseModo] = useState<"existente" | "nueva">(
     tiposEnvase.length > 0 ? "existente" : "nueva",
   );
-  const [tipoEnvaseId, setTipoEnvaseId] = useState("");
+  const [tipoEnvaseId, setTipoEnvaseId] = useState(skuEditar?.tipoEnvaseId ?? "");
   const [tipoEnvaseNombreNueva, setTipoEnvaseNombreNueva] = useState("");
   const [tipoEnvaseEsGenerico, setTipoEnvaseEsGenerico] = useState(false);
   const [tipoEnvaseValorDeposito, setTipoEnvaseValorDeposito] = useState("0");
 
   // ---- Desarme ----
-  const [seDesarma, setSeDesarma] = useState(false);
+  const [seDesarma, setSeDesarma] = useState(Boolean(skuEditar?.desarmaEnSkuId));
   // "existente" = apuntar a un SKU ya cargado (lo de siempre).
   // "nueva" = crear las presentaciones acá mismo, en cascada. Pedido del
   // usuario 2026-10-06: cargar una cerveza era dar de alta tres veces y en
   // orden inverso (unidad, después x6, después x24) porque el desarme solo
   // aceptaba un SKU que ya existiera.
-  const [desarmaModo, setDesarmaModo] = useState<"existente" | "nueva">("nueva");
-  const [desarmaEnSkuId, setDesarmaEnSkuId] = useState("");
+  // Editando solo se puede apuntar a una presentación que ya exista: crear
+  // la cascada entera es una operación del alta.
+  const [desarmaModo, setDesarmaModo] = useState<"existente" | "nueva">(
+    skuEditar ? "existente" : "nueva",
+  );
+  const [desarmaEnSkuId, setDesarmaEnSkuId] = useState(skuEditar?.desarmaEnSkuId ?? "");
   const [desarmaQuery, setDesarmaQuery] = useState("");
-  const [desarmaEnCantidad, setDesarmaEnCantidad] = useState("");
+  const [desarmaEnCantidad, setDesarmaEnCantidad] = useState(skuEditar?.desarmaEnCantidad ?? "");
   // De afuera hacia adentro: [pack x6, unidad]. Dos niveles alcanzan para
   // la cascada documentada (x24 -> 4x x6 -> 6x unidad).
   const [derivados, setDerivados] = useState<DerivadoForm[]>([]);
@@ -180,7 +224,9 @@ export function ProductoSkuForm({
   const desarmaSkuSeleccionado = skus.find((s) => s.id === desarmaEnSkuId) ?? null;
 
   // ---- Proveedores (proveedor_skus: opcional, uno o varios por SKU) ----
-  const [proveedorFilas, setProveedorFilas] = useState<{ proveedorId: string; costoReferencia: string }[]>([]);
+  const [proveedorFilas, setProveedorFilas] = useState<{ proveedorId: string; costoReferencia: string }[]>(
+    skuEditar?.proveedores ?? [],
+  );
 
   function agregarProveedorFila() {
     setProveedorFilas((prev) => [...prev, { proveedorId: "", costoReferencia: "" }]);
@@ -323,7 +369,32 @@ export function ProductoSkuForm({
     };
 
     startTransition(async () => {
-      const resultado = await crearProductoYSku(input);
+      const resultado = skuEditar
+        ? await editarSkuCompleto(skuEditar.id, {
+            producto: {
+              nombre: productoNombreNuevo.trim(),
+              marca: input.marca,
+              categoria: input.categoria,
+            },
+            sku: {
+              nombre: input.sku.nombre,
+              codigoInterno: input.sku.codigoInterno,
+              codigoBarras: input.sku.codigoBarras,
+              volumen: input.sku.volumen,
+              unidadVolumen: input.sku.unidadVolumen,
+              tipoPresentacion: input.sku.tipoPresentacion,
+              unidadesContenidas: input.sku.unidadesContenidas,
+              esRetornable: input.sku.esRetornable,
+              tipoEnvase: input.sku.tipoEnvase,
+              desarmaEnSkuId: input.sku.desarmaEnSkuId,
+              desarmaEnCantidad: input.sku.desarmaEnCantidad,
+              stockMinimo: input.sku.stockMinimo,
+              stockObjetivo: input.sku.stockObjetivo,
+            },
+            proveedores: input.proveedores,
+          })
+        : await crearProductoYSku(input);
+
       if ("error" in resultado) {
         setError(resultado.error);
         return;
@@ -335,7 +406,9 @@ export function ProductoSkuForm({
   return (
     <div className="mx-auto max-w-[720px] space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-[15px] font-semibold text-text">Nuevo producto</h1>
+        <h1 className="text-[15px] font-semibold text-text">
+          {editando ? "Editar producto" : "Nuevo producto"}
+        </h1>
         <button
           type="button"
           onClick={() => router.push("/productos")}
@@ -348,18 +421,35 @@ export function ProductoSkuForm({
       {/* ============ Producto ============ */}
       <div className={seccionClass}>
         <h2 className="mb-3 text-[13px] font-semibold text-text">Producto</h2>
-        <div className="mb-3 flex gap-2">
-          <button type="button" className={modoBtnClass(productoModo === "nuevo")} onClick={() => setProductoModo("nuevo")}>
-            Producto nuevo
-          </button>
-          <button
-            type="button"
-            className={modoBtnClass(productoModo === "existente")}
-            onClick={() => setProductoModo("existente")}
-          >
-            Presentación nueva de un producto existente
-          </button>
-        </div>
+
+        {/* Editando no hay nada que elegir: el producto ya es este, y lo que
+            se hace acá es corregirle el nombre, la marca o la categoría. */}
+        {!editando && (
+          <div className="mb-3 flex gap-2">
+            <button type="button" className={modoBtnClass(productoModo === "nuevo")} onClick={() => setProductoModo("nuevo")}>
+              Producto nuevo
+            </button>
+            <button
+              type="button"
+              className={modoBtnClass(productoModo === "existente")}
+              onClick={() => setProductoModo("existente")}
+            >
+              Presentación nueva de un producto existente
+            </button>
+          </div>
+        )}
+
+        {/* Cada presentación se edita sola (pedido del usuario 2026-10-08).
+            Si este producto tiene otras, cambiarle el nombre acá separa esta
+            en un producto propio en vez de renombrarlas a todas. */}
+        {editando && (skuEditar?.hermanas ?? 0) > 0 && (
+          <p className="mb-3 rounded-[6px] bg-info-bg px-[10px] py-[8px] text-[12.5px] text-info">
+            Este producto tiene {skuEditar!.hermanas}{" "}
+            {skuEditar!.hermanas === 1 ? "presentación más" : "presentaciones más"}. Si cambiás el
+            nombre, la marca o la categoría, esta se separa en un producto propio y las otras quedan
+            como están.
+          </p>
+        )}
 
         {productoModo === "existente" ? (
           <div>
@@ -709,7 +799,7 @@ export function ProductoSkuForm({
           Es un pack que se desarma (ej. x24 → x6, x6 → unidad)
         </label>
 
-        {seDesarma && (
+        {seDesarma && !editando && (
           <div className="mt-3 flex gap-2">
             <button
               type="button"
@@ -728,7 +818,7 @@ export function ProductoSkuForm({
           </div>
         )}
 
-        {seDesarma && desarmaModo === "nueva" && (
+        {seDesarma && !editando && desarmaModo === "nueva" && (
           <div className="mt-3">
             {derivados.length === 0 && (
               <p className="mb-2 text-[12px] text-text-3">
@@ -993,7 +1083,7 @@ export function ProductoSkuForm({
           disabled={pending}
           className="rounded-[6px] bg-moe px-[14px] py-[7px] text-[13px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
         >
-          {pending ? "Guardando…" : "Guardar producto"}
+          {pending ? "Guardando…" : editando ? "Guardar cambios" : "Guardar producto"}
         </button>
       </div>
     </div>

@@ -6,7 +6,6 @@ import { presentacionLabel } from "../_lib/presentacion";
 import { useRouter } from "next/navigation";
 import { actualizarCodigoBarras, eliminarSku } from "../actions";
 import { MovimientosSkuModal } from "./movimientos-sku-modal";
-import { EditarSkuModal } from "./editar-sku-modal";
 
 export type Sucursal = {
   id: string;
@@ -81,7 +80,6 @@ export function ProductosTable({
   const [filaOk, setFilaOk] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [filaEliminando, setFilaEliminando] = useState<string | null>(null);
-  const [skuEditando, setSkuEditando] = useState<SkuRow | null>(null);
   const [avisoBaja, setAvisoBaja] = useState<string | null>(null);
   const router = useRouter();
 
@@ -415,17 +413,13 @@ export function ProductosTable({
                           </span>
                         ) : (
                           <span className="flex items-center justify-end gap-3 whitespace-nowrap">
-                            <button
-                              type="button"
-                              title="Editar nombre y presentación"
-                              onClick={() => {
-                                setAvisoBaja(null);
-                                setSkuEditando(sku);
-                              }}
+                            <Link
+                              href={`/productos/${sku.id}/editar`}
+                              title="Editar este producto"
                               className="text-[12px] text-text-3 underline underline-offset-2 hover:text-moe"
                             >
                               Editar
-                            </button>
+                            </Link>
                             <button
                               type="button"
                               title="Sacar del catálogo"
@@ -458,16 +452,6 @@ export function ProductosTable({
         />
       )}
 
-      {skuEditando && (
-        <EditarSkuModal
-          sku={skuEditando}
-          onClose={() => setSkuEditando(null)}
-          onGuardado={() => {
-            setSkuEditando(null);
-            router.refresh();
-          }}
-        />
-      )}
     </div>
   );
 }

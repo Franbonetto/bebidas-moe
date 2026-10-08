@@ -440,83 +440,233 @@ export async function eliminarSku(
   return { eliminado: true };
 }
 
-export type EditarSkuInput = {
-  // El nombre del producto es el que se ve en el catálogo y agrupa a todas
-  // las presentaciones; el del SKU es el que busca la vendedora en el punto
-  // de venta (el POS busca por marca + nombre del SKU + presentación). Son
-  // dos campos distintos a propósito y se editan juntos para que no quede
-  // uno al día y el otro viejo.
-  nombreProducto: string;
-  nombreSku: string;
-  tipoPresentacion: "unidad" | "pack" | "cajon" | "estuche";
-  unidadesContenidas: number;
-  volumen: number;
-  unidadVolumen: "ml" | "l" | "un" | "g";
+export type EditarSkuCompletoInput = {
+  // El producto se edita desde la presentación, pero NO se arrastra a las
+  // hermanas (pedido del usuario 2026-10-08: "cada producto se edita por
+  // separado"). Si este SKU comparte producto con otras presentaciones y acá
+  // se cambia el nombre, la marca o la categoría, esta presentación se
+  // separa en un producto propio y las otras quedan como estaban.
+  producto: {
+    nombre: string;
+    marca: { id: string } | { nombreNueva: string };
+    categoria: { id: string } | { nombreNueva: string; categoriaPadreId: string | null };
+  };
+  sku: {
+    nombre: string;
+    codigoInterno: string;
+    codigoBarras: string | null;
+    volumen: number;
+    unidadVolumen: "ml" | "l" | "un" | "g";
+    tipoPresentacion: "unidad" | "pack" | "cajon" | "estuche";
+    unidadesContenidas: number;
+    esRetornable: boolean;
+    tipoEnvase: { id: string } | { nombreNueva: string; esGenerico: boolean; valorDeposito: number } | null;
+    desarmaEnSkuId: string | null;
+    desarmaEnCantidad: number | null;
+    stockMinimo: number;
+    stockObjetivo: number;
+  };
+  proveedores: { proveedorId: string; costoReferencia: number | null }[];
 };
 
-// Corregir nombre y presentación de un SKU ya cargado (pedido del usuario
-// 2026-10-05: hasta ahora un error de tipeo en el alta solo se arreglaba
-// borrando y volviendo a cargar).
+// Editar una presentación ya cargada, con el mismo formulario del alta
+// (pedido del usuario 2026-10-08: el cuadrito de nombre y presentación se
+// quedaba corto).
 //
-// No toca códigos, precios ni stock: el código de barras tiene su propia
-// acción en la misma pantalla, y el stock solo se mueve con un movimiento
-// (regla 1). Cambiar la presentación NO genera ningún movimiento porque no
-// cambia la cantidad de nada: el SKU sigue siendo el mismo, se corrige cómo
-// se describe.
-export async function editarSku(
+// No toca stock (solo se mueve con un movimiento, regla 1), ni costo (lo
+// pone la recepción de una compra), ni precio (eso es Precios / Carga
+// inicial). Esta pantalla es catálogo: qué es el producto, no cuánto hay ni
+// cuánto sale.
+export async function editarSkuCompleto(
   skuId: string,
-  input: EditarSkuInput,
+  input: EditarSkuCompletoInput,
 ): Promise<{ error: string } | { ok: true }> {
   const supabase = await createClient();
 
-  const nombreProducto = input.nombreProducto.trim();
-  const nombreSku = input.nombreSku.trim();
-
+  const nombreProducto = input.producto.nombre.trim();
   if (!nombreProducto) return { error: "El nombre del producto no puede estar vacío." };
-  if (!nombreSku) return { error: "El nombre del SKU no puede estar vacío." };
-  if (!Number.isFinite(input.volumen) || input.volumen <= 0)
+  if (!input.sku.nombre.trim()) return { error: "El nombre de la presentación no puede estar vacío." };
+  if (!Number.isFinite(input.sku.volumen) || input.sku.volumen <= 0)
     return { error: "El volumen tiene que ser mayor a cero." };
-  if (!Number.isInteger(input.unidadesContenidas) || input.unidadesContenidas <= 0)
-    return { error: "Las unidades contenidas tienen que ser un número entero mayor a cero." };
+  if (!Number.isInteger(input.sku.unidadesContenidas) || input.sku.unidadesContenidas <= 0)
+    return { error: "Las unidades contenidas tienen que ser un entero mayor a cero." };
 
-  const { data: sku, error: errorSku } = await supabase
+  const { data: skuActual, error: errorActual } = await supabase
     .from("skus")
-    .select("producto_id")
+    .select("producto_id, producto:productos ( nombre, marca_id, categoria_id )")
     .eq("id", skuId)
     .single();
 
-  if (errorSku) return { error: errorSku.message };
+  if (errorActual) return { error: errorActual.message };
 
-  // El nombre del producto va primero porque es el único con restricción de
-  // unicidad (marca + nombre): si choca, no se cambió nada todavía.
-  const { error: errorProducto } = await supabase
-    .from("productos")
-    .update({ nombre: nombreProducto })
-    .eq("id", sku.producto_id);
+  const productoActual = skuActual.producto as unknown as {
+    nombre: string;
+    marca_id: string;
+    categoria_id: string;
+  } | null;
 
-  if (errorProducto) {
-    if (errorProducto.code === "23505")
-      return { error: "Esa marca ya tiene otro producto con ese nombre." };
-    return { error: errorProducto.message };
+  // --- marca y categoría destino -------------------------------------
+  let marcaId: string;
+  if ("id" in input.producto.marca) {
+    marcaId = input.producto.marca.id;
+  } else {
+    const { data, error } = await supabase
+      .from("marcas")
+      .insert({ nombre: input.producto.marca.nombreNueva.trim() })
+      .select("id")
+      .single();
+    if (error) return { error: "No se pudo crear la marca: " + error.message };
+    marcaId = data.id;
   }
 
-  const { error } = await supabase
+  let categoriaId: string;
+  if ("id" in input.producto.categoria) {
+    categoriaId = input.producto.categoria.id;
+  } else {
+    const { data, error } = await supabase
+      .from("categorias")
+      .insert({
+        nombre: input.producto.categoria.nombreNueva.trim(),
+        categoria_padre_id: input.producto.categoria.categoriaPadreId,
+      })
+      .select("id")
+      .single();
+    if (error) return { error: "No se pudo crear la categoría: " + error.message };
+    categoriaId = data.id;
+  }
+
+  // --- ¿cambió algo del producto? ------------------------------------
+  const cambioProducto =
+    productoActual != null &&
+    (productoActual.nombre !== nombreProducto ||
+      productoActual.marca_id !== marcaId ||
+      productoActual.categoria_id !== categoriaId);
+
+  let productoId = skuActual.producto_id;
+
+  if (cambioProducto) {
+    const { count: hermanas } = await supabase
+      .from("skus")
+      .select("id", { count: "exact", head: true })
+      .eq("producto_id", skuActual.producto_id)
+      .neq("id", skuId);
+
+    if ((hermanas ?? 0) === 0) {
+      // Es la única presentación: se edita el producto en el lugar.
+      const { error } = await supabase
+        .from("productos")
+        .update({ nombre: nombreProducto, marca_id: marcaId, categoria_id: categoriaId })
+        .eq("id", productoId);
+      if (error) {
+        if (error.code === "23505")
+          return { error: "Esa marca ya tiene otro producto con ese nombre." };
+        return { error: "No se pudo guardar el producto: " + error.message };
+      }
+    } else {
+      // Tiene hermanas: se separa en un producto propio, para no cambiarles
+      // el nombre a ellas también. Si ya existe uno con esa marca y ese
+      // nombre, se cuelga de ese en vez de duplicarlo.
+      const { data: existente } = await supabase
+        .from("productos")
+        .select("id")
+        .eq("marca_id", marcaId)
+        .eq("nombre", nombreProducto)
+        .maybeSingle();
+
+      if (existente) {
+        productoId = existente.id;
+      } else {
+        const { data, error } = await supabase
+          .from("productos")
+          .insert({ nombre: nombreProducto, marca_id: marcaId, categoria_id: categoriaId })
+          .select("id")
+          .single();
+        if (error) return { error: "No se pudo separar el producto: " + error.message };
+        productoId = data.id;
+      }
+    }
+  }
+
+  // --- tipo de envase ------------------------------------------------
+  let tipoEnvaseId: string | null = null;
+  if (input.sku.esRetornable) {
+    const tipoEnvase = input.sku.tipoEnvase;
+    if (!tipoEnvase) return { error: "Falta el tipo de envase." };
+    if ("id" in tipoEnvase) {
+      tipoEnvaseId = tipoEnvase.id;
+    } else {
+      const { data, error } = await supabase
+        .from("tipos_envase")
+        .insert({
+          nombre: tipoEnvase.nombreNueva,
+          es_generico: tipoEnvase.esGenerico,
+          valor_deposito: tipoEnvase.valorDeposito,
+        })
+        .select("id")
+        .single();
+      if (error) return { error: "No se pudo crear el tipo de envase: " + error.message };
+      tipoEnvaseId = data.id;
+    }
+  }
+
+  // --- el SKU --------------------------------------------------------
+  const { error: errorSku } = await supabase
     .from("skus")
     .update({
-      nombre: nombreSku,
-      tipo_presentacion: input.tipoPresentacion,
-      unidades_contenidas: input.unidadesContenidas,
-      volumen: input.volumen,
-      unidad_volumen: input.unidadVolumen,
+      producto_id: productoId,
+      nombre: input.sku.nombre.trim(),
+      codigo_interno: input.sku.codigoInterno.trim(),
+      codigo_barras: input.sku.codigoBarras,
+      volumen: input.sku.volumen,
+      unidad_volumen: input.sku.unidadVolumen,
+      tipo_presentacion: input.sku.tipoPresentacion,
+      unidades_contenidas: input.sku.unidadesContenidas,
+      es_retornable: input.sku.esRetornable,
+      tipo_envase_id: input.sku.esRetornable ? tipoEnvaseId : null,
+      desarma_en_sku_id: input.sku.desarmaEnSkuId,
+      desarma_en_cantidad: input.sku.desarmaEnSkuId ? input.sku.desarmaEnCantidad : null,
+      stock_minimo: input.sku.stockMinimo,
+      stock_objetivo: input.sku.stockObjetivo,
     })
     .eq("id", skuId);
 
-  if (error) return { error: error.message };
+  if (errorSku) {
+    if (errorSku.code === "23505") {
+      if (errorSku.message.includes("codigo_barras"))
+        return { error: "Ese código de barras ya está asignado a otro producto." };
+      return { error: "Ese código interno ya está usado por otro producto." };
+    }
+    return { error: "No se pudo guardar la presentación: " + errorSku.message };
+  }
+
+  // --- proveedores ---------------------------------------------------
+  // Se reemplaza la lista entera: proveedor_skus es configuración, no
+  // historia (el costo de cada compra vive en historial_costos).
+  const { error: errorBorrado } = await supabase.from("proveedor_skus").delete().eq("sku_id", skuId);
+  if (errorBorrado)
+    return {
+      error:
+        "La presentación se guardó, pero no se pudieron actualizar los proveedores: " +
+        errorBorrado.message,
+    };
+
+  if (input.proveedores.length > 0) {
+    const { error } = await supabase.from("proveedor_skus").insert(
+      input.proveedores.map((p) => ({
+        sku_id: skuId,
+        proveedor_id: p.proveedorId,
+        costo_referencia: p.costoReferencia,
+      })),
+    );
+    if (error)
+      return {
+        error: "La presentación se guardó, pero no se pudo asociar el proveedor: " + error.message,
+      };
+  }
 
   revalidatePath("/productos");
   revalidatePath("/precios");
   revalidatePath("/vender");
   revalidatePath("/compras");
-  revalidatePath("/envios");
   return { ok: true };
 }
