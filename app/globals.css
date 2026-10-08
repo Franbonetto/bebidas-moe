@@ -93,11 +93,12 @@ body {
      rollo tiene que ocupar el ancho del papel (80mm ≈ 302px), si no el
      contenido se desborda y el motor de impresión agrega una hoja. */
   .ticket-print {
-    /* 52mm sobre un papel de 58: el driver declara 48mm imprimibles, pero a
-       48 el ticket quedaba muy angosto y partia los nombres en tres lineas
-       (usuario 2026-10-08). Si algo sale cortado contra los bordes, bajar a
-       48mm y aceptar el corte de linea. */
-    width: 52mm !important;
+    /* 48mm centrados sobre el papel de 58. No es una decision de diseño: es
+       el area que la XP-58 puede imprimir, y el driver lo declara asi
+       ("58(48)"). A 52mm el ticket se salia 2mm por lado y se perdian los
+       importes, que van alineados a la derecha (probado en papel el
+       2026-10-08). Mas ancho que esto no entra, por mas que sobre papel. */
+    width: 48mm !important;
     max-width: none !important;
     margin: 0 auto !important;
     padding: 0 !important;
