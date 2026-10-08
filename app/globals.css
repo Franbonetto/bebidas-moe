@@ -93,14 +93,18 @@ body {
      rollo tiene que ocupar el ancho del papel (80mm ≈ 302px), si no el
      contenido se desborda y el motor de impresión agrega una hoja. */
   .ticket-print {
-    /* 48mm centrados sobre el papel de 58. No es una decision de diseño: es
-       el area que la XP-58 puede imprimir, y el driver lo declara asi
-       ("58(48)"). A 52mm el ticket se salia 2mm por lado y se perdian los
-       importes, que van alineados a la derecha (probado en papel el
-       2026-10-08). Mas ancho que esto no entra, por mas que sobre papel. */
+    /* 48mm sobre el papel de 58. No es una decision de diseño: es el area
+       que la XP-58 puede imprimir, y el driver lo declara asi ("58(48)").
+       Mas ancho que esto no entra, por mas que sobre papel. */
     width: 48mm !important;
     max-width: none !important;
-    margin: 0 auto !important;
+    /* Pegado a la izquierda, NO centrado. El cabezal de la XP-58 imprime
+       desde el borde izquierdo del papel: su area util son los primeros
+       48mm de los 58. Centrando el ticket quedaba de 5mm a 53mm, o sea 5mm
+       de blanco a la izquierda y 5mm cortados a la derecha -- y como los
+       importes van alineados a la derecha, se perdian justo ellos (probado
+       en papel el 2026-10-08). */
+    margin: 0 !important;
     padding: 0 !important;
   }
 }
