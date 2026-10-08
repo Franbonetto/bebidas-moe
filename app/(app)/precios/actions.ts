@@ -190,7 +190,6 @@ export async function eliminarDescuentoEfectivo(
 export type PromocionItemInput = {
   skuId: string;
   cantidadRequerida: number;
-  precioPromocional: number;
 };
 
 export type GuardarPromocionInput = {
@@ -202,6 +201,10 @@ export type GuardarPromocionInput = {
   vigenteHasta: string | null;
   activo: boolean;
   items: PromocionItemInput[];
+  // El total que paga el cliente, por sucursal. Una promo que corre en las
+  // dos lleva dos filas, porque Olavarría y Laprida no manejan los mismos
+  // precios (pedido del usuario 2026-10-08).
+  precios: { sucursalId: string; precioTotal: number }[];
 };
 
 // Una promocion son dos escrituras (promociones + promocion_items). Se
@@ -222,7 +225,10 @@ export async function guardarPromocion(input: GuardarPromocionInput): Promise<Re
     p_items: input.items.map((i) => ({
       sku_id: i.skuId,
       cantidad_requerida: i.cantidadRequerida,
-      precio_promocional: i.precioPromocional,
+    })),
+    p_precios: input.precios.map((p) => ({
+      sucursal_id: p.sucursalId,
+      precio_total: p.precioTotal,
     })),
   });
 

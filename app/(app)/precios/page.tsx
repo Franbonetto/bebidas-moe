@@ -66,7 +66,9 @@ export default async function PreciosPage() {
           supabase
             .from("promociones")
             .select(
-              "id, nombre, tipo, sucursal_id, vigente_desde, vigente_hasta, activo, promocion_items ( sku_id, cantidad_requerida, precio_promocional )",
+              `id, nombre, tipo, sucursal_id, vigente_desde, vigente_hasta, activo,
+               promocion_items ( sku_id, cantidad_requerida ),
+               promocion_precios ( sucursal_id, precio_total )`,
             )
             .order("nombre"),
         ])
@@ -166,6 +168,7 @@ export default async function PreciosPage() {
     vigente_hasta: p.vigente_hasta,
     activo: p.activo,
     items: (p.promocion_items ?? []) as PromocionRow["items"],
+    precios: (p.promocion_precios ?? []) as PromocionRow["precios"],
   }));
 
   const tabPrecios = (

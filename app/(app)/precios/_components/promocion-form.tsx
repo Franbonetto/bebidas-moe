@@ -15,7 +15,7 @@ const modoBtnClass = (activo: boolean) =>
     activo ? "border-moe bg-moe-soft text-moe" : "border-border bg-bg text-text-2 hover:bg-bg-2"
   }`;
 
-type Fila = { skuId: string; precioPromocional: string };
+type Fila = { skuId: string };
 
 // costo_actual no viene en SkuCatalogo (compras no lo necesita): esta
 // pantalla solo se muestra a quien ya puede ver costos (ve_costos()), asi
@@ -41,16 +41,29 @@ export function PromocionForm({
   const [sucursalId, setSucursalId] = useState(promocion?.sucursal_id ?? "");
   const [vigenteDesde, setVigenteDesde] = useState(promocion?.vigente_desde ?? "");
   const [vigenteHasta, setVigenteHasta] = useState(promocion?.vigente_hasta ?? "");
+  // Sin fecha de corte = la promo queda activa hasta que la des de baja a
+  // mano. El modelo siempre lo permitió (vigente_hasta null), pero el
+  // formulario mostraba un campo vacío y no se entendía (usuario 2026-10-08).
+  const [sinFechaLimite, setSinFechaLimite] = useState(promocion?.vigente_hasta == null);
   const [activo, setActivo] = useState(promocion?.activo ?? true);
 
-  // Combo: cada SKU tiene su propio precio dentro del combo (la suma es lo
-  // que se cobra cuando se escanean todos juntos, arquitectura.md 1.7 y
-  // decision 2 de la migracion del bloque 6).
+  // Combo: solo qué productos lo arman. El precio ya no va por producto --
+  // se carga el total de la promo más abajo, uno por sucursal.
   const [filasCombo, setFilasCombo] = useState<Fila[]>(
-    promocion?.tipo === "combo"
-      ? promocion.items.map((i) => ({ skuId: i.sku_id, precioPromocional: String(i.precio_promocional) }))
-      : [],
+    promocion?.tipo === "combo" ? promocion.items.map((i) => ({ skuId: i.sku_id })) : [],
   );
+
+  // El total que paga el cliente, por sucursal. Olavarría y Laprida no
+  // manejan los mismos precios, así que una promo que corre en las dos
+  // lleva dos totales.
+  const [precios, setPrecios] = useState<Record<string, string>>(() => {
+    const inicial: Record<string, string> = {};
+    for (const s of sucursales) {
+      const fila = promocion?.precios?.find((p) => p.sucursal_id === s.id);
+      inicial[s.id] = fila ? String(fila.precio_total) : "";
+    }
+    return inicial;
+  });
 
   // Cantidad: un solo SKU + cuantas unidades entran en el grupo + precio
   // del grupo completo (ej. 2x $20.000 -> cantidadRequerida=2).
@@ -60,9 +73,6 @@ export function PromocionForm({
   const [cantidadRequerida, setCantidadRequerida] = useState(
     promocion?.tipo === "cantidad" ? String(promocion.items[0]?.cantidad_requerida ?? 2) : "2",
   );
-  const [precioCantidad, setPrecioCantidad] = useState(
-    promocion?.tipo === "cantidad" ? String(promocion.items[0]?.precio_promocional ?? "") : "",
-  );
 
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -70,12 +80,11 @@ export function PromocionForm({
   const excluirIdsCombo = useMemo(() => new Set(filasCombo.map((f) => f.skuId)), [filasCombo]);
 
   function agregarSkuCombo(sku: SkuCatalogo) {
-    setFilasCombo((prev) => [...prev, { skuId: sku.id, precioPromocional: "" }]);
+    setFilasCombo((prev) => [...prev, { skuId: sku.id }]);
   }
 
-  function actualizarPrecioCombo(index: number, valor: string) {
-    setFilasCombo((prev) => prev.map((f, i) => (i === index ? { ...f, precioPromocional: valor } : f)));
-  }
+  // Las sucursales donde corre la promo: todas, o la única elegida.
+  const sucursalesConPrecio = sucursalId ? sucursales.filter((s) => s.id === sucursalId) : sucursales;
 
   function quitarFilaCombo(index: number) {
     setFilasCombo((prev) => prev.filter((_, i) => i !== index));
@@ -92,23 +101,29 @@ export function PromocionForm({
 
   function validar(): string | null {
     if (!nombre.trim()) return "Ingresá el nombre de la promoción.";
-    if (vigenteDesde && vigenteHasta && vigenteDesde > vigenteHasta)
-      return "La vigencia desde no puede ser posterior a la vigencia hasta.";
+    if (!sinFechaLimite && vigenteDesde && vigenteHasta && vigenteDesde > vigenteHasta)
+      return "La promoción no puede terminar antes de empezar.";
+    if (!sinFechaLimite && !vigenteHasta) return "Elegí hasta qué día corre, o marcá que no tiene fecha límite.";
 
     if (tipo === "combo") {
       if (filasCombo.length < 2) return "Un combo necesita al menos 2 SKU distintos.";
-      for (const f of filasCombo) {
-        const precio = Number(f.precioPromocional);
-        if (f.precioPromocional.trim() === "" || Number.isNaN(precio) || precio < 0)
-          return "Cada SKU del combo necesita un precio mayor o igual a cero.";
-      }
     } else {
       if (!skuCantidadId) return "Elegí el SKU de la promoción.";
       const cantidad = Number(cantidadRequerida);
       if (!Number.isInteger(cantidad) || cantidad < 2) return "La cantidad tiene que ser un entero de 2 o más (2x, 3x...).";
-      const precio = Number(precioCantidad);
-      if (precioCantidad.trim() === "" || Number.isNaN(precio) || precio < 0)
-        return "El precio del grupo tiene que ser mayor o igual a cero.";
+    }
+
+    // Sin precio en ninguna sucursal, la promo no corre en ningún lado.
+    const cargados = sucursalesConPrecio.filter((s) => (precios[s.id] ?? "").trim() !== "");
+    if (cargados.length === 0)
+      return sucursalesConPrecio.length === 1
+        ? "Cargá el total de la promoción."
+        : "Cargá el total en al menos una sucursal.";
+
+    for (const s of cargados) {
+      const monto = Number(precios[s.id]);
+      if (Number.isNaN(monto) || monto < 0)
+        return `El total en ${s.nombre} tiene que ser un número mayor o igual a cero.`;
     }
 
     return null;
@@ -124,18 +139,14 @@ export function PromocionForm({
 
     const items: PromocionItemInput[] =
       tipo === "combo"
-        ? filasCombo.map((f) => ({
-            skuId: f.skuId,
-            cantidadRequerida: 1,
-            precioPromocional: Number(f.precioPromocional),
-          }))
-        : [
-            {
-              skuId: skuCantidadId,
-              cantidadRequerida: Number(cantidadRequerida),
-              precioPromocional: Number(precioCantidad),
-            },
-          ];
+        ? filasCombo.map((f) => ({ skuId: f.skuId, cantidadRequerida: 1 }))
+        : [{ skuId: skuCantidadId, cantidadRequerida: Number(cantidadRequerida) }];
+
+    // Solo las sucursales con total cargado: dejar una vacía es la forma de
+    // decir "esta promo no corre ahí".
+    const preciosParaGuardar = sucursalesConPrecio
+      .filter((s) => (precios[s.id] ?? "").trim() !== "")
+      .map((s) => ({ sucursalId: s.id, precioTotal: Number(precios[s.id]) }));
 
     startTransition(async () => {
       const resultado = await guardarPromocion({
@@ -144,9 +155,10 @@ export function PromocionForm({
         tipo,
         sucursalId: sucursalId || null,
         vigenteDesde: vigenteDesde || null,
-        vigenteHasta: vigenteHasta || null,
+        vigenteHasta: sinFechaLimite ? null : vigenteHasta || null,
         activo,
         items,
+        precios: preciosParaGuardar,
       });
       if ("error" in resultado) {
         setError(resultado.error);
@@ -156,7 +168,6 @@ export function PromocionForm({
     });
   }
 
-  const totalCombo = filasCombo.reduce((acc, f) => acc + (Number(f.precioPromocional) || 0), 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
@@ -225,77 +236,83 @@ export function PromocionForm({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>Vigente desde</label>
-              <input
-                type="date"
-                className={inputClass}
-                value={vigenteDesde}
-                onChange={(e) => setVigenteDesde(e.target.value)}
-              />
+          <div>
+            <label className={labelClass}>¿Hasta cuándo corre?</label>
+            <div className="mb-2 flex gap-2">
+              <button
+                type="button"
+                className={modoBtnClass(sinFechaLimite)}
+                onClick={() => setSinFechaLimite(true)}
+              >
+                Activa sin fecha límite
+              </button>
+              <button
+                type="button"
+                className={modoBtnClass(!sinFechaLimite)}
+                onClick={() => setSinFechaLimite(false)}
+              >
+                Hasta una fecha
+              </button>
             </div>
-            <div>
-              <label className={labelClass}>Vigente hasta</label>
-              <input
-                type="date"
-                className={inputClass}
-                value={vigenteHasta}
-                onChange={(e) => setVigenteHasta(e.target.value)}
-              />
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>Arranca</label>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={vigenteDesde}
+                  onChange={(e) => setVigenteDesde(e.target.value)}
+                />
+                <p className="mt-[3px] text-[11.5px] text-text-3">Vacío = ya está corriendo.</p>
+              </div>
+              {!sinFechaLimite && (
+                <div>
+                  <label className={labelClass}>Último día *</label>
+                  <input
+                    type="date"
+                    className={inputClass}
+                    value={vigenteHasta}
+                    onChange={(e) => setVigenteHasta(e.target.value)}
+                  />
+                  <p className="mt-[3px] text-[11.5px] text-text-3">Ese día todavía vale.</p>
+                </div>
+              )}
             </div>
+
+            {sinFechaLimite && (
+              <p className="mt-2 text-[11.5px] text-text-3">
+                Va a seguir aplicándose hasta que la des de baja a mano desde esta pantalla.
+              </p>
+            )}
           </div>
-          <p className="-mt-2 text-[11.5px] text-text-3">Sin fechas la promoción queda permanente.</p>
 
           <div className="border-t border-border pt-3">
             <p className="mb-2 text-[12px] font-medium text-text-2">
-              {tipo === "combo"
-                ? "SKU del combo — precio de cada uno dentro del combo (la suma es lo que se cobra al escanear todos juntos)"
-                : "SKU de la promoción"}
+              {tipo === "combo" ? "Productos que arman el combo" : "SKU de la promoción"}
             </p>
 
             {tipo === "combo" ? (
               <div className="space-y-2">
                 {filasCombo.map((f, index) => {
                   const sku = skuPorId.get(f.skuId);
-                  const advertencia =
-                    f.precioPromocional.trim() !== "" && !Number.isNaN(Number(f.precioPromocional))
-                      ? advertenciaBajoCosto(f.skuId, Number(f.precioPromocional))
-                      : null;
                   return (
-                    <div key={f.skuId}>
-                      <div className="grid grid-cols-[1fr_140px_auto] items-center gap-2">
-                        <span className="truncate text-[13px] text-text">
-                          {sku?.producto?.nombre}
-                          {sku && <span className="text-text-3"> · {sku.producto?.marca?.nombre} — {presentacionLabel(sku)}</span>}
-                        </span>
-                        <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          className={inputClass}
-                          value={f.precioPromocional}
-                          onChange={(e) => actualizarPrecioCombo(index, e.target.value)}
-                          placeholder="Precio en el combo"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => quitarFilaCombo(index)}
-                          className="rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[12.5px] text-text-3 hover:bg-bg-2 hover:text-err"
-                        >
-                          Quitar
-                        </button>
-                      </div>
-                      {advertencia && <p className="mt-1 text-[11.5px] text-warn">{advertencia}</p>}
+                    <div key={f.skuId} className="grid grid-cols-[1fr_auto] items-center gap-2">
+                      <span className="truncate text-[13px] text-text">
+                        {sku?.producto?.nombre}
+                        {sku && <span className="text-text-3"> · {sku.producto?.marca?.nombre} — {presentacionLabel(sku)}</span>}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => quitarFilaCombo(index)}
+                        className="rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[12.5px] text-text-3 hover:bg-bg-2 hover:text-err"
+                      >
+                        Quitar
+                      </button>
                     </div>
                   );
                 })}
                 <SkuPicker skus={skus} excluirIds={excluirIdsCombo} onSelect={agregarSkuCombo} />
-                {filasCombo.length > 0 && (
-                  <p className="text-right text-[12.5px] text-text-2">
-                    Total del combo: <span className="font-medium tabular-nums">{formatoMoneda.format(totalCombo)}</span>
-                  </p>
-                )}
               </div>
             ) : (
               <div className="space-y-2">
@@ -334,33 +351,55 @@ export function PromocionForm({
                       onChange={(e) => setCantidadRequerida(e.target.value)}
                     />
                   </div>
-                  <div>
-                    <label className={labelClass}>Precio del grupo *</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      className={inputClass}
-                      value={precioCantidad}
-                      onChange={(e) => setPrecioCantidad(e.target.value)}
-                      placeholder="Ej. 20000 para 2x$20.000"
-                    />
-                  </div>
                 </div>
-                {skuCantidadId &&
-                  precioCantidad.trim() !== "" &&
-                  !Number.isNaN(Number(precioCantidad)) &&
-                  !Number.isNaN(Number(cantidadRequerida)) &&
-                  Number(cantidadRequerida) > 0 &&
-                  (() => {
-                    const advertencia = advertenciaBajoCosto(
-                      skuCantidadId,
-                      Number(precioCantidad) / Number(cantidadRequerida),
-                    );
-                    return advertencia ? <p className="text-[11.5px] text-warn">{advertencia}</p> : null;
-                  })()}
               </div>
             )}
+          </div>
+
+          {/* ============ Total de la promo, por sucursal ============ */}
+          <div className="border-t border-border pt-3">
+            <p className="mb-1 text-[12px] font-medium text-text-2">
+              {tipo === "combo"
+                ? "Cuánto sale el combo completo"
+                : "Cuánto sale llevar el grupo completo"}
+            </p>
+            <p className="mb-2 text-[11.5px] text-text-3">
+              Es el total que paga el cliente. El ticket muestra el nombre de la promoción y este
+              número.
+              {sucursalesConPrecio.length > 1 &&
+                " Dejá vacía una sucursal si la promo no corre ahí."}
+            </p>
+
+            <div className="space-y-2">
+              {sucursalesConPrecio.map((suc) => {
+                const valor = precios[suc.id] ?? "";
+                const monto = Number(valor);
+                const unidades =
+                  tipo === "combo" ? filasCombo.length : Number(cantidadRequerida) || 0;
+                const advertencia =
+                  valor.trim() !== "" && !Number.isNaN(monto) && unidades > 0 && tipo === "cantidad"
+                    ? advertenciaBajoCosto(skuCantidadId, monto / unidades)
+                    : null;
+
+                return (
+                  <div key={suc.id}>
+                    <div className="grid grid-cols-[1fr_160px] items-center gap-2">
+                      <span className="text-[13px] text-text">{suc.nombre}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        className={`${inputClass} tabular-nums`}
+                        value={valor}
+                        onChange={(e) => setPrecios({ ...precios, [suc.id]: e.target.value })}
+                        placeholder="Total"
+                      />
+                    </div>
+                    {advertencia && <p className="mt-1 text-[11.5px] text-warn">{advertencia}</p>}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           <p className="text-[11.5px] text-text-3">

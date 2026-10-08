@@ -19,6 +19,11 @@ type VentaItemFila = {
   // Producto particular (picada, canasta de regalería): no tiene SKU, lleva
   // la descripción que se tipeó al venderlo.
   descripcion: string | null;
+  // Las líneas que entraron por una promoción se muestran agrupadas: el
+  // ticket dice el nombre de la promo y el total, no el reparto interno
+  // entre sus productos (pedido del usuario 2026-10-08).
+  promocion_id: string | null;
+  promocion: { nombre: string } | null;
   sku: SkuInfo | null;
 };
 
@@ -77,7 +82,8 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
     supabase
       .from("venta_items")
       .select(
-        `id, cantidad, precio_unitario, descripcion,
+        `id, cantidad, precio_unitario, descripcion, promocion_id,
+         promocion:promociones ( nombre ),
          sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
            producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
       )
@@ -108,6 +114,43 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
   const items = ((itemsRaw ?? []) as unknown as VentaItemFila[]).filter(
     (it) => it.sku || it.descripcion,
   );
+  // Una promoción puede haber consumido varias líneas (un combo son dos o
+  // más productos): en el ticket se muestran como una sola, con el nombre
+  // de la promo y lo que se pagó por ella.
+  type LineaTicketImpreso = { clave: string; titulo: string; detalle: string | null; total: number };
+  const lineasTicket: LineaTicketImpreso[] = [];
+  const porPromo = new Map<string, LineaTicketImpreso>();
+
+  for (const it of items) {
+    const total = it.cantidad * it.precio_unitario;
+
+    if (it.promocion_id) {
+      const ya = porPromo.get(it.promocion_id);
+      if (ya) {
+        ya.total += total;
+        continue;
+      }
+      const linea: LineaTicketImpreso = {
+        clave: `promo-${it.promocion_id}`,
+        titulo: it.promocion?.nombre ?? "Promoción",
+        detalle: "Promoción",
+        total,
+      };
+      porPromo.set(it.promocion_id, linea);
+      lineasTicket.push(linea);
+      continue;
+    }
+
+    lineasTicket.push({
+      clave: it.id,
+      titulo: `${it.cantidad}x ${it.sku ? (it.sku.producto?.nombre ?? "SKU eliminado") : it.descripcion}`,
+      detalle: it.sku
+        ? `${it.sku.producto?.marca?.nombre ?? ""} — ${presentacionLabel(it.sku)}`
+        : "Producto particular",
+      total,
+    });
+  }
+
   const facturado = comprobante?.estado === "autorizado";
 
   const qrImagen =
@@ -144,17 +187,13 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
       <div className="my-3 border-t border-dashed border-border" />
 
       <div className="flex flex-col gap-1">
-        {items.map((it) => (
-          <div key={it.id} className="flex justify-between gap-2">
+        {lineasTicket.map((l) => (
+          <div key={l.clave} className="flex justify-between gap-2">
             <span className="min-w-0">
-              {it.cantidad}x {it.sku ? (it.sku.producto?.nombre ?? "SKU eliminado") : it.descripcion}
-              <span className="block text-[11px] text-text-3">
-                {it.sku
-                  ? `${it.sku.producto?.marca?.nombre ?? ""} — ${presentacionLabel(it.sku)}`
-                  : "Producto particular"}
-              </span>
+              {l.titulo}
+              {l.detalle && <span className="block text-[11px] text-text-3">{l.detalle}</span>}
             </span>
-            <span className="shrink-0 tabular-nums">{formatoMoneda.format(it.cantidad * it.precio_unitario)}</span>
+            <span className="shrink-0 tabular-nums">{formatoMoneda.format(l.total)}</span>
           </div>
         ))}
       </div>

@@ -51,7 +51,8 @@ export async function cargarDatosVenta(
       .from("promociones")
       .select(
         `id, nombre, tipo, prioridad, vigente_desde, vigente_hasta,
-         promocion_items ( sku_id, cantidad_requerida, precio_promocional )`,
+         promocion_items ( sku_id, cantidad_requerida ),
+         promocion_precios ( sucursal_id, precio_total )`,
       )
       .eq("activo", true)
       .or(`sucursal_id.is.null,sucursal_id.eq.${sucursal.id}`),
@@ -212,34 +213,88 @@ export async function cargarDatosVenta(
       (p.vigente_hasta == null || p.vigente_hasta >= hoy),
   );
 
-  const combos: ComboData[] = promocionesVigentes
-    .filter((p) => p.tipo === "combo")
-    .map((p) => ({
-      id: p.id,
-      nombre: p.nombre,
-      prioridad: p.prioridad,
-      items: (p.promocion_items ?? []).map((it) => ({
-        skuId: it.sku_id,
-        cantidadRequerida: it.cantidad_requerida,
-        precioPromocional: it.precio_promocional,
-        bajoCosto: bajoCostoPromo(it.sku_id, it.precio_promocional, it.cantidad_requerida),
-      })),
-    }));
+  // El precio de una promo es el TOTAL que paga el cliente, y es por
+  // sucursal (20261010090000_promocion_precio_total.sql). Si no hay fila
+  // para esta sucursal, la promo no corre acá.
+  const totalPorPromo = new Map<string, number>();
+  for (const p of promocionesVigentes) {
+    const fila = (p.promocion_precios ?? []).find((f) => f.sucursal_id === sucursal.id);
+    if (fila) totalPorPromo.set(p.id, fila.precio_total);
+  }
 
-  const promosCantidad: PromoCantidadData[] = promocionesVigentes
+  const conPrecio = promocionesVigentes.filter((p) => totalPorPromo.has(p.id));
+
+  // Precio de lista de un SKU en esta sucursal: la base sobre la que se
+  // reparte el total del combo.
+  const listaPorSku = new Map(skusPos.map((s) => [s.id, s.precioOtroMedio ?? 0]));
+
+  const combos: ComboData[] = conPrecio
+    .filter((p) => p.tipo === "combo")
+    .map((p) => {
+      const items = p.promocion_items ?? [];
+      const total = totalPorPromo.get(p.id) ?? 0;
+
+      // Reparto proporcional al precio de lista de cada producto: mantiene
+      // el peso relativo de cada uno dentro del combo, así el aviso de
+      // "precio bajo el costo" sigue teniendo sentido línea por línea. Es
+      // una cuenta interna -- el ticket muestra el nombre de la promo y el
+      // total, no este desglose.
+      const listaTotal = items.reduce(
+        (acc, it) => acc + (listaPorSku.get(it.sku_id) ?? 0) * it.cantidad_requerida,
+        0,
+      );
+
+      return {
+        id: p.id,
+        nombre: p.nombre,
+        prioridad: p.prioridad,
+        items: items.map((it, i) => {
+          const pesoLista = (listaPorSku.get(it.sku_id) ?? 0) * it.cantidad_requerida;
+          // Sin precios de lista cargados no hay proporción posible: se
+          // reparte en partes iguales, que es lo menos sorprendente.
+          const porcion =
+            listaTotal > 0 ? (total * pesoLista) / listaTotal : total / Math.max(items.length, 1);
+          // El redondeo se acumula en la última línea para que la suma dé
+          // exactamente el total que se cargó, ni un peso más ni uno menos.
+          const precioItem =
+            i === items.length - 1
+              ? total -
+                items.slice(0, -1).reduce((acc, otro) => {
+                  const peso = (listaPorSku.get(otro.sku_id) ?? 0) * otro.cantidad_requerida;
+                  const parte =
+                    listaTotal > 0
+                      ? (total * peso) / listaTotal
+                      : total / Math.max(items.length, 1);
+                  return acc + Math.round(parte * 100) / 100;
+                }, 0)
+              : Math.round(porcion * 100) / 100;
+
+          return {
+            skuId: it.sku_id,
+            cantidadRequerida: it.cantidad_requerida,
+            precioPromocional: precioItem,
+            bajoCosto: bajoCostoPromo(it.sku_id, precioItem, it.cantidad_requerida),
+          };
+        }),
+      };
+    });
+
+  // En un 2x no hay nada que repartir: el total ES el precio de ese SKU por
+  // la cantidad del combo.
+  const promosCantidad: PromoCantidadData[] = conPrecio
     .filter((p) => p.tipo === "cantidad" && (p.promocion_items ?? []).length === 1)
-    .map((p) => ({
-      id: p.id,
-      nombre: p.nombre,
-      skuId: p.promocion_items[0].sku_id,
-      cantidadRequerida: p.promocion_items[0].cantidad_requerida,
-      precioPromocional: p.promocion_items[0].precio_promocional,
-      bajoCosto: bajoCostoPromo(
-        p.promocion_items[0].sku_id,
-        p.promocion_items[0].precio_promocional,
-        p.promocion_items[0].cantidad_requerida,
-      ),
-    }));
+    .map((p) => {
+      const total = totalPorPromo.get(p.id) ?? 0;
+      const item = p.promocion_items[0];
+      return {
+        id: p.id,
+        nombre: p.nombre,
+        skuId: item.sku_id,
+        cantidadRequerida: item.cantidad_requerida,
+        precioPromocional: total,
+        bajoCosto: bajoCostoPromo(item.sku_id, total, item.cantidad_requerida),
+      };
+    });
 
   return {
     skusPos,

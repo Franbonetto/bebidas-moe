@@ -11,7 +11,13 @@ export type Sucursal = { id: string; nombre: string; es_central: boolean };
 export type PromocionItemRow = {
   sku_id: string;
   cantidad_requerida: number;
-  precio_promocional: number;
+};
+
+// El precio de una promo es su total, y es por sucursal: Olavarría y
+// Laprida no manejan los mismos precios (20261010090000).
+export type PromocionPrecioRow = {
+  sucursal_id: string;
+  precio_total: number;
 };
 
 export type PromocionRow = {
@@ -23,6 +29,7 @@ export type PromocionRow = {
   vigente_hasta: string | null;
   activo: boolean;
   items: PromocionItemRow[];
+  precios: PromocionPrecioRow[];
 };
 
 function resumenItems(promocion: PromocionRow, skuPorId: Map<string, PromocionSkuOpcion>) {
@@ -30,11 +37,19 @@ function resumenItems(promocion: PromocionRow, skuPorId: Map<string, PromocionSk
     .map((item) => {
       const sku = skuPorId.get(item.sku_id);
       const nombre = sku ? `${sku.producto?.nombre} (${presentacionLabel(sku)})` : "SKU eliminado";
-      return promocion.tipo === "cantidad"
-        ? `${item.cantidad_requerida}x ${nombre} — ${formatoMoneda.format(item.precio_promocional)}`
-        : `${nombre} ${formatoMoneda.format(item.precio_promocional)}`;
+      return promocion.tipo === "cantidad" ? `${item.cantidad_requerida}x ${nombre}` : nombre;
     })
     .join(promocion.tipo === "combo" ? " + " : "");
+}
+
+// El total por sucursal, que es como se carga ahora el precio.
+function resumenPrecios(promocion: PromocionRow, sucursales: Sucursal[]) {
+  return promocion.precios
+    .map((p) => {
+      const suc = sucursales.find((s) => s.id === p.sucursal_id);
+      return `${suc?.nombre ?? "—"} ${formatoMoneda.format(p.precio_total)}`;
+    })
+    .join(" · ");
 }
 
 export function PromocionesPanel({
@@ -111,6 +126,7 @@ export function PromocionesPanel({
                   <td className="px-[14px] py-[9px]">
                     <div className="font-medium text-text">{p.nombre}</div>
                     <div className="text-[11.5px] text-text-3">{resumenItems(p, skuPorId)}</div>
+                    <div className="text-[11.5px] text-text-2">{resumenPrecios(p, sucursales)}</div>
                   </td>
                   <td className="px-[14px] py-[9px] text-text-2">{p.tipo === "combo" ? "Combo" : "Cantidad"}</td>
                   <td className="px-[14px] py-[9px] text-text-2">{sucursal ? sucursal.nombre : "Ambas"}</td>
