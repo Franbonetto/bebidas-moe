@@ -5,7 +5,10 @@ import { createClient } from "@/lib/supabase/server";
 import { facturarVentaAutomatico } from "./facturar/actions";
 
 export type LineaVenta = {
-  sku_id: string;
+  // null en un producto particular, que va con descripcion en su lugar
+  // (ver 20261009090000_producto_particular.sql).
+  sku_id: string | null;
+  descripcion?: string | null;
   cantidad: number;
   precio_unitario: number;
   precio_lista_unitario: number;

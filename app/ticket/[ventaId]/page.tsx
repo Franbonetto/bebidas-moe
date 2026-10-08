@@ -16,6 +16,9 @@ type VentaItemFila = {
   id: string;
   cantidad: number;
   precio_unitario: number;
+  // Producto particular (picada, canasta de regalería): no tiene SKU, lleva
+  // la descripción que se tipeó al venderlo.
+  descripcion: string | null;
   sku: SkuInfo | null;
 };
 
@@ -74,7 +77,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
     supabase
       .from("venta_items")
       .select(
-        `id, cantidad, precio_unitario,
+        `id, cantidad, precio_unitario, descripcion,
          sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
            producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
       )
@@ -102,7 +105,9 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
 
   const pagos = (pagosRaw ?? []) as { medio_pago: string; monto: number }[];
 
-  const items = ((itemsRaw ?? []) as unknown as VentaItemFila[]).filter((it) => it.sku);
+  const items = ((itemsRaw ?? []) as unknown as VentaItemFila[]).filter(
+    (it) => it.sku || it.descripcion,
+  );
   const facturado = comprobante?.estado === "autorizado";
 
   const qrImagen =
@@ -142,9 +147,11 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
         {items.map((it) => (
           <div key={it.id} className="flex justify-between gap-2">
             <span className="min-w-0">
-              {it.cantidad}x {it.sku!.producto?.nombre ?? "SKU eliminado"}
+              {it.cantidad}x {it.sku ? (it.sku.producto?.nombre ?? "SKU eliminado") : it.descripcion}
               <span className="block text-[11px] text-text-3">
-                {it.sku!.producto?.marca?.nombre} — {presentacionLabel(it.sku!)}
+                {it.sku
+                  ? `${it.sku.producto?.marca?.nombre ?? ""} — ${presentacionLabel(it.sku)}`
+                  : "Producto particular"}
               </span>
             </span>
             <span className="shrink-0 tabular-nums">{formatoMoneda.format(it.cantidad * it.precio_unitario)}</span>

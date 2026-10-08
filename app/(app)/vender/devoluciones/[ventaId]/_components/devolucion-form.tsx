@@ -9,7 +9,9 @@ import { formatoMoneda } from "../../../_lib/formato";
 
 export type VentaItemRow = {
   id: string;
-  skuId: string;
+  // null en un producto particular: no hay stock que reingresar, solo se
+  // devuelve la plata o se toma como valor para un cambio.
+  skuId: string | null;
   nombre: string;
   marcaNombre: string | null;
   presentacion: string;
@@ -165,15 +167,23 @@ export function DevolucionForm({
                   onChange={(e) => actualizarFila(it.id, "cantidad", e.target.value)}
                   className={inputClass}
                 />
-                <select
-                  value={estado.destino}
-                  onChange={(e) => actualizarFila(it.id, "destino", e.target.value)}
-                  className={inputClass}
-                  disabled={Number(estado.cantidad) === 0}
-                >
-                  <option value="stock">Reingresa a stock</option>
-                  <option value="merma">Va a merma</option>
-                </select>
+                {/* Un producto particular no está en el catálogo: no hay
+                    stock que reingresar ni merma que registrar. Se le
+                    devuelve la plata (o se toma como valor para un cambio) y
+                    listo. */}
+                {it.skuId === null ? (
+                  <span className="self-center text-[12.5px] text-text-3">Sin stock que reingresar</span>
+                ) : (
+                  <select
+                    value={estado.destino}
+                    onChange={(e) => actualizarFila(it.id, "destino", e.target.value)}
+                    className={inputClass}
+                    disabled={Number(estado.cantidad) === 0}
+                  >
+                    <option value="stock">Reingresa a stock</option>
+                    <option value="merma">Va a merma</option>
+                  </select>
+                )}
               </div>
             );
           })}

@@ -81,7 +81,7 @@ export async function facturarVenta(
   const { data: itemsRaw, error: errorItems } = await supabase
     .from("venta_items")
     .select(
-      `id, cantidad, precio_unitario,
+      `id, cantidad, precio_unitario, descripcion,
        sku:skus ( nombre, producto:productos ( nombre, categoria:categorias ( alicuota_iva ) ) )`,
     )
     .eq("venta_id", ventaId);
@@ -92,6 +92,11 @@ export async function facturarVenta(
     id: string;
     cantidad: number;
     precio_unitario: number;
+    // Producto particular: sin SKU, con la descripción que se tipeó al
+    // venderlo. Va a la factura tal cual, al 21% (decisión del usuario
+    // 2026-10-07: no tiene categoría de donde sacar la alícuota, y el
+    // `?? 21` de abajo ya lo resolvía).
+    descripcion: string | null;
     sku: {
       nombre: string;
       producto: { nombre: string; categoria: { alicuota_iva: number } | null } | null;
@@ -100,7 +105,7 @@ export async function facturarVenta(
 
   const items: ItemFactura[] = ((itemsRaw ?? []) as unknown as ItemFila[]).map((it) => ({
     ventaItemId: it.id,
-    descripcion: it.sku?.producto?.nombre ?? it.sku?.nombre ?? "Producto",
+    descripcion: it.descripcion ?? it.sku?.producto?.nombre ?? it.sku?.nombre ?? "Producto",
     cantidad: it.cantidad,
     precioUnitario: it.precio_unitario,
     subtotal: it.precio_unitario * it.cantidad,

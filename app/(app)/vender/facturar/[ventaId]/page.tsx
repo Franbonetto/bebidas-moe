@@ -17,6 +17,7 @@ type VentaItemFila = {
   id: string;
   cantidad: number;
   precio_unitario: number;
+  descripcion: string | null;
   sku: SkuInfo | null;
 };
 
@@ -84,7 +85,7 @@ export default async function FacturarVentaPage({
       supabase
         .from("venta_items")
         .select(
-          `id, cantidad, precio_unitario,
+          `id, cantidad, precio_unitario, descripcion,
          sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
            producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
         )
@@ -100,7 +101,9 @@ export default async function FacturarVentaPage({
       obtenerClientesFrecuentes(),
     ]);
 
-  const items = ((itemsRaw ?? []) as unknown as VentaItemFila[]).filter((it) => it.sku);
+  const items = ((itemsRaw ?? []) as unknown as VentaItemFila[]).filter(
+    (it) => it.sku || it.descripcion,
+  );
   const importeFacturable = venta.subtotal - venta.descuentos;
   const condiciones: CondicionIvaOption[] = (condicionesRaw ?? []) as CondicionIvaOption[];
 
@@ -122,9 +125,14 @@ export default async function FacturarVentaPage({
           {items.map((it) => (
             <div key={it.id} className="flex items-center justify-between border-b border-[#F1F1F3] pb-2 text-[13px] last:border-b-0 last:pb-0">
               <div className="min-w-0">
-                <p className="truncate font-medium text-text">{it.sku!.producto?.nombre ?? "SKU eliminado"}</p>
+                <p className="truncate font-medium text-text">
+                  {it.sku ? (it.sku.producto?.nombre ?? "SKU eliminado") : it.descripcion}
+                </p>
                 <p className="text-[11.5px] text-text-3">
-                  {it.sku!.producto?.marca?.nombre} — {presentacionLabel(it.sku!)} · {it.cantidad} ×{" "}
+                  {it.sku
+                    ? `${it.sku.producto?.marca?.nombre ?? ""} — ${presentacionLabel(it.sku)}`
+                    : "Producto particular"}{" "}
+                  · {it.cantidad} ×{" "}
                   {formatoMoneda.format(it.precio_unitario)}
                 </p>
               </div>

@@ -12,9 +12,10 @@ type SkuInfo = SkuPresentacion & {
 
 type VentaItemFila = {
   id: string;
-  sku_id: string;
+  sku_id: string | null;
   cantidad: number;
   precio_unitario: number;
+  descripcion: string | null;
   sku: SkuInfo | null;
 };
 
@@ -47,7 +48,7 @@ export default async function DevolucionVentaPage({
     supabase
       .from("venta_items")
       .select(
-        `id, sku_id, cantidad, precio_unitario,
+        `id, sku_id, cantidad, precio_unitario, descripcion,
          sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
            producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
       )
@@ -68,13 +69,13 @@ export default async function DevolucionVentaPage({
   }
 
   const ventaItems: VentaItemRow[] = ((ventaItemsRaw ?? []) as unknown as VentaItemFila[])
-    .filter((it) => it.sku)
+    .filter((it) => it.sku || it.descripcion)
     .map((it) => ({
       id: it.id,
       skuId: it.sku_id,
-      nombre: it.sku!.producto?.nombre ?? "SKU eliminado",
-      marcaNombre: it.sku!.producto?.marca?.nombre ?? null,
-      presentacion: presentacionLabel(it.sku!),
+      nombre: it.sku ? (it.sku.producto?.nombre ?? "SKU eliminado") : (it.descripcion ?? ""),
+      marcaNombre: it.sku ? (it.sku.producto?.marca?.nombre ?? null) : null,
+      presentacion: it.sku ? presentacionLabel(it.sku) : "Producto particular",
       cantidadVendida: it.cantidad,
       cantidadYaDevuelta: yaDevueltoPorItem.get(it.id) ?? 0,
       precioUnitario: it.precio_unitario,

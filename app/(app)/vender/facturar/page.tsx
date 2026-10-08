@@ -13,7 +13,7 @@ type VentaFila = {
   fecha: string;
   medio_pago: string;
   total: number;
-  venta_items: { cantidad: number; sku: SkuInfo | null }[];
+  venta_items: { cantidad: number; descripcion: string | null; sku: SkuInfo | null }[];
 };
 
 export default async function FacturarPage({
@@ -57,7 +57,7 @@ export default async function FacturarPage({
       .from("ventas")
       .select(
         `id, fecha, medio_pago, total,
-         venta_items ( cantidad, sku:skus ( id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, producto:productos ( nombre, marca:marcas ( nombre ) ) ) )`,
+         venta_items ( cantidad, descripcion, sku:skus ( id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, producto:productos ( nombre, marca:marcas ( nombre ) ) ) )`,
       )
       .eq("sucursal_id", sucursal.id)
       .eq("estado", "confirmada")
@@ -79,12 +79,16 @@ export default async function FacturarPage({
     total: v.total,
     estadoComprobante: estadoPorVenta.get(v.id) ?? null,
     resumen: v.venta_items
-      .filter((it) => it.sku)
-      .map((it) => `${it.cantidad}x ${it.sku!.producto?.nombre ?? ""}`)
+      .filter((it) => it.sku || it.descripcion)
+      .map((it) => `${it.cantidad}x ${it.sku ? (it.sku.producto?.nombre ?? "") : it.descripcion}`)
       .join(", "),
     textoBusqueda: v.venta_items
-      .filter((it) => it.sku)
-      .map((it) => `${it.sku!.producto?.nombre ?? ""} ${it.sku!.producto?.marca?.nombre ?? ""} ${presentacionLabel(it.sku!)}`)
+      .filter((it) => it.sku || it.descripcion)
+      .map((it) =>
+        it.sku
+          ? `${it.sku.producto?.nombre ?? ""} ${it.sku.producto?.marca?.nombre ?? ""} ${presentacionLabel(it.sku)}`
+          : (it.descripcion ?? ""),
+      )
       .join(" "),
   }));
 

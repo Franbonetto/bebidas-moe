@@ -49,6 +49,13 @@ type MedioPago = "efectivo" | "debito" | "credito" | "transferencia" | "qr";
 
 type LineaTicket = { skuId: string; cantidad: number };
 
+// Producto particular: lo que se vende y no está (ni va a estar) en el
+// catálogo -- una picada armada en el momento, una canasta de regalería con
+// vinos distintos adentro. Pedido del usuario 2026-10-07. No tiene SKU, así
+// que no mueve stock ni entra en promociones: el precio que se tipea es el
+// precio final.
+type ParticularTicket = { id: string; descripcion: string; precio: number; cantidad: number };
+
 // Pago dividido: hasta 3 medios por venta (ver
 // 20260919100000_venta_pagos.sql). Si hay más de un pago, o el único no es
 // efectivo, se pierde el precio/descuento de efectivo para toda la venta
@@ -58,6 +65,7 @@ type Pago = { medioPago: MedioPago; monto: number };
 type Ticket = {
   id: string;
   lineas: LineaTicket[];
+  particulares: ParticularTicket[];
   envaseChecked: Record<string, boolean>;
   pagos: Pago[];
   // Solo se usan en modoEnvio (ver PosClient) -- uno por ticket, para poder
@@ -67,7 +75,15 @@ type Ticket = {
 };
 
 function ticketVacio(id: string): Ticket {
-  return { id, lineas: [], envaseChecked: {}, pagos: [], motomandado: "", direccionEnvio: "" };
+  return {
+    id,
+    lineas: [],
+    particulares: [],
+    envaseChecked: {},
+    pagos: [],
+    motomandado: "",
+    direccionEnvio: "",
+  };
 }
 
 // Orden pensado para los atajos F1-F5 (pedido del usuario 2026-09-21:
@@ -168,6 +184,12 @@ export function PosClient({
   );
   const avisoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mostrarPago, setMostrarPago] = useState(false);
+  // Alta de un producto particular (picada, canasta de regalería): se pide
+  // qué es y cuánto sale, nada más. No hay catálogo detrás.
+  const [mostrarParticular, setMostrarParticular] = useState(false);
+  const [particularDescripcion, setParticularDescripcion] = useState("");
+  const [particularPrecio, setParticularPrecio] = useState("");
+  const [particularCantidad, setParticularCantidad] = useState("1");
   const primerMedioRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -178,7 +200,7 @@ export function PosClient({
   const skuPorId = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
 
   const ticketActivo = tickets.find((t) => t.id === ticketActivoId) ?? tickets[0];
-  const { lineas, envaseChecked, pagos, motomandado, direccionEnvio } = ticketActivo;
+  const { lineas, particulares, envaseChecked, pagos, motomandado, direccionEnvio } = ticketActivo;
 
   function actualizarTicketActivo(fn: (t: Ticket) => Ticket) {
     setTickets((prev) => prev.map((t) => (t.id === ticketActivoId ? fn(t) : t)));
@@ -197,7 +219,11 @@ export function PosClient({
   function cerrarTicket(id: string) {
     if (tickets.length <= 1) return;
     const ticket = tickets.find((t) => t.id === id);
-    if (ticket && ticket.lineas.length > 0 && !window.confirm("Este ticket tiene productos sin cobrar. ¿Descartarlo?")) {
+    if (
+      ticket &&
+      (ticket.lineas.length > 0 || ticket.particulares.length > 0) &&
+      !window.confirm("Este ticket tiene productos sin cobrar. ¿Descartarlo?")
+    ) {
       return;
     }
     const restantes = tickets.filter((t) => t.id !== id);
@@ -261,11 +287,22 @@ export function PosClient({
   for (const tramos of tramosPorSku.values()) {
     for (const t of tramos) totalEfectivo += t.precioUnitario * t.cantidad;
   }
+  // Un particular vale lo mismo pague como pague: no tiene categoría, así
+  // que no hay descuento por efectivo ni promoción que aplicarle.
+  const totalParticulares = particulares.reduce((acc, p) => acc + p.precio * p.cantidad, 0);
+  totalOtroMedio += totalParticulares;
+  totalEfectivo += totalParticulares;
+
   totalOtroMedio += depositoTotal;
   totalEfectivo += depositoTotal;
 
   const hayDescuento = Math.round(totalEfectivo) < Math.round(totalOtroMedio);
-  const cantidadUnidades = lineas.reduce((acc, l) => acc + l.cantidad, 0);
+  const cantidadUnidades =
+    lineas.reduce((acc, l) => acc + l.cantidad, 0) +
+    particulares.reduce((acc, p) => acc + p.cantidad, 0);
+  // Lo que decide si hay algo para cobrar: un ticket puede tener solo una
+  // picada y ninguna línea de catálogo.
+  const hayItems = lineas.length > 0 || particulares.length > 0;
 
   // Pago dividido: con más de un medio (o el único no siendo efectivo) se
   // pierde el precio de efectivo para toda la venta -- ver comentario en
@@ -391,7 +428,7 @@ export function PosClient({
       // Primer Enter con el campo vacío: abre "¿Cómo paga?" (el segundo
       // Enter que cobra de verdad se maneja a nivel global más abajo,
       // porque el modal le saca el foco a este input apenas se abre).
-      if (lineas.length > 0) setMostrarPago(true);
+      if (hayItems) setMostrarPago(true);
       return;
     }
 
@@ -456,9 +493,66 @@ export function PosClient({
     return { ok: true };
   }
 
+  // Las líneas de producto particular son iguales con cualquier medio de
+  // pago: precio final, sin promoción ni descuento.
+  function lineasParticulares(): LineaVenta[] {
+    return particulares.map((p) => ({
+      sku_id: null,
+      descripcion: p.descripcion,
+      cantidad: p.cantidad,
+      precio_unitario: p.precio,
+      precio_lista_unitario: p.precio,
+      promocion_id: null,
+      con_envase: false,
+    }));
+  }
+
+  function abrirParticular() {
+    setParticularDescripcion("");
+    setParticularPrecio("");
+    setParticularCantidad("1");
+    setMostrarParticular(true);
+  }
+
+  function agregarParticular() {
+    const descripcion = particularDescripcion.trim();
+    const precio = Number(particularPrecio);
+    const cantidad = Number(particularCantidad);
+
+    if (!descripcion) {
+      setError("Escribí qué estás vendiendo.");
+      return;
+    }
+    if (particularPrecio.trim() === "" || !Number.isFinite(precio) || precio < 0) {
+      setError("Cargá el precio del producto particular.");
+      return;
+    }
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      setError("La cantidad tiene que ser un número entero mayor a cero.");
+      return;
+    }
+
+    setError(null);
+    actualizarTicketActivo((t) => ({
+      ...t,
+      particulares: [
+        ...t.particulares,
+        { id: crypto.randomUUID(), descripcion, precio, cantidad },
+      ],
+    }));
+    setMostrarParticular(false);
+  }
+
+  function quitarParticular(id: string) {
+    actualizarTicketActivo((t) => ({
+      ...t,
+      particulares: t.particulares.filter((p) => p.id !== id),
+    }));
+  }
+
   function construirLineasVenta(esEfectivoPuro: boolean): LineaVenta[] {
     if (!esEfectivoPuro) {
-      return lineas.map((l) => {
+      return lineas.map((l): LineaVenta => {
         const sku = skuPorId.get(l.skuId);
         const precio = sku?.precioOtroMedio ?? 0;
         return {
@@ -469,7 +563,7 @@ export function PosClient({
           promocion_id: null,
           con_envase: Boolean(sku?.esRetornable && envaseChecked[l.skuId]),
         };
-      });
+      }).concat(lineasParticulares());
     }
 
     const resultado: LineaVenta[] = [];
@@ -488,7 +582,7 @@ export function PosClient({
         });
       }
     }
-    return resultado;
+    return resultado.concat(lineasParticulares());
   }
 
   function confirmar() {
@@ -496,7 +590,7 @@ export function PosClient({
       setError("La caja de hoy ya está cerrada.");
       return;
     }
-    if (lineas.length === 0) {
+    if (!hayItems) {
       setError("El ticket no tiene productos.");
       return;
     }
@@ -640,7 +734,7 @@ export function PosClient({
       }
       if (e.key === "F12") {
         e.preventDefault();
-        if (lineas.length === 0) return;
+        if (!hayItems) return;
         if (pagos.length > 0 && restante === 0) confirmar();
         else setMostrarPago(true);
         return;
@@ -990,7 +1084,7 @@ export function PosClient({
           )}
 
           <div className="flex-1 overflow-auto">
-            {lineas.length === 0 ? (
+            {!hayItems ? (
               <div className="p-[40px_20px] text-center text-text-3">
                 <p className="mb-1 text-[15px] font-medium text-text-2">Escaneá un producto para empezar</p>
                 <p className="text-[14px]">F10 buscar · 3*código cantidad · F11 nuevo ticket</p>
@@ -1108,6 +1202,44 @@ export function PosClient({
                 );
               })
             )}
+
+            {particulares.map((p) => (
+              <div
+                key={p.id}
+                className="border-b border-[#F1F1F3] bg-info-bg/30 px-[15px] py-[10px]"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[15px] font-medium text-text">{p.descripcion}</p>
+                    <p className="text-[13px] text-text-3">
+                      Producto particular · {p.cantidad} × {formatoMoneda.format(p.precio)}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span className="text-[15px] font-medium tabular-nums text-text">
+                      {formatoMoneda.format(p.precio * p.cantidad)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => quitarParticular(p.id)}
+                      className="text-[13px] text-text-3 hover:text-err"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div className="px-[15px] py-[10px]">
+              <button
+                type="button"
+                onClick={abrirParticular}
+                className="rounded-[6px] border border-border bg-bg-2 px-[11px] py-[6px] text-[13.5px] text-text-2 hover:border-moe hover:text-moe"
+              >
+                + Producto particular
+              </button>
+            </div>
           </div>
 
           <div className="shrink-0 border-t border-border px-[15px] py-[7px] text-[13px] text-text-3">
@@ -1155,7 +1287,7 @@ export function PosClient({
 
             <button
               type="button"
-              disabled={pending || lineas.length === 0}
+              disabled={pending || !hayItems}
               onClick={pagos.length > 0 && restante === 0 ? confirmar : () => setMostrarPago(true)}
               className="w-full rounded-[7px] bg-moe px-[11px] py-[11px] text-[15.5px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
             >
@@ -1181,6 +1313,97 @@ export function PosClient({
       </div>
 
       {/* ============ Modal: medio de pago ============ */}
+      {mostrarParticular && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+          onClick={() => setMostrarParticular(false)}
+        >
+          <div
+            className="w-[400px] rounded-card border border-border bg-bg p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="mb-1 text-[15.5px] font-semibold text-text">Producto particular</h2>
+            <p className="mb-3 text-[13px] text-text-3">
+              Algo que no está en el catálogo: una picada, una canasta de regalería. No descuenta
+              stock y no entra en promociones.
+            </p>
+
+            <label className="mb-[4px] block text-[12.5px] font-medium text-text-2">
+              ¿Qué estás vendiendo?
+            </label>
+            <input
+              autoFocus
+              type="text"
+              value={particularDescripcion}
+              onChange={(e) => setParticularDescripcion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  agregarParticular();
+                }
+                if (e.key === "Escape") setMostrarParticular(false);
+              }}
+              placeholder="Ej. Picada para 4 · Canasta regalería"
+              className={`${inputClass} mb-3`}
+            />
+
+            <div className="mb-3 grid grid-cols-[1fr_110px] gap-3">
+              <div>
+                <label className="mb-[4px] block text-[12.5px] font-medium text-text-2">
+                  Precio por unidad
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={particularPrecio}
+                  onChange={(e) => setParticularPrecio(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      agregarParticular();
+                    }
+                    if (e.key === "Escape") setMostrarParticular(false);
+                  }}
+                  placeholder="0"
+                  className={`${inputClass} tabular-nums`}
+                />
+              </div>
+              <div>
+                <label className="mb-[4px] block text-[12.5px] font-medium text-text-2">
+                  Cantidad
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={particularCantidad}
+                  onChange={(e) => setParticularCantidad(e.target.value)}
+                  className={`${inputClass} tabular-nums`}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setMostrarParticular(false)}
+                className="text-[13.5px] text-text-3 hover:text-text"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={agregarParticular}
+                className="rounded-[7px] bg-moe px-[14px] py-[8px] text-[13.5px] font-medium text-white hover:bg-moe/90"
+              >
+                Agregar al ticket
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {mostrarPago && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"

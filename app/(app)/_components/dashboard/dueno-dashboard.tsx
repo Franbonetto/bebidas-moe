@@ -317,7 +317,11 @@ export async function DuenoDashboard() {
     : { data: [] as { venta_id: string; sku_id: string; cantidad: number }[] };
 
   const sucursalPorVentaId = new Map(ventas30List.map((v) => [v.id, v.sucursal_id]));
-  const itemsVendidosList = (itemsVendidos ?? []) as { venta_id: string; sku_id: string; cantidad: number }[];
+  // Los productos particulares (sku_id null) quedan fuera de los rankings por
+  // SKU: no son un producto del catálogo. Se muestran en su propio bloque.
+  const itemsVendidosList = (
+    (itemsVendidos ?? []) as { venta_id: string; sku_id: string | null; cantidad: number }[]
+  ).filter((it): it is { venta_id: string; sku_id: string; cantidad: number } => it.sku_id != null);
 
   // Caja del día + vendido hoy/mes/ticket promedio, por sucursal.
   type CajaFila = {
@@ -543,6 +547,33 @@ export async function DuenoDashboard() {
   const maxMerma = barsMermas[0]?.[1].unidades ?? 0;
   const mermaUnidades = barsMermas.reduce((acc, [, d]) => acc + d.unidades, 0);
   const mermaValor = barsMermas.reduce((acc, [, d]) => acc + d.valor, 0);
+
+  // Productos particulares vendidos en los ultimos 30 dias (pedido del
+  // usuario 2026-10-07). No tienen SKU, asi que no aparecen en ningun
+  // ranking de productos ni mueven stock: si no se muestran acá, es plata
+  // que entró y no figura en ninguna parte del panel.
+  const { data: particulares30 } = await supabase
+    .from("venta_items")
+    .select("descripcion, cantidad, precio_unitario, venta:ventas ( fecha, estado, sucursal_id )")
+    .is("sku_id", null)
+    .limit(500);
+
+  const particularesList = (
+    (particulares30 ?? []) as unknown as {
+      descripcion: string | null;
+      cantidad: number;
+      precio_unitario: number;
+      venta: { fecha: string; estado: string; sucursal_id: string } | null;
+    }[]
+  ).filter((p) => p.venta?.estado === "confirmada" && p.venta.fecha >= cutoff30);
+
+  const particularesTotal = particularesList.reduce(
+    (acc, p) => acc + p.precio_unitario * p.cantidad,
+    0,
+  );
+  const particularesUltimos = [...particularesList]
+    .sort((a, b) => (b.venta?.fecha ?? "").localeCompare(a.venta?.fecha ?? ""))
+    .slice(0, 6);
 
   const movimientosRecientes = movimientosList.slice(0, 8);
 
@@ -783,6 +814,40 @@ export async function DuenoDashboard() {
                   <b className="font-medium tabular-nums text-text">{mermaUnidades} unidades</b> ·{" "}
                   {formatoMoneda.format(mermaValor)} a costo.{" "}
                   <Link href="/mermas" className="font-medium text-moe hover:underline">
+                    Ver el detalle
+                  </Link>
+                </p>
+              </div>
+            )}
+          </Card>
+
+          <Card title="Productos particulares · últimos 30 días">
+            {particularesList.length === 0 ? (
+              <EmptyState
+                title="Sin productos particulares vendidos"
+                sub="Acá aparece lo que se cobró sin estar en el catálogo: picadas, canastas, cosas mixtas."
+              />
+            ) : (
+              <div className="flex flex-col gap-[7px] p-[14px]">
+                {particularesUltimos.map((p, i) => (
+                  <div key={i} className="flex items-baseline justify-between gap-3 text-[13px]">
+                    <span className="min-w-0 truncate text-text-2">
+                      {p.cantidad > 1 && <span className="tabular-nums">{p.cantidad}× </span>}
+                      {p.descripcion}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-text">
+                      {formatoMoneda.format(p.precio_unitario * p.cantidad)}
+                    </span>
+                  </div>
+                ))}
+                <p className="mt-[3px] border-t border-border pt-[8px] text-[12.5px] text-text-2">
+                  Total:{" "}
+                  <b className="font-medium tabular-nums text-text">
+                    {formatoMoneda.format(particularesTotal)}
+                  </b>{" "}
+                  en {particularesList.length}{" "}
+                  {particularesList.length === 1 ? "venta" : "ventas"}.{" "}
+                  <Link href="/reportes/particulares" className="font-medium text-moe hover:underline">
                     Ver el detalle
                   </Link>
                 </p>

@@ -132,6 +132,15 @@ const NAV: NavItem[] = [
     icon: "M19 5L5 19M6.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM17.5 20a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
   },
   {
+    label: "Particulares",
+    href: "/reportes/particulares",
+    seccion: "catalogo",
+    // Lo que se cobró sin estar en el catálogo. Vive bajo /reportes, que es
+    // solo del dueño (ver reportes/layout.tsx).
+    soloDueno: true,
+    icon: "M12 2l2.4 7.4H22l-6 4.4 2.3 7.2-6.3-4.6-6.3 4.6L7.9 13.8 2 9.4h7.6z",
+  },
+  {
     label: "Usuarios",
     href: "/usuarios",
     seccion: "catalogo",

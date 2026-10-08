@@ -87,6 +87,8 @@ export async function cargarDatosVenta(
   const vendidosPorSku = new Map<string, number>();
   for (const v of ventasRecientes ?? []) {
     for (const it of v.venta_items ?? []) {
+      // Un producto particular no tiene SKU: no cuenta para "lo más vendido".
+      if (!it.sku_id) continue;
       vendidosPorSku.set(it.sku_id, (vendidosPorSku.get(it.sku_id) ?? 0) + it.cantidad);
     }
   }
