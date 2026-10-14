@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { CerrarCajaForm } from "./_components/cerrar-caja-form";
 import { formatoMoneda } from "../_lib/formato";
@@ -20,11 +21,13 @@ export default async function CajaPage({
   const { sucursal: sucursalParam } = await searchParams;
   const supabase = await createClient();
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
   const operables = await Promise.all(sucursalesList.map((s) => operaSucursal(supabase, s.id)));
@@ -63,29 +66,33 @@ export default async function CajaPage({
   const nombreCierre = nombreEmpleado(caja?.empleado_cierre);
 
   // Quién cierra la caja: puede ser otra persona que la que la abrió.
-  const { data: empleados } = await supabase
-    .from("empleados")
-    .select("id, nombre")
-    .eq("sucursal_id", sucursal.id)
-    .eq("activo", true)
-    .order("nombre");
+  const { data: empleados } = await traerTodo(
+    supabase
+      .from("empleados")
+      .select("id, nombre")
+      .eq("sucursal_id", sucursal.id)
+      .eq("activo", true)
+      .order("nombre"),
+  );
 
   // Desglose por medio: sale de venta_pagos, no de ventas.medio_pago/total
   // -- una venta "mixta" (pago dividido, ver
   // 20260919100000_venta_pagos.sql) puede tener una porción real en
   // efectivo aunque no haya tenido el descuento de efectivo.
   const { data: ventaIdsHoy } = caja?.id
-    ? await supabase.from("ventas").select("id").eq("caja_id", caja.id).eq("estado", "confirmada")
+    ? await traerTodo(supabase.from("ventas").select("id").eq("caja_id", caja.id).eq("estado", "confirmada"))
     : { data: [] };
 
   const idsVentasHoy = (ventaIdsHoy ?? []).map((v) => v.id);
 
   const { data: pagosHoy } = idsVentasHoy.length > 0
-    ? await supabase.from("venta_pagos").select("medio_pago, monto").in("venta_id", idsVentasHoy)
+    ? await traerTodoPorLotes(idsVentasHoy, (lote) =>
+        supabase.from("venta_pagos").select("medio_pago, monto").in("venta_id", lote),
+      )
     : { data: [] };
 
   const { data: movimientosHoy } = caja?.id
-    ? await supabase.from("movimientos_caja").select("tipo, monto").eq("caja_id", caja.id)
+    ? await traerTodo(supabase.from("movimientos_caja").select("tipo, monto").eq("caja_id", caja.id))
     : { data: [] };
 
   const cantidadVentasHoy = idsVentasHoy.length;
@@ -97,11 +104,13 @@ export default async function CajaPage({
   // distinto mientras la caja sigue abierta que el que va a quedar al
   // cerrarla.
   const { data: devolucionesHoy } = caja?.id
-    ? await supabase
-        .from("devoluciones")
-        .select("monto_reembolsado")
-        .eq("caja_id", caja.id)
-        .eq("resolucion", "dinero")
+    ? await traerTodo(
+        supabase
+          .from("devoluciones")
+          .select("monto_reembolsado")
+          .eq("caja_id", caja.id)
+          .eq("resolucion", "dinero"),
+      )
     : { data: [] };
 
   // Envíos discriminados aparte solo para informar cuánto del total fue
@@ -109,7 +118,9 @@ export default async function CajaPage({
   // contado arriba en totalPorMedio, cada envío suma a su medio de pago
   // real como cualquier otra venta, no hay una caja de "envíos" aparte.
   const { data: enviosHoy } = caja?.id
-    ? await supabase.from("ventas").select("total").eq("caja_id", caja.id).eq("estado", "confirmada").eq("es_envio", true)
+    ? await traerTodo(
+        supabase.from("ventas").select("total").eq("caja_id", caja.id).eq("estado", "confirmada").eq("es_envio", true),
+      )
     : { data: [] };
 
   const enviosTotal = (enviosHoy ?? []).reduce((acc, v) => acc + v.total, 0);

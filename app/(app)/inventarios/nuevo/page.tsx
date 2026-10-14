@@ -1,16 +1,19 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { NuevoInventarioForm, type CatalogoSku } from "../_components/nuevo-inventario-form";
 
 export default async function NuevoInventarioPage() {
   const supabase = await createClient();
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
   const operables = await Promise.all(sucursalesList.map((s) => operaSucursal(supabase, s.id)));
@@ -22,14 +25,16 @@ export default async function NuevoInventarioPage() {
 
   const [{ data: categorias }, { data: skus }, abiertosPorSucursal, sugeridosPorSucursal] =
     await Promise.all([
-      supabase.from("categorias").select("id, nombre").eq("activo", true).order("nombre"),
-      supabase
-        .from("skus")
-        .select(
-          `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           producto:productos ( nombre, marca:marcas ( nombre ) )`,
-        )
-        .eq("activo", true),
+      traerTodo(supabase.from("categorias").select("id, nombre").eq("activo", true).order("nombre")),
+      traerTodo(
+        supabase
+          .from("skus")
+          .select(
+            `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+             producto:productos ( nombre, marca:marcas ( nombre ) )`,
+          )
+          .eq("activo", true),
+      ),
       Promise.all(
         sucursalesOperables.map(async (s) => {
           const { data } = await supabase

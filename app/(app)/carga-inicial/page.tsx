@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal, veCostos } from "@/lib/permisos";
 import type { SkuCatalogo } from "@/app/(app)/compras/_components/sku-picker";
 import { CargaInicialForm } from "./_components/carga-inicial-form";
@@ -14,11 +15,13 @@ export default async function CargaInicialPage() {
     redirect("/productos");
   }
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
   const operables = await Promise.all(sucursalesList.map((s) => operaSucursal(supabase, s.id)));
@@ -29,18 +32,22 @@ export default async function CargaInicialPage() {
   }
 
   const [{ data: skus }, { data: proveedores }] = await Promise.all([
-    supabase
-      .from("skus")
-      .select(
-        `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true),
-    supabase
-      .from("proveedores")
-      .select("id, razon_social, nombre_comercial")
-      .eq("activo", true)
-      .order("razon_social"),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+           producto:productos ( nombre, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
+    traerTodo(
+      supabase
+        .from("proveedores")
+        .select("id, razon_social, nombre_comercial")
+        .eq("activo", true)
+        .order("razon_social"),
+    ),
   ]);
 
   return (

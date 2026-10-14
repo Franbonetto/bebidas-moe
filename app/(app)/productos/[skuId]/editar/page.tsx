@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { veCostos } from "@/lib/permisos";
 import {
   ProductoSkuForm,
@@ -65,36 +66,49 @@ export default async function EditarSkuPage({ params }: { params: Promise<{ skuI
       )
       .eq("id", skuId)
       .maybeSingle(),
-    supabase.from("marcas").select("id, nombre").eq("activo", true).order("nombre"),
-    supabase
-      .from("categorias")
-      .select("id, nombre, categoria_padre_id")
-      .eq("activo", true)
-      .order("nombre"),
-    supabase
-      .from("productos")
-      .select("id, nombre, marca:marcas ( nombre )")
-      .eq("activo", true)
-      .order("nombre"),
-    supabase
-      .from("tipos_envase")
-      .select("id, nombre, es_generico, valor_deposito")
-      .eq("activo", true)
-      .order("nombre"),
-    supabase
-      .from("skus")
-      .select(
-        `id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true)
-      .neq("id", skuId),
-    supabase
-      .from("proveedores")
-      .select("id, razon_social, nombre_comercial")
-      .eq("activo", true)
-      .order("razon_social"),
-    supabase.from("proveedor_skus").select("proveedor_id, costo_referencia").eq("sku_id", skuId),
+    traerTodo(supabase.from("marcas").select("id, nombre").eq("activo", true).order("nombre")),
+    traerTodo(
+      supabase
+        .from("categorias")
+        .select("id, nombre, categoria_padre_id")
+        .eq("activo", true)
+        .order("nombre"),
+    ),
+    traerTodo(
+      supabase
+        .from("productos")
+        .select("id, nombre, marca:marcas ( nombre )")
+        .eq("activo", true)
+        .order("nombre"),
+    ),
+    traerTodo(
+      supabase
+        .from("tipos_envase")
+        .select("id, nombre, es_generico, valor_deposito")
+        .eq("activo", true)
+        .order("nombre"),
+    ),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+           producto:productos ( nombre, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true)
+        .neq("id", skuId),
+    ),
+    traerTodo(
+      supabase
+        .from("proveedores")
+        .select("id, razon_social, nombre_comercial")
+        .eq("activo", true)
+        .order("razon_social"),
+    ),
+    traerTodo(supabase.from("proveedor_skus").select("proveedor_id, costo_referencia").eq("sku_id", skuId), [
+      "proveedor_id",
+      "sku_id",
+    ]),
   ]);
 
   const sku = skuRaw as unknown as SkuFila | null;

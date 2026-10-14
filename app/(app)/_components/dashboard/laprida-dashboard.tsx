@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { calcularProductosPorVencer, haceDias } from "./lib";
 import {
@@ -45,14 +46,19 @@ export async function LapridaDashboard() {
     { data: transferenciasEnTransito },
     { data: historial },
   ] = await Promise.all([
-    supabase
-      .from("skus")
-      .select(
-        `id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true),
-    supabase.from("stock_sucursal").select("sku_id, cantidad").eq("sucursal_id", laprida.id),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
+           producto:productos ( nombre, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
+    traerTodo(supabase.from("stock_sucursal").select("sku_id, cantidad").eq("sucursal_id", laprida.id), [
+      "sku_id",
+      "sucursal_id",
+    ]),
     supabase
       .from("pedidos")
       .select("id, numero, pedido_items ( cantidad_solicitada )")
@@ -62,20 +68,24 @@ export async function LapridaDashboard() {
       .limit(1)
       .maybeSingle(),
     supabase.rpc("sugerir_pedido", { p_sucursal_destino_id: laprida.id }),
-    supabase
-      .from("transferencias")
-      .select(
-        `id, pedido_id, fecha_despacho, observaciones,
-         pedido:pedidos ( numero ),
-         transferencia_items ( cantidad_despachada )`,
-      )
-      .eq("sucursal_destino_id", laprida.id)
-      .eq("estado", "en_transito")
-      .order("fecha_despacho", { ascending: true }),
-    supabase
-      .from("historial_costos")
-      .select("sku_id, cantidad, fecha, fecha_vencimiento")
-      .order("fecha", { ascending: false }),
+    traerTodo(
+      supabase
+        .from("transferencias")
+        .select(
+          `id, pedido_id, fecha_despacho, observaciones,
+           pedido:pedidos ( numero ),
+           transferencia_items ( cantidad_despachada )`,
+        )
+        .eq("sucursal_destino_id", laprida.id)
+        .eq("estado", "en_transito")
+        .order("fecha_despacho", { ascending: true }),
+    ),
+    traerTodo(
+      supabase
+        .from("historial_costos")
+        .select("sku_id, cantidad, fecha, fecha_vencimiento")
+        .order("fecha", { ascending: false }),
+    ),
   ]);
 
   const skusList = (skus ?? []) as unknown as SkuInfo[];

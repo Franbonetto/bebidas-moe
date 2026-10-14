@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { cargarDatosVenta } from "./_lib/cargar-datos-venta";
 import { PosClient } from "./_components/pos-client";
@@ -12,11 +13,13 @@ export default async function VenderPage({
   const { sucursal: sucursalParam } = await searchParams;
   const supabase = await createClient();
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre, es_central")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre, es_central")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
   const operables = await Promise.all(sucursalesList.map((s) => operaSucursal(supabase, s.id)));
@@ -38,12 +41,14 @@ export default async function VenderPage({
 
   // Quién abre la caja (empleados de esta sucursal), que no es lo mismo que
   // con qué cuenta se entró al sistema -- ver 20261008090000_empleado_caja.
-  const { data: empleados } = await supabase
-    .from("empleados")
-    .select("id, nombre")
-    .eq("sucursal_id", sucursal.id)
-    .eq("activo", true)
-    .order("nombre");
+  const { data: empleados } = await traerTodo(
+    supabase
+      .from("empleados")
+      .select("id, nombre")
+      .eq("sucursal_id", sucursal.id)
+      .eq("activo", true)
+      .order("nombre"),
+  );
 
   return (
     <div>

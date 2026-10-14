@@ -1,15 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { InventariosTable, type InventarioRow } from "./_components/inventarios-table";
 
 export default async function InventariosPage() {
   const supabase = await createClient();
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
   const operables = await Promise.all(
@@ -20,16 +23,18 @@ export default async function InventariosPage() {
     .map((s) => s.id);
 
   const { data: inventarios } = sucursalIdsOperables.length
-    ? await supabase
-        .from("inventarios")
-        .select(
-          `id, tipo, estado, fecha_inicio, fecha_fin,
-           sucursal:sucursales ( nombre ),
-           categoria:categorias ( nombre ),
-           inventario_items ( diferencia )`,
-        )
-        .in("sucursal_id", sucursalIdsOperables)
-        .order("fecha_inicio", { ascending: false })
+    ? await traerTodo(
+        supabase
+          .from("inventarios")
+          .select(
+            `id, tipo, estado, fecha_inicio, fecha_fin,
+             sucursal:sucursales ( nombre ),
+             categoria:categorias ( nombre ),
+             inventario_items ( diferencia )`,
+          )
+          .in("sucursal_id", sucursalIdsOperables)
+          .order("fecha_inicio", { ascending: false }),
+      )
     : { data: [] };
 
   return (

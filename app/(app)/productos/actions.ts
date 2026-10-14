@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 
 export type NuevoProductoInput = {
   producto: { id: string } | { nombreNuevo: string };
@@ -77,7 +78,9 @@ async function insertarSku(
 // ignoran para esta cuenta: conviven sin molestar.
 export async function siguienteCodigoInterno(): Promise<string> {
   const supabase = await createClient();
-  const { data } = await supabase.from("skus").select("codigo_interno");
+  // Sin paginar, la cuenta miraba solo los primeros 1000 codigos y volvia a
+  // entregar uno ya usado: el SKU nuevo chocaba con el unique de la tabla.
+  const { data } = await traerTodo(supabase.from("skus").select("codigo_interno"));
 
   const maximo = (data ?? []).reduce((acc, fila) => {
     const codigo = (fila.codigo_interno ?? "").trim();

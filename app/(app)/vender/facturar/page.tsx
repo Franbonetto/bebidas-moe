@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { BuscarVentaFacturarList, type VentaFacturarRow } from "./_components/buscar-venta-facturar-list";
@@ -27,10 +28,12 @@ export default async function FacturarPage({
   // Cualquier sucursal donde el usuario opere puede aparecer acá -- la
   // pantalla igual va a avisar si a esa sucursal le falta el punto de
   // venta ARCA (ver "No hay punto de venta" más abajo / configuración).
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre")
-    .eq("activo", true);
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre")
+      .eq("activo", true),
+  );
 
   const sucursalesList = sucursales ?? [];
   const operables = await Promise.all(
@@ -53,18 +56,21 @@ export default async function FacturarPage({
   desde.setDate(desde.getDate() - 90);
 
   const [{ data: ventasRaw }, { data: comprobantesRaw }] = await Promise.all([
-    supabase
-      .from("ventas")
-      .select(
-        `id, fecha, medio_pago, total,
-         venta_items ( cantidad, descripcion, sku:skus ( id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, producto:productos ( nombre, marca:marcas ( nombre ) ) ) )`,
-      )
-      .eq("sucursal_id", sucursal.id)
-      .eq("estado", "confirmada")
-      .gte("fecha", desde.toISOString())
-      .order("fecha", { ascending: false })
-      .limit(300),
-    supabase.from("comprobantes_fiscales").select("venta_id, estado"),
+    // Sin tope de filas: con .limit(300) una venta de los ultimos 90 dias
+    // podia no aparecer en la lista para facturar.
+    traerTodo(
+      supabase
+        .from("ventas")
+        .select(
+          `id, fecha, medio_pago, total,
+           venta_items ( cantidad, descripcion, sku:skus ( id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, producto:productos ( nombre, marca:marcas ( nombre ) ) ) )`,
+        )
+        .eq("sucursal_id", sucursal.id)
+        .eq("estado", "confirmada")
+        .gte("fecha", desde.toISOString())
+        .order("fecha", { ascending: false }),
+    ),
+    traerTodo(supabase.from("comprobantes_fiscales").select("venta_id, estado")),
   ]);
 
   const estadoPorVenta = new Map<string, string>();

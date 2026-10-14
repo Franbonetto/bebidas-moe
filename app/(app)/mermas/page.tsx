@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import type { SkuCatalogo } from "@/app/(app)/compras/_components/sku-picker";
 import { MermaForm } from "./_components/merma-form";
@@ -10,29 +11,35 @@ import { MermasRecientes, type MermaFila } from "./_components/mermas-recientes"
 export default async function MermasPage() {
   const supabase = await createClient();
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
   const operables = await Promise.all(sucursalesList.map((s) => operaSucursal(supabase, s.id)));
   const sucursalesOperables = sucursalesList.filter((_, i) => operables[i]);
 
   const [{ data: skus }, { data: empleados }, { data: mermas }] = await Promise.all([
-    supabase
-      .from("skus")
-      .select(
-        `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true),
-    supabase
-      .from("empleados")
-      .select("id, nombre, sucursal_id")
-      .eq("activo", true)
-      .order("nombre"),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+           producto:productos ( nombre, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
+    traerTodo(
+      supabase
+        .from("empleados")
+        .select("id, nombre, sucursal_id")
+        .eq("activo", true)
+        .order("nombre"),
+    ),
     supabase
       .from("mermas")
       .select(

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import {
   MOTIVO_INVENTARIO_LABEL,
   type MotivoInventario,
@@ -234,54 +235,79 @@ export async function DuenoDashboard() {
     { data: ventas30 },
     { data: pedidoCompraReciente },
   ] = await Promise.all([
-    supabase.from("sucursales").select("id, nombre, es_central").eq("activo", true).order("es_central", { ascending: false }),
-    supabase
-      .from("skus")
-      .select(
-        `id, nombre, stock_minimo, costo_actual, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-         producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
-      )
-      .eq("activo", true),
-    supabase.from("stock_sucursal").select("sku_id, sucursal_id, cantidad"),
-    supabase
-      .from("movimientos_stock")
-      .select(
-        `id, tipo, cantidad, fecha, motivo, sku_id,
-         usuario:usuarios ( nombre ), sucursal:sucursales ( nombre ),
-         sku:skus ( nombre, producto:productos ( nombre ) )`,
-      )
-      .order("fecha", { ascending: false }),
-    supabase
-      .from("historial_costos")
-      .select("sku_id, costo_unitario, cantidad, fecha, fecha_vencimiento")
-      .order("fecha", { ascending: false }),
+    traerTodo(
+      supabase.from("sucursales").select("id, nombre, es_central").eq("activo", true).order("es_central", { ascending: false }),
+    ),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, nombre, stock_minimo, costo_actual, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+           producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
+    traerTodo(supabase.from("stock_sucursal").select("sku_id, sucursal_id, cantidad"), [
+      "sku_id",
+      "sucursal_id",
+    ]),
+    traerTodo(
+      supabase
+        .from("movimientos_stock")
+        .select(
+          `id, tipo, cantidad, fecha, motivo, sku_id,
+           usuario:usuarios ( nombre ), sucursal:sucursales ( nombre ),
+           sku:skus ( nombre, producto:productos ( nombre ) )`,
+        )
+        .order("fecha", { ascending: false }),
+    ),
+    traerTodo(
+      supabase
+        .from("historial_costos")
+        .select("sku_id, costo_unitario, cantidad, fecha, fecha_vencimiento")
+        .order("fecha", { ascending: false }),
+    ),
     // Sin filtro de fecha acá: fecha_factura es opcional (compra-form.tsx la
     // manda null si no se cargó) y un gte() contra una columna null la
     // descarta en silencio. El recorte por mes se hace después, en JS, con
     // fallback a la primera recepción cuando no hay fecha_factura.
-    supabase.from("compras").select("id, total, estado, fecha_factura").neq("estado", "borrador"),
-    supabase.from("recepciones_compra").select("compra_id, fecha"),
-    supabase.from("transferencias").select("id").eq("estado", "en_transito"),
-    supabase.from("pedidos").select("id").not("estado", "in", "(borrador,cerrado)"),
-    supabase.from("inventarios").select("id").eq("estado", "cerrado").gte("fecha_fin", cutoff30),
-    supabase
-      .from("cajas")
-      .select("sucursal_id, estado, monto_apertura, cantidad_tickets, ventas ( total )")
-      .eq("fecha", hoy),
-    supabase
-      .from("precios")
-      .select("sku_id, precio_base, actualizado_en, usuario:usuarios ( nombre )")
-      .gte("actualizado_en", cutoff7)
-      .order("actualizado_en", { ascending: false }),
-    supabase
-      .from("precios_sucursal")
-      .select("sku_id, sucursal_id, precio_override, actualizado_en, usuario:usuarios ( nombre )")
-      .gte("actualizado_en", cutoff7)
-      .order("actualizado_en", { ascending: false }),
-    supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioHoy.toISOString()),
-    supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioSemana.toISOString()),
-    supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioMes.toISOString()),
-    supabase.from("ventas").select("id, sucursal_id, total").eq("estado", "confirmada").gte("fecha", cutoff30),
+    traerTodo(supabase.from("compras").select("id, total, estado, fecha_factura").neq("estado", "borrador")),
+    traerTodo(supabase.from("recepciones_compra").select("compra_id, fecha")),
+    traerTodo(supabase.from("transferencias").select("id").eq("estado", "en_transito")),
+    traerTodo(supabase.from("pedidos").select("id").not("estado", "in", "(borrador,cerrado)")),
+    traerTodo(supabase.from("inventarios").select("id").eq("estado", "cerrado").gte("fecha_fin", cutoff30)),
+    traerTodo(
+      supabase
+        .from("cajas")
+        .select("sucursal_id, estado, monto_apertura, cantidad_tickets, ventas ( total )")
+        .eq("fecha", hoy),
+    ),
+    traerTodo(
+      supabase
+        .from("precios")
+        .select("sku_id, precio_base, actualizado_en, usuario:usuarios ( nombre )")
+        .gte("actualizado_en", cutoff7)
+        .order("actualizado_en", { ascending: false }),
+      "sku_id",
+    ),
+    traerTodo(
+      supabase
+        .from("precios_sucursal")
+        .select("sku_id, sucursal_id, precio_override, actualizado_en, usuario:usuarios ( nombre )")
+        .gte("actualizado_en", cutoff7)
+        .order("actualizado_en", { ascending: false }),
+      ["sucursal_id", "sku_id"],
+    ),
+    traerTodo(
+      supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioHoy.toISOString()),
+    ),
+    traerTodo(
+      supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioSemana.toISOString()),
+    ),
+    traerTodo(
+      supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioMes.toISOString()),
+    ),
+    traerTodo(supabase.from("ventas").select("id, sucursal_id, total").eq("estado", "confirmada").gte("fecha", cutoff30)),
     // "Pedido de la semana": lo que la encargada de Olavarría arma para que
     // el dueño sepa qué pedirle a cada proveedor (pedidos_compra, bloque 9
     // de pedidos.md) -- pedido del usuario 2026-09-22, no confundir con
@@ -312,8 +338,12 @@ export async function DuenoDashboard() {
   // sucursal -- se busca aparte porque depende de los ids de ventas30.
   const ventas30List = (ventas30 ?? []) as { id: string; sucursal_id: string; total: number }[];
   const ventaIds = ventas30List.map((v) => v.id);
+  // Por lotes: 30 dias de ventas son miles de ids y un .in() con todos
+  // ellos se pasa del largo maximo de la URL (la request falla entera).
   const { data: itemsVendidos } = ventaIds.length
-    ? await supabase.from("venta_items").select("venta_id, sku_id, cantidad").in("venta_id", ventaIds)
+    ? await traerTodoPorLotes(ventaIds, (lote) =>
+        supabase.from("venta_items").select("venta_id, sku_id, cantidad").in("venta_id", lote),
+      )
     : { data: [] as { venta_id: string; sku_id: string; cantidad: number }[] };
 
   const sucursalPorVentaId = new Map(ventas30List.map((v) => [v.id, v.sucursal_id]));
@@ -502,11 +532,13 @@ export async function DuenoDashboard() {
   // Diferencias de inventario por motivo, últimos 30 días.
   const idsInventariosCerrados = (inventariosCerrados30d ?? []).map((i) => i.id);
   const { data: itemsConDiferencia } = idsInventariosCerrados.length
-    ? await supabase
-        .from("inventario_items")
-        .select("motivo, diferencia")
-        .in("inventario_id", idsInventariosCerrados)
-        .neq("diferencia", 0)
+    ? await traerTodoPorLotes(idsInventariosCerrados, (lote) =>
+        supabase
+          .from("inventario_items")
+          .select("motivo, diferencia")
+          .in("inventario_id", lote)
+          .neq("diferencia", 0),
+      )
     : { data: [] as { motivo: MotivoInventario | null; diferencia: number }[] };
 
   const porMotivo = new Map<string, { count: number; unidades: number }>();
@@ -524,10 +556,9 @@ export async function DuenoDashboard() {
   // merma se carga a mano y es justamente donde se puede esconder un
   // faltante, así que el dueño tiene que verla sin ir a buscarla: si
   // aparecen seis roturas de la misma marca cara, se nota acá.
-  const { data: mermas30 } = await supabase
-    .from("mermas")
-    .select("cantidad, motivo, sku_id")
-    .gte("fecha", cutoff30);
+  const { data: mermas30 } = await traerTodo(
+    supabase.from("mermas").select("cantidad, motivo, sku_id").gte("fecha", cutoff30),
+  );
 
   const porMotivoMerma = new Map<string, { unidades: number; valor: number }>();
   for (const merma of (mermas30 ?? []) as {
@@ -552,11 +583,14 @@ export async function DuenoDashboard() {
   // usuario 2026-10-07). No tienen SKU, asi que no aparecen en ningun
   // ranking de productos ni mueven stock: si no se muestran acá, es plata
   // que entró y no figura en ninguna parte del panel.
-  const { data: particulares30 } = await supabase
-    .from("venta_items")
-    .select("descripcion, cantidad, precio_unitario, venta:ventas ( fecha, estado, sucursal_id )")
-    .is("sku_id", null)
-    .limit(500);
+  // Sin tope de filas: con .limit(500) se perdian ventas de particulares y
+  // el total de la tarjeta quedaba por debajo de lo que realmente entro.
+  const { data: particulares30 } = await traerTodo(
+    supabase
+      .from("venta_items")
+      .select("descripcion, cantidad, precio_unitario, venta:ventas ( fecha, estado, sucursal_id )")
+      .is("sku_id", null),
+  );
 
   const particularesList = (
     (particulares30 ?? []) as unknown as {

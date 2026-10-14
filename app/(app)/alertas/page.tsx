@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { operaCentral, veCostos } from "@/lib/permisos";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { calcularPrecioVenta, type SkuParaPrecio, type SucursalParaPrecio } from "@/lib/precios";
@@ -46,10 +47,10 @@ export default async function AlertasPage() {
   // elegir dashboard.
   const rol: "dueno" | "olavarria" | "laprida" = esDuenoRol ? "dueno" : central ? "olavarria" : "laprida";
 
-  const { data: preferenciasRaw } = await supabase
-    .from("preferencias_alerta")
-    .select("categoria, visible")
-    .eq("usuario_id", user!.id);
+  const { data: preferenciasRaw } = await traerTodo(
+    supabase.from("preferencias_alerta").select("categoria, visible").eq("usuario_id", user!.id),
+    ["usuario_id", "categoria"],
+  );
   const ocultas = new Set(
     ((preferenciasRaw ?? []) as { categoria: CategoriaAlerta; visible: boolean }[])
       .filter((p) => !p.visible)
@@ -62,10 +63,12 @@ export default async function AlertasPage() {
     ]),
   ) as Partial<Record<CategoriaAlerta, boolean>>;
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre, es_central")
-    .eq("activo", true);
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre, es_central")
+      .eq("activo", true),
+  );
   const sucursalesList = (sucursales ?? []) as Sucursal[];
   const olavarria = sucursalesList.find((s) => s.es_central);
   const laprida = sucursalesList.find((s) => !s.es_central);
@@ -94,79 +97,109 @@ export default async function AlertasPage() {
     { data: recargosSku },
     { data: descuentosEfectivo },
   ] = await Promise.all([
-    supabase
-      .from("skus")
-      .select(
-        `id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
-         costo_actual,
-         producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true),
-    supabase
-      .from("stock_sucursal")
-      .select("sku_id, sucursal_id, cantidad")
-      .in(
-        "sucursal_id",
-        sucursalesStock.map((s) => s.id),
-      ),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
+           costo_actual,
+           producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
+    traerTodo(
+      supabase
+        .from("stock_sucursal")
+        .select("sku_id, sucursal_id, cantidad")
+        .in(
+          "sucursal_id",
+          sucursalesStock.map((s) => s.id),
+        ),
+      ["sku_id", "sucursal_id"],
+    ),
     // Transferencia en transito sin recibir: solo Laprida es destino en el
     // flujo unidireccional (arquitectura.md 1.5) -- Olavarria nunca la ve.
     rol !== "olavarria"
-      ? supabase
-          .from("transferencias")
-          .select(`id, pedido_id, fecha_despacho, pedido:pedidos ( numero ), transferencia_items ( cantidad_despachada )`)
-          .eq("sucursal_destino_id", laprida.id)
-          .eq("estado", "en_transito")
-          .order("fecha_despacho", { ascending: true })
+      ? traerTodo(
+          supabase
+            .from("transferencias")
+            .select(`id, pedido_id, fecha_despacho, pedido:pedidos ( numero ), transferencia_items ( cantidad_despachada )`)
+            .eq("sucursal_destino_id", laprida.id)
+            .eq("estado", "en_transito")
+            .order("fecha_despacho", { ascending: true }),
+        )
       : Promise.resolve({ data: [] }),
     rol !== "laprida"
-      ? supabase
-          .from("pedidos")
-          .select("id, numero, fecha_envio, pedido_items ( cantidad_solicitada )")
-          .eq("sucursal_origen_id", olavarria.id)
-          .eq("estado", "enviado")
-          .order("fecha_envio", { ascending: true })
+      ? traerTodo(
+          supabase
+            .from("pedidos")
+            .select("id, numero, fecha_envio, pedido_items ( cantidad_solicitada )")
+            .eq("sucursal_origen_id", olavarria.id)
+            .eq("estado", "enviado")
+            .order("fecha_envio", { ascending: true }),
+        )
       : Promise.resolve({ data: [] }),
-    supabase
-      .from("venta_items")
-      .select("sku_id, cantidad, venta:ventas ( sucursal_id, fecha )")
-      .eq("vendido_sin_stock", true),
+    traerTodo(
+      supabase
+        .from("venta_items")
+        .select("sku_id, cantidad, venta:ventas ( sucursal_id, fecha )")
+        .eq("vendido_sin_stock", true),
+    ),
     puedeVerCostos
-      ? supabase.from("historial_costos").select("sku_id, costo_unitario, fecha").order("fecha", { ascending: false })
+      ? traerTodo(
+          supabase.from("historial_costos").select("sku_id, costo_unitario, fecha").order("fecha", { ascending: false }),
+        )
       : Promise.resolve({ data: [] }),
     esDuenoRol
-      ? supabase.from("movimientos_stock").select("sku_id, fecha").order("fecha", { ascending: false })
+      ? traerTodo(supabase.from("movimientos_stock").select("sku_id, fecha").order("fecha", { ascending: false }))
       : Promise.resolve({ data: [] }),
     rol === "olavarria"
-      ? supabase
-          .from("stock_envases")
-          .select("tipo_envase_id, cantidad_vacios, tipo_envase:tipos_envase ( nombre )")
-          .eq("sucursal_id", olavarria.id)
-          .gt("cantidad_vacios", 0)
+      ? traerTodo(
+          supabase
+            .from("stock_envases")
+            .select("tipo_envase_id, cantidad_vacios, tipo_envase:tipos_envase ( nombre )")
+            .eq("sucursal_id", olavarria.id)
+            .gt("cantidad_vacios", 0),
+          ["tipo_envase_id", "sucursal_id"],
+        )
       : Promise.resolve({ data: [] }),
     rol === "olavarria"
-      ? supabase
-          .from("movimientos_envases")
-          .select("tipo_envase_id, fecha")
-          .eq("sucursal_id", olavarria.id)
-          .order("fecha", { ascending: false })
+      ? traerTodo(
+          supabase
+            .from("movimientos_envases")
+            .select("tipo_envase_id, fecha")
+            .eq("sucursal_id", olavarria.id)
+            .order("fecha", { ascending: false }),
+        )
       : Promise.resolve({ data: [] }),
     // Margen bajo: solo dueño (arquitectura.md 1.12). Mismos datos que
     // /precios/page.tsx, para no derivar el precio con un criterio distinto.
     esDuenoRol
-      ? supabase.from("precios").select("sku_id, precio_base")
+      ? traerTodo(supabase.from("precios").select("sku_id, precio_base"), "sku_id")
       : Promise.resolve({ data: [] }),
     esDuenoRol
-      ? supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override")
+      ? traerTodo(supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override"), [
+          "sucursal_id",
+          "sku_id",
+        ])
       : Promise.resolve({ data: [] }),
     esDuenoRol
-      ? supabase.from("recargos_sucursal").select("sucursal_id, categoria_id, monto_fijo")
+      ? traerTodo(supabase.from("recargos_sucursal").select("sucursal_id, categoria_id, monto_fijo"), [
+          "sucursal_id",
+          "categoria_id",
+        ])
       : Promise.resolve({ data: [] }),
     esDuenoRol
-      ? supabase.from("recargos_sku").select("sucursal_id, sku_id, monto_fijo")
+      ? traerTodo(supabase.from("recargos_sku").select("sucursal_id, sku_id, monto_fijo"), [
+          "sucursal_id",
+          "sku_id",
+        ])
       : Promise.resolve({ data: [] }),
     esDuenoRol
-      ? supabase.from("descuentos_efectivo").select("sucursal_id, categoria_id, porcentaje")
+      ? traerTodo(supabase.from("descuentos_efectivo").select("sucursal_id, categoria_id, porcentaje"), [
+          "sucursal_id",
+          "categoria_id",
+        ])
       : Promise.resolve({ data: [] }),
   ]);
 

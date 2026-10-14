@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { ConteoForm, type ItemConteo } from "../_components/conteo-form";
 
@@ -26,14 +27,18 @@ export default async function InventarioDetallePage({
   const sucursal = inventario.sucursal as unknown as { id: string; nombre: string } | null;
 
   const [{ data: items }, puedeOperar] = await Promise.all([
-    supabase
-      .from("inventario_items")
-      .select(
-        `id, sku_id, stock_sistema, stock_contado, diferencia, motivo,
-         sku:skus ( codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) ) )`,
-      )
-      .eq("inventario_id", id),
+    // Un conteo general tiene una fila por SKU: sin paginar, un catalogo de
+    // mas de 1000 SKU mostraba el inventario incompleto.
+    traerTodo(
+      supabase
+        .from("inventario_items")
+        .select(
+          `id, sku_id, stock_sistema, stock_contado, diferencia, motivo,
+           sku:skus ( codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+             producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) ) )`,
+        )
+        .eq("inventario_id", id),
+    ),
     sucursal ? operaSucursal(supabase, sucursal.id) : Promise.resolve(false),
   ]);
 

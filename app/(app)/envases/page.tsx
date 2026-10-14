@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { EnvasesView } from "./_components/envases-view";
 import type { MovimientoEnvaseRow, Sucursal, TipoEnvase } from "./_components/envases-view";
@@ -8,17 +9,24 @@ export default async function EnvasesPage() {
 
   const [{ data: sucursales }, { data: tiposEnvase }, { data: stock }, { data: movimientos }] =
     await Promise.all([
-      supabase
-        .from("sucursales")
-        .select("id, nombre, es_central")
-        .eq("activo", true)
-        .order("es_central", { ascending: false }),
-      supabase
-        .from("tipos_envase")
-        .select("id, nombre, es_generico, valor_deposito")
-        .eq("activo", true)
-        .order("nombre"),
-      supabase.from("stock_envases").select("tipo_envase_id, sucursal_id, cantidad_vacios"),
+      traerTodo(
+        supabase
+          .from("sucursales")
+          .select("id, nombre, es_central")
+          .eq("activo", true)
+          .order("es_central", { ascending: false }),
+      ),
+      traerTodo(
+        supabase
+          .from("tipos_envase")
+          .select("id, nombre, es_generico, valor_deposito")
+          .eq("activo", true)
+          .order("nombre"),
+      ),
+      traerTodo(supabase.from("stock_envases").select("tipo_envase_id, sucursal_id, cantidad_vacios"), [
+        "tipo_envase_id",
+        "sucursal_id",
+      ]),
       supabase
         .from("movimientos_envases")
         .select(

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { veCostos } from "@/lib/permisos";
 import { ConfiguracionForm } from "./_components/configuracion-form";
 
@@ -15,17 +16,19 @@ export default async function ConfiguracionFacturacionPage() {
     );
   }
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
 
   const [{ data: puntosVenta }, { data: condiciones }] = await Promise.all([
-    supabase.from("puntos_venta").select("sucursal_id, numero_arca, activo"),
-    supabase.from("condicion_iva").select("id, codigo_arca, nombre").order("codigo_arca"),
+    traerTodo(supabase.from("puntos_venta").select("sucursal_id, numero_arca, activo")),
+    traerTodo(supabase.from("condicion_iva").select("id, codigo_arca, nombre").order("codigo_arca")),
   ]);
 
   const numeroArcaPorSucursal = new Map<string, number>();

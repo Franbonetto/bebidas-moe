@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { esDueno, operaSucursal, veCostos } from "@/lib/permisos";
 import { PedidosTable, type PedidoRow } from "./_components/pedidos-table";
 import { PedidosCompraTable, type PedidoCompraRow } from "./_components/pedidos-compra-table";
@@ -12,11 +13,13 @@ export default async function PedidosPage({
   const { sucursal: sucursalParam } = await searchParams;
   const supabase = await createClient();
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre, es_central")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre, es_central")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
   const operables = await Promise.all(sucursalesList.map((s) => operaSucursal(supabase, s.id)));
@@ -33,19 +36,21 @@ export default async function PedidosPage({
   const sucursal =
     sucursalesOperables.find((s) => s.id === sucursalParam) ?? sucursalesOperables[0];
 
-  const { data: pedidosRaw } = await supabase
-    .from("pedidos")
-    .select("id, numero, estado, fecha_creacion, fecha_envio, pedido_items ( cantidad_solicitada )")
-    .order("fecha_creacion", { ascending: false });
+  const { data: pedidosRaw } = await traerTodo(
+    supabase
+      .from("pedidos")
+      .select("id, numero, estado, fecha_creacion, fecha_envio, pedido_items ( cantidad_solicitada )")
+      .order("fecha_creacion", { ascending: false }),
+  );
 
   const pedidos = (pedidosRaw ?? []) as unknown as PedidoRow[];
 
   // Mercadería que Olavarría efectivamente despachó por pedido (distinto de
   // lo solicitado en pedido_items) -- pedido del usuario 2026-09-22: "la
   // mercadería que pidió y la mercadería que entregó".
-  const { data: transferenciaItemsRaw } = await supabase
-    .from("transferencia_items")
-    .select("cantidad_despachada, transferencia:transferencias ( pedido_id )");
+  const { data: transferenciaItemsRaw } = await traerTodo(
+    supabase.from("transferencia_items").select("cantidad_despachada, transferencia:transferencias ( pedido_id )"),
+  );
 
   const entregadoPorPedido: Record<string, number> = {};
   for (const item of (transferenciaItemsRaw ?? []) as unknown as {
@@ -67,10 +72,12 @@ export default async function PedidosPage({
 
   let pedidosCompra: PedidoCompraRow[] = [];
   if (sucursal.es_central && (await veCostos(supabase))) {
-    const { data: pedidosCompraRaw } = await supabase
-      .from("pedidos_compra")
-      .select("id, numero, estado, fecha_creacion, visto_en, pedidos_compra_items ( cantidad_solicitada )")
-      .order("fecha_creacion", { ascending: false });
+    const { data: pedidosCompraRaw } = await traerTodo(
+      supabase
+        .from("pedidos_compra")
+        .select("id, numero, estado, fecha_creacion, visto_en, pedidos_compra_items ( cantidad_solicitada )")
+        .order("fecha_creacion", { ascending: false }),
+    );
     pedidosCompra = (pedidosCompraRaw ?? []) as unknown as PedidoCompraRow[];
   }
 

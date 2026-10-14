@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { EstadoPedidoBadge, type EstadoPedido } from "@/app/(app)/pedidos/_components/estado-pedido-badge";
 import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
@@ -52,26 +53,38 @@ export async function OlavarriaDashboard() {
     { data: proveedorSkusActivos },
     { data: historial },
   ] = await Promise.all([
-    supabase
-      .from("pedidos")
-      .select("id, numero, estado, fecha_envio, pedido_items ( cantidad_solicitada )")
-      .eq("sucursal_origen_id", olavarria.id)
-      .in("estado", ["enviado", "en_preparacion", "preparado", "despachado"])
-      .order("fecha_envio", { ascending: true }),
-    supabase
-      .from("skus")
-      .select(
-        `id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true)
-      .gt("stock_minimo", 0),
-    supabase.from("stock_sucursal").select("sku_id, cantidad").eq("sucursal_id", olavarria.id),
-    supabase.from("proveedor_skus").select("sku_id").eq("activo", true),
-    supabase
-      .from("historial_costos")
-      .select("sku_id, costo_unitario, cantidad, fecha, fecha_vencimiento")
-      .order("fecha", { ascending: false }),
+    traerTodo(
+      supabase
+        .from("pedidos")
+        .select("id, numero, estado, fecha_envio, pedido_items ( cantidad_solicitada )")
+        .eq("sucursal_origen_id", olavarria.id)
+        .in("estado", ["enviado", "en_preparacion", "preparado", "despachado"])
+        .order("fecha_envio", { ascending: true }),
+    ),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
+           producto:productos ( nombre, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true)
+        .gt("stock_minimo", 0),
+    ),
+    traerTodo(supabase.from("stock_sucursal").select("sku_id, cantidad").eq("sucursal_id", olavarria.id), [
+      "sku_id",
+      "sucursal_id",
+    ]),
+    traerTodo(supabase.from("proveedor_skus").select("sku_id").eq("activo", true), [
+      "proveedor_id",
+      "sku_id",
+    ]),
+    traerTodo(
+      supabase
+        .from("historial_costos")
+        .select("sku_id, costo_unitario, cantidad, fecha, fecha_vencimiento")
+        .order("fecha", { ascending: false }),
+    ),
   ]);
 
   const pedidosList = (pedidos ?? []) as unknown as PedidoRow[];

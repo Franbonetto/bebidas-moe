@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { SugerenciaCompraForm, type SugerenciaCompraSku } from "../../_components/sugerencia-compra-form";
 
@@ -22,17 +23,22 @@ export default async function NuevoPedidoCompraPage() {
 
   const [{ data: sugerencias }, { data: skus }, { data: proveedorSkus }] = await Promise.all([
     supabase.rpc("sugerir_compra_semanal"),
-    supabase
-      .from("skus")
-      .select(
-        `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true),
-    supabase
-      .from("proveedor_skus")
-      .select("sku_id, proveedor:proveedores ( id, razon_social, nombre_comercial )")
-      .eq("activo", true),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+           producto:productos ( nombre, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
+    traerTodo(
+      supabase
+        .from("proveedor_skus")
+        .select("sku_id, proveedor:proveedores ( id, razon_social, nombre_comercial )")
+        .eq("activo", true),
+      ["proveedor_id", "sku_id"],
+    ),
   ]);
 
   const skuPorId = new Map((skus ?? []).map((s) => [s.id, s]));

@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import QRCode from "qrcode";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { configArca } from "@/lib/arca/env";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
@@ -79,15 +80,17 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
   }
 
   const [{ data: itemsRaw }, { data: comprobante }, { data: pagosRaw }] = await Promise.all([
-    supabase
-      .from("venta_items")
-      .select(
-        `id, cantidad, precio_unitario, descripcion, promocion_id,
-         promocion:promociones ( nombre ),
-         sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
-      )
-      .eq("venta_id", ventaId),
+    traerTodo(
+      supabase
+        .from("venta_items")
+        .select(
+          `id, cantidad, precio_unitario, descripcion, promocion_id,
+           promocion:promociones ( nombre ),
+           sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+             producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
+        )
+        .eq("venta_id", ventaId),
+    ),
     supabase
       .from("comprobantes_fiscales")
       .select(
@@ -106,7 +109,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
         condicion_iva: { nombre: string } | null;
         punto_venta: { numero_arca: number } | null;
       }>(),
-    supabase.from("venta_pagos").select("medio_pago, monto").eq("venta_id", ventaId),
+    traerTodo(supabase.from("venta_pagos").select("medio_pago, monto").eq("venta_id", ventaId)),
   ]);
 
   const pagos = (pagosRaw ?? []) as { medio_pago: string; monto: number }[];

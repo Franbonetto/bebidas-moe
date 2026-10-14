@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { Card, EmptyState, Kpi, KpiGrid, SectionHeader } from "../../_components/dashboard/ui";
 
@@ -33,14 +34,17 @@ const formatoFecha = new Intl.DateTimeFormat("es-AR", {
 export default async function ReporteParticularesPage() {
   const supabase = await createClient();
 
-  const { data: filasRaw } = await supabase
-    .from("venta_items")
-    .select(
-      `id, descripcion, cantidad, precio_unitario,
-       venta:ventas ( fecha, estado, sucursal:sucursales ( nombre ), usuario:usuarios ( nombre ) )`,
-    )
-    .is("sku_id", null)
-    .limit(500);
+  // Sin tope de filas: con .limit(500) el reporte mostraba un total menor
+  // al realmente vendido en particulares.
+  const { data: filasRaw } = await traerTodo(
+    supabase
+      .from("venta_items")
+      .select(
+        `id, descripcion, cantidad, precio_unitario,
+         venta:ventas ( fecha, estado, sucursal:sucursales ( nombre ), usuario:usuarios ( nombre ) )`,
+      )
+      .is("sku_id", null),
+  );
 
   // Una venta anulada no se cobró: no tiene que sumar en los totales.
   const filas = ((filasRaw ?? []) as unknown as FilaParticular[])

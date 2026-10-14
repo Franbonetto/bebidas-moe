@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { calcularPrecioVenta, type SkuParaPrecio, type SucursalParaPrecio } from "@/lib/precios";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import type { SkuPos, ComboData, PromoCantidadData } from "../_components/pos-client";
 
 // Extraído de app/(app)/vender/page.tsx para poder reusarlo en /envios
@@ -31,31 +32,50 @@ export async function cargarDatosVenta(
     { data: cajaHoy },
     { data: puntoVenta },
   ] = await Promise.all([
-    supabase
-      .from("skus")
-      .select(
-        `id, nombre, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen,
-         unidades_contenidas, costo_actual, es_retornable, tipo_envase_id,
-         desarma_en_sku_id, desarma_en_cantidad,
-         producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ) ),
-         tipo_envase:tipos_envase ( valor_deposito )`,
-      )
-      .eq("activo", true),
-    supabase.from("precios").select("sku_id, precio_base"),
-    supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override").eq("sucursal_id", sucursal.id),
-    supabase.from("recargos_sucursal").select("categoria_id, monto_fijo").eq("sucursal_id", sucursal.id),
-    supabase.from("recargos_sku").select("sku_id, monto_fijo").eq("sucursal_id", sucursal.id),
-    supabase.from("descuentos_efectivo").select("categoria_id, porcentaje").eq("sucursal_id", sucursal.id),
-    supabase.from("stock_sucursal").select("sku_id, cantidad").eq("sucursal_id", sucursal.id),
-    supabase
-      .from("promociones")
-      .select(
-        `id, nombre, tipo, prioridad, vigente_desde, vigente_hasta,
-         promocion_items ( sku_id, cantidad_requerida ),
-         promocion_precios ( sucursal_id, precio_total )`,
-      )
-      .eq("activo", true)
-      .or(`sucursal_id.is.null,sucursal_id.eq.${sucursal.id}`),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, nombre, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen,
+           unidades_contenidas, costo_actual, es_retornable, tipo_envase_id,
+           desarma_en_sku_id, desarma_en_cantidad,
+           producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ) ),
+           tipo_envase:tipos_envase ( valor_deposito )`,
+        )
+        .eq("activo", true),
+    ),
+    traerTodo(supabase.from("precios").select("sku_id, precio_base"), "sku_id"),
+    traerTodo(
+      supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override").eq("sucursal_id", sucursal.id),
+      ["sucursal_id", "sku_id"],
+    ),
+    traerTodo(
+      supabase.from("recargos_sucursal").select("categoria_id, monto_fijo").eq("sucursal_id", sucursal.id),
+      ["sucursal_id", "categoria_id"],
+    ),
+    traerTodo(supabase.from("recargos_sku").select("sku_id, monto_fijo").eq("sucursal_id", sucursal.id), [
+      "sucursal_id",
+      "sku_id",
+    ]),
+    traerTodo(
+      supabase.from("descuentos_efectivo").select("categoria_id, porcentaje").eq("sucursal_id", sucursal.id),
+      ["sucursal_id", "categoria_id"],
+    ),
+    traerTodo(supabase.from("stock_sucursal").select("sku_id, cantidad").eq("sucursal_id", sucursal.id), [
+      "sku_id",
+      "sucursal_id",
+    ]),
+    traerTodo(
+      supabase
+        .from("promociones")
+        .select(
+          `id, nombre, tipo, prioridad, vigente_desde, vigente_hasta,
+           promocion_items ( sku_id, cantidad_requerida ),
+           promocion_precios ( sucursal_id, precio_total )`,
+        )
+        .eq("activo", true)
+        .or(`sucursal_id.is.null,sucursal_id.eq.${sucursal.id}`),
+    ),
     supabase
       .from("cajas")
       .select("id, estado, monto_apertura, cantidad_tickets")
@@ -77,13 +97,16 @@ export async function cargarDatosVenta(
 
   const desde = new Date();
   desde.setDate(desde.getDate() - 30);
-  const { data: ventasRecientes } = await supabase
-    .from("ventas")
-    .select("venta_items ( sku_id, cantidad )")
-    .eq("sucursal_id", sucursal.id)
-    .eq("estado", "confirmada")
-    .gte("fecha", desde.toISOString())
-    .limit(500);
+  // Sin tope de filas: con .limit(500) las ventas que quedaban afuera no
+  // contaban para "lo mas vendido" y el orden del POS salia mal.
+  const { data: ventasRecientes } = await traerTodo(
+    supabase
+      .from("ventas")
+      .select("venta_items ( sku_id, cantidad )")
+      .eq("sucursal_id", sucursal.id)
+      .eq("estado", "confirmada")
+      .gte("fecha", desde.toISOString()),
+  );
 
   const vendidosPorSku = new Map<string, number>();
   for (const v of ventasRecientes ?? []) {

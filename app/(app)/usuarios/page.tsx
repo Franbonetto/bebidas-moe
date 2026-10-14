@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { esDueno } from "@/lib/permisos";
 import { UsuariosTable, type UsuarioRow } from "./_components/usuarios-table";
 import { formatoFechaHora } from "../compras/_lib/formato";
@@ -14,16 +15,22 @@ export default async function UsuariosPage() {
     );
   }
 
-  const [{ data: usuariosRaw }, { data: sucursalesRaw }, { data: asignacionesRaw }, { data: ventasRaw }, { data: cajasRaw }] =
+  const [{ data: usuariosRaw }, { data: sucursalesRaw }, { data: asignacionesRaw }, { data: cajasRaw }] =
     await Promise.all([
-      supabase.from("usuarios").select("id, nombre, email, rol, activo").order("rol").order("nombre"),
-      supabase.from("sucursales").select("id, nombre").eq("activo", true).order("es_central", { ascending: false }),
-      supabase.from("usuario_sucursal").select("usuario_id, sucursal_id"),
-      supabase.from("ventas").select("usuario_id, fecha").order("fecha", { ascending: false }),
-      supabase
-        .from("cajas")
-        .select("sucursal_id, estado, abierta_en, usuario_apertura:usuarios!cajas_usuario_apertura_id_fkey ( nombre )")
-        .eq("fecha", new Date().toISOString().slice(0, 10)),
+      traerTodo(supabase.from("usuarios").select("id, nombre, email, rol, activo").order("rol").order("nombre")),
+      traerTodo(
+        supabase.from("sucursales").select("id, nombre").eq("activo", true).order("es_central", { ascending: false }),
+      ),
+      traerTodo(supabase.from("usuario_sucursal").select("usuario_id, sucursal_id"), [
+        "usuario_id",
+        "sucursal_id",
+      ]),
+      traerTodo(
+        supabase
+          .from("cajas")
+          .select("sucursal_id, estado, abierta_en, usuario_apertura:usuarios!cajas_usuario_apertura_id_fkey ( nombre )")
+          .eq("fecha", new Date().toISOString().slice(0, 10)),
+      ),
     ]);
 
   const sucursales = sucursalesRaw ?? [];
@@ -35,10 +42,25 @@ export default async function UsuariosPage() {
     sucursalesPorUsuario.set(a.usuario_id, lista);
   }
 
-  const ultimaVentaPorUsuario = new Map<string, string>();
-  for (const v of (ventasRaw ?? []) as { usuario_id: string; fecha: string }[]) {
-    if (!ultimaVentaPorUsuario.has(v.usuario_id)) ultimaVentaPorUsuario.set(v.usuario_id, v.fecha);
-  }
+  // Una consulta por usuario (son tres roles, no una lista que crezca) en
+  // vez de traer todas las ventas y quedarse con la primera de cada uno:
+  // asi la "ultima venta" es siempre la real, sin depender de cuantas
+  // ventas haya en la tabla.
+  const ultimasVentas = await Promise.all(
+    (usuariosRaw ?? []).map(async (u) => {
+      const { data } = await supabase
+        .from("ventas")
+        .select("fecha")
+        .eq("usuario_id", u.id)
+        .order("fecha", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return [u.id as string, data?.fecha as string | undefined] as const;
+    }),
+  );
+  const ultimaVentaPorUsuario = new Map<string, string>(
+    ultimasVentas.filter((par): par is readonly [string, string] => par[1] != null),
+  );
 
   const usuarios: UsuarioRow[] = ((usuariosRaw ?? []) as {
     id: string;

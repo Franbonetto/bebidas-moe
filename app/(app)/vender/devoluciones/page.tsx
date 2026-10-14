@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { BuscarVentaList, type VentaRow } from "./_components/buscar-venta-list";
@@ -24,11 +25,13 @@ export default async function DevolucionesPage({
   const { sucursal: sucursalParam } = await searchParams;
   const supabase = await createClient();
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre, es_central")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre, es_central")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
   const operables = await Promise.all(sucursalesList.map((s) => operaSucursal(supabase, s.id)));
@@ -53,17 +56,20 @@ export default async function DevolucionesPage({
   const desde = new Date();
   desde.setDate(desde.getDate() - 90);
 
-  const { data: ventasRaw } = await supabase
-    .from("ventas")
-    .select(
-      `id, fecha, medio_pago, total,
-       venta_items ( cantidad, descripcion, sku:skus ( id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, producto:productos ( nombre, marca:marcas ( nombre ) ) ) )`,
-    )
-    .eq("sucursal_id", sucursal.id)
-    .eq("estado", "confirmada")
-    .gte("fecha", desde.toISOString())
-    .order("fecha", { ascending: false })
-    .limit(300);
+  // Sin tope de filas: el .limit(300) dejaba afuera ventas que si estaban
+  // dentro de los 90 dias, y la busqueda por producto no las encontraba.
+  const { data: ventasRaw } = await traerTodo(
+    supabase
+      .from("ventas")
+      .select(
+        `id, fecha, medio_pago, total,
+         venta_items ( cantidad, descripcion, sku:skus ( id, nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, producto:productos ( nombre, marca:marcas ( nombre ) ) ) )`,
+      )
+      .eq("sucursal_id", sucursal.id)
+      .eq("estado", "confirmada")
+      .gte("fecha", desde.toISOString())
+      .order("fecha", { ascending: false }),
+  );
 
   const ventas: VentaRow[] = ((ventasRaw ?? []) as unknown as VentaFila[]).map((v) => ({
     id: v.id,

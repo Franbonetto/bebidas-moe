@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal, esDueno } from "@/lib/permisos";
 import { cargarDatosVenta } from "../vender/_lib/cargar-datos-venta";
 import { PosClient } from "../vender/_components/pos-client";
@@ -13,11 +14,13 @@ export default async function EnviosPage({
   const { sucursal: sucursalParam } = await searchParams;
   const supabase = await createClient();
 
-  const { data: sucursales } = await supabase
-    .from("sucursales")
-    .select("id, nombre, es_central")
-    .eq("activo", true)
-    .order("es_central", { ascending: false });
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre, es_central")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
 
   const sucursalesList = sucursales ?? [];
 
@@ -28,18 +31,21 @@ export default async function EnviosPage({
     const desde = new Date();
     desde.setDate(desde.getDate() - 60);
 
-    const { data: enviosRaw } = await supabase
-      .from("ventas")
-      .select(
-        `id, fecha, total, medio_pago, motomandado, direccion_envio,
-         sucursal:sucursales ( nombre ),
-         venta_pagos ( medio_pago, monto )`,
-      )
-      .eq("es_envio", true)
-      .eq("estado", "confirmada")
-      .gte("fecha", desde.toISOString())
-      .order("fecha", { ascending: false })
-      .limit(300);
+    // Sin tope de filas: el .limit(300) escondia envios dentro de la misma
+    // ventana de 60 dias que la pantalla dice estar mostrando.
+    const { data: enviosRaw } = await traerTodo(
+      supabase
+        .from("ventas")
+        .select(
+          `id, fecha, total, medio_pago, motomandado, direccion_envio,
+           sucursal:sucursales ( nombre ),
+           venta_pagos ( medio_pago, monto )`,
+        )
+        .eq("es_envio", true)
+        .eq("estado", "confirmada")
+        .gte("fecha", desde.toISOString())
+        .order("fecha", { ascending: false }),
+    );
 
     const MEDIO_LABEL: Record<string, string> = {
       efectivo: "Efectivo",
@@ -93,12 +99,14 @@ export default async function EnviosPage({
 
   // Envíos usa el mismo POS, así que también necesita la caja abierta y, con
   // ella, quién la abre.
-  const { data: empleados } = await supabase
-    .from("empleados")
-    .select("id, nombre")
-    .eq("sucursal_id", sucursal.id)
-    .eq("activo", true)
-    .order("nombre");
+  const { data: empleados } = await traerTodo(
+    supabase
+      .from("empleados")
+      .select("id, nombre")
+      .eq("sucursal_id", sucursal.id)
+      .eq("activo", true)
+      .order("nombre"),
+  );
 
   return (
     <div>

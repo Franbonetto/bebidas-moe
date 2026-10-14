@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { SugerenciaForm, type SugerenciaSku } from "../_components/sugerencia-form";
 
@@ -28,13 +29,15 @@ export default async function NuevoPedidoPage() {
 
   const [{ data: sugerencias }, { data: skus }] = await Promise.all([
     supabase.rpc("sugerir_pedido", { p_sucursal_destino_id: laprida.id }),
-    supabase
-      .from("skus")
-      .select(
-        `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+           producto:productos ( nombre, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
   ]);
 
   const skuPorId = new Map((skus ?? []).map((s) => [s.id, s]));

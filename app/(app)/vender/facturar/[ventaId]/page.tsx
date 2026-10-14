@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { formatoMoneda } from "../../_lib/formato";
@@ -82,14 +83,16 @@ export default async function FacturarVentaPage({
 
   const [{ data: itemsRaw }, { data: comprobante }, { data: condicionesRaw }, clientesFrecuentes] =
     await Promise.all([
-      supabase
-        .from("venta_items")
-        .select(
-          `id, cantidad, precio_unitario, descripcion,
-         sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
-        )
-        .eq("venta_id", ventaId),
+      traerTodo(
+        supabase
+          .from("venta_items")
+          .select(
+            `id, cantidad, precio_unitario, descripcion,
+           sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+             producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
+          )
+          .eq("venta_id", ventaId),
+      ),
       supabase
         .from("comprobantes_fiscales")
         .select(
@@ -97,7 +100,7 @@ export default async function FacturarVentaPage({
         )
         .eq("venta_id", ventaId)
         .maybeSingle<Comprobante>(),
-      supabase.from("condicion_iva").select("id, nombre").order("nombre"),
+      traerTodo(supabase.from("condicion_iva").select("id, nombre").order("nombre")),
       obtenerClientesFrecuentes(),
     ]);
 

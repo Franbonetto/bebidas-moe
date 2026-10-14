@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import { operaSucursal, veCostos } from "@/lib/permisos";
 import { PedidoDetalle, type PedidoDetalleData } from "../_components/pedido-detalle";
 
@@ -46,12 +47,19 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
 
   if (skuIds.length > 0) {
     const [{ data: stockRows }, { data: skuRows }] = await Promise.all([
-      supabase
-        .from("stock_sucursal")
-        .select("sku_id, cantidad")
-        .eq("sucursal_id", pedidoData.sucursal_origen_id)
-        .in("sku_id", skuIds),
-      supabase.from("skus").select("id, stock_minimo, costo_actual").in("id", skuIds),
+      traerTodoPorLotes(
+        skuIds,
+        (lote) =>
+          supabase
+            .from("stock_sucursal")
+            .select("sku_id, cantidad")
+            .eq("sucursal_id", pedidoData.sucursal_origen_id)
+            .in("sku_id", lote),
+        ["sku_id", "sucursal_id"],
+      ),
+      traerTodoPorLotes(skuIds, (lote) =>
+        supabase.from("skus").select("id, stock_minimo, costo_actual").in("id", lote),
+      ),
     ]);
 
     const minimoPorSku = new Map((skuRows ?? []).map((s) => [s.id, s.stock_minimo]));

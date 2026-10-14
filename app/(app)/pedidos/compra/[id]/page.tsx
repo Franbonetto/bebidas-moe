@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import { esDueno, veCostos } from "@/lib/permisos";
 import { PedidoCompraDetalle, type PedidoCompraDetalleData } from "../../_components/pedido-compra-detalle";
 
@@ -47,11 +48,16 @@ export default async function PedidoCompraDetallePage({
   }
 
   const skuIds = pedidoCompra.pedidos_compra_items.map((i) => i.sku_id);
-  const { data: proveedorSkus } = await supabase
-    .from("proveedor_skus")
-    .select("sku_id, proveedor:proveedores ( id, razon_social, nombre_comercial )")
-    .eq("activo", true)
-    .in("sku_id", skuIds);
+  const { data: proveedorSkus } = await traerTodoPorLotes(
+    skuIds,
+    (lote) =>
+      supabase
+        .from("proveedor_skus")
+        .select("sku_id, proveedor:proveedores ( id, razon_social, nombre_comercial )")
+        .eq("activo", true)
+        .in("sku_id", lote),
+    ["proveedor_id", "sku_id"],
+  );
 
   // Mismo criterio que la pantalla de armar el pedido (sugerencia-compra-
   // form.tsx): un SKU con más de un proveedor queda repetido en cada grupo,

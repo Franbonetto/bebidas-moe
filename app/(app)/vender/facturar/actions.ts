@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { configArca } from "@/lib/arca/env";
 import {
   consultarComprobante,
@@ -78,13 +79,15 @@ export async function facturarVenta(
     return { error: "Factura A necesita CUIT y razón social del receptor" };
   }
 
-  const { data: itemsRaw, error: errorItems } = await supabase
-    .from("venta_items")
-    .select(
-      `id, cantidad, precio_unitario, descripcion,
-       sku:skus ( nombre, producto:productos ( nombre, categoria:categorias ( alicuota_iva ) ) )`,
-    )
-    .eq("venta_id", ventaId);
+  const { data: itemsRaw, error: errorItems } = await traerTodo(
+    supabase
+      .from("venta_items")
+      .select(
+        `id, cantidad, precio_unitario, descripcion,
+         sku:skus ( nombre, producto:productos ( nombre, categoria:categorias ( alicuota_iva ) ) )`,
+      )
+      .eq("venta_id", ventaId),
+  );
 
   if (errorItems) return { error: errorItems.message };
 
@@ -273,12 +276,14 @@ export type ClienteFrecuente = { cuit: string; razonSocial: string; vecesFactura
 export async function obtenerClientesFrecuentes(): Promise<ClienteFrecuente[]> {
   const supabase = await createClient();
 
-  const { data } = await supabase
-    .from("comprobantes_fiscales")
-    .select("cuit_receptor, razon_social_receptor")
-    .not("cuit_receptor", "is", null)
-    .not("razon_social_receptor", "is", null)
-    .eq("estado", "autorizado");
+  const { data } = await traerTodo(
+    supabase
+      .from("comprobantes_fiscales")
+      .select("cuit_receptor, razon_social_receptor")
+      .not("cuit_receptor", "is", null)
+      .not("razon_social_receptor", "is", null)
+      .eq("estado", "autorizado"),
+  );
 
   const porCuit = new Map<string, { razonSocial: string; veces: number }>();
   for (const fila of (data ?? []) as { cuit_receptor: string; razon_social_receptor: string }[]) {

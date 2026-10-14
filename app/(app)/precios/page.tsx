@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { veCostos, esDueno } from "@/lib/permisos";
 import { calcularPrecioVenta, type SkuParaPrecio, type SucursalParaPrecio } from "@/lib/precios";
 import { PreciosTable, type PrecioSkuRow, type Sucursal, type Categoria } from "./_components/precios-table";
@@ -43,34 +44,52 @@ export default async function PreciosPage() {
 
   const [{ data: sucursales }, { data: categorias }, { data: skusRaw }, { data: precios }, { data: preciosSucursal }] =
     await Promise.all([
-      supabase.from("sucursales").select("id, nombre, es_central").eq("activo", true).order("es_central", { ascending: false }),
-      supabase.from("categorias").select("id, nombre, categoria_padre_id").eq("activo", true),
-      supabase
-        .from("skus")
-        .select(
-          `id, nombre, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           costo_actual,
-           producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
-        )
-        .eq("activo", true),
-      supabase.from("precios").select("sku_id, precio_base, actualizado_en"),
-      supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override, actualizado_en"),
+      traerTodo(
+        supabase.from("sucursales").select("id, nombre, es_central").eq("activo", true).order("es_central", { ascending: false }),
+      ),
+      traerTodo(supabase.from("categorias").select("id, nombre, categoria_padre_id").eq("activo", true)),
+      traerTodo(
+        supabase
+          .from("skus")
+          .select(
+            `id, nombre, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+             costo_actual,
+             producto:productos ( id, nombre, categoria_id, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
+          )
+          .eq("activo", true),
+      ),
+      traerTodo(supabase.from("precios").select("sku_id, precio_base, actualizado_en"), "sku_id"),
+      traerTodo(
+        supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override, actualizado_en"),
+        ["sucursal_id", "sku_id"],
+      ),
     ]);
 
   const [{ data: recargosSucursal }, { data: recargosSku }, { data: descuentosEfectivo }, { data: promocionesRaw }] =
     puedeVerCostos
       ? await Promise.all([
-          supabase.from("recargos_sucursal").select("sucursal_id, categoria_id, monto_fijo, actualizado_en"),
-          supabase.from("recargos_sku").select("sucursal_id, sku_id, monto_fijo, actualizado_en"),
-          supabase.from("descuentos_efectivo").select("sucursal_id, categoria_id, porcentaje, actualizado_en"),
-          supabase
-            .from("promociones")
-            .select(
-              `id, nombre, tipo, sucursal_id, vigente_desde, vigente_hasta, activo,
-               promocion_items ( sku_id, cantidad_requerida ),
-               promocion_precios ( sucursal_id, precio_total )`,
-            )
-            .order("nombre"),
+          traerTodo(
+            supabase.from("recargos_sucursal").select("sucursal_id, categoria_id, monto_fijo, actualizado_en"),
+            ["sucursal_id", "categoria_id"],
+          ),
+          traerTodo(supabase.from("recargos_sku").select("sucursal_id, sku_id, monto_fijo, actualizado_en"), [
+            "sucursal_id",
+            "sku_id",
+          ]),
+          traerTodo(
+            supabase.from("descuentos_efectivo").select("sucursal_id, categoria_id, porcentaje, actualizado_en"),
+            ["sucursal_id", "categoria_id"],
+          ),
+          traerTodo(
+            supabase
+              .from("promociones")
+              .select(
+                `id, nombre, tipo, sucursal_id, vigente_desde, vigente_hasta, activo,
+                 promocion_items ( sku_id, cantidad_requerida ),
+                 promocion_precios ( sucursal_id, precio_total )`,
+              )
+              .order("nombre"),
+          ),
         ])
       : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 

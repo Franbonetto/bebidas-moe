@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { veCostos } from "@/lib/permisos";
 import { ProductosTable, type SkuRow, type Sucursal } from "./_components/productos-table";
 
@@ -13,23 +14,30 @@ export default async function ProductosPage() {
   const puedeCrear = await veCostos(supabase);
 
   const [{ data: sucursales }, { data: skus }, { data: stock }] = await Promise.all([
-    supabase
-      .from("sucursales")
-      .select("id, nombre, es_central")
-      .eq("activo", true)
-      .order("es_central", { ascending: false }),
-    supabase
-      .from("skus")
-      // El costo (costo_actual) no se muestra acá: depende del rol
-      // (ve_costos()) y todavía no hay costos cargados. Cuando se
-      // implemente, se agrega como columna condicional según rol, no se
-      // deja una columna a medio hacer ahora.
-      .select(
-        `id, nombre, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
-         producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
-      )
-      .eq("activo", true),
-    supabase.from("stock_sucursal").select("sku_id, sucursal_id, cantidad"),
+    traerTodo(
+      supabase
+        .from("sucursales")
+        .select("id, nombre, es_central")
+        .eq("activo", true)
+        .order("es_central", { ascending: false }),
+    ),
+    traerTodo(
+      supabase
+        .from("skus")
+        // El costo (costo_actual) no se muestra acá: depende del rol
+        // (ve_costos()) y todavía no hay costos cargados. Cuando se
+        // implemente, se agrega como columna condicional según rol, no se
+        // deja una columna a medio hacer ahora.
+        .select(
+          `id, nombre, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas, stock_minimo,
+           producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
+    traerTodo(supabase.from("stock_sucursal").select("sku_id, sucursal_id, cantidad"), [
+      "sku_id",
+      "sucursal_id",
+    ]),
   ]);
 
   const sucursalesList = (sucursales ?? []) as Sucursal[];

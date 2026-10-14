@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { esDueno } from "@/lib/permisos";
 import {
   CompraDetalle,
@@ -31,21 +32,25 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
   if (!compra) notFound();
 
   const [{ data: recepciones }, { data: reclasificaciones }, esDuenoActual] = await Promise.all([
-    supabase
-      .from("recepciones_compra")
-      .select(
-        `id, fecha, estado, usuario:usuarios ( nombre ),
-         recepcion_items ( compra_item_id, cantidad_recibida, diferencia, motivo_diferencia )`,
-      )
-      .eq("compra_id", id)
-      .order("fecha", { ascending: true }),
-    supabase
-      .from("compras_reclasificacion_fiscal")
-      .select(
-        "id, tipo_anterior, tipo_nuevo, numero_nuevo, fecha_nueva, iva_nuevo, motivo, fecha, usuario:usuarios ( nombre )",
-      )
-      .eq("compra_id", id)
-      .order("fecha", { ascending: false }),
+    traerTodo(
+      supabase
+        .from("recepciones_compra")
+        .select(
+          `id, fecha, estado, usuario:usuarios ( nombre ),
+           recepcion_items ( compra_item_id, cantidad_recibida, diferencia, motivo_diferencia )`,
+        )
+        .eq("compra_id", id)
+        .order("fecha", { ascending: true }),
+    ),
+    traerTodo(
+      supabase
+        .from("compras_reclasificacion_fiscal")
+        .select(
+          "id, tipo_anterior, tipo_nuevo, numero_nuevo, fecha_nueva, iva_nuevo, motivo, fecha, usuario:usuarios ( nombre )",
+        )
+        .eq("compra_id", id)
+        .order("fecha", { ascending: false }),
+    ),
     esDueno(supabase),
   ]);
 

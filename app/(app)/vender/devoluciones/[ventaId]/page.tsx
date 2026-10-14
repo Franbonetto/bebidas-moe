@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import type { SkuCatalogo } from "@/app/(app)/compras/_components/sku-picker";
@@ -44,24 +45,38 @@ export default async function DevolucionVentaPage({
     );
   }
 
-  const [{ data: ventaItemsRaw }, { data: devolucionItemsRaw }, { data: skusRaw }] = await Promise.all([
-    supabase
-      .from("venta_items")
-      .select(
-        `id, sku_id, cantidad, precio_unitario, descripcion,
-         sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
-      )
-      .eq("venta_id", ventaId),
-    supabase.from("devolucion_items").select("venta_item_id, cantidad"),
-    supabase
-      .from("skus")
-      .select(
-        `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-         producto:productos ( nombre, marca:marcas ( nombre ) )`,
-      )
-      .eq("activo", true),
+  const [{ data: ventaItemsRaw }, { data: skusRaw }] = await Promise.all([
+    traerTodo(
+      supabase
+        .from("venta_items")
+        .select(
+          `id, sku_id, cantidad, precio_unitario, descripcion,
+           sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+             producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
+        )
+        .eq("venta_id", ventaId),
+    ),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+           producto:productos ( nombre, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
   ]);
+
+  // Acotado a los items de esta venta: antes se traia devolucion_items
+  // entera y se filtraba en JS, asi que con mas de 1000 devoluciones
+  // historicas las de esta venta podian no venir y el formulario mostraba
+  // como disponible algo ya devuelto.
+  const ventaItemIds = (ventaItemsRaw ?? []).map((it) => it.id as string);
+  const { data: devolucionItemsRaw } = ventaItemIds.length
+    ? await traerTodo(
+        supabase.from("devolucion_items").select("venta_item_id, cantidad").in("venta_item_id", ventaItemIds),
+      )
+    : { data: [] };
 
   const yaDevueltoPorItem = new Map<string, number>();
   for (const d of (devolucionItemsRaw ?? []) as { venta_item_id: string; cantidad: number }[]) {
