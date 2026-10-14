@@ -126,6 +126,47 @@ function parseQuery(q: string): { cantidad: number; texto: string } {
 const inputClass =
   "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[14.5px] text-text outline-none focus:border-moe";
 
+// Precio de un producto en las listas del POS: el normal arriba y, cuando
+// pagando en efectivo sale distinto, el de efectivo debajo (pedido del
+// usuario 2026-10-14: "este vino vale 10000 y abajo que diga pagando en
+// efectivo vale 9000").
+//
+// No contradice el "un solo total a la vista" de arquitectura.md 1.8: esa
+// regla es sobre el TOTAL del ticket, que sigue siendo un solo número. Acá
+// se trata del precio de cada producto en la lista, donde ver los dos es
+// justamente lo que se necesita para contestarle al cliente.
+function PrecioProducto({
+  sku,
+  alineado = "derecha",
+}: {
+  sku: SkuPos;
+  alineado?: "derecha" | "izquierda";
+}) {
+  if (sku.precioEfectivo == null) {
+    return <span className="tabular-nums text-text-3">sin precio</span>;
+  }
+
+  const lista = sku.precioOtroMedio ?? sku.precioEfectivo;
+
+  // Sin diferencia no hay nada que aclarar: un solo número.
+  if (lista === sku.precioEfectivo) {
+    return <span className="tabular-nums text-text-2">{formatoMoneda.format(lista)}</span>;
+  }
+
+  return (
+    <span
+      className={`flex flex-col leading-tight ${
+        alineado === "derecha" ? "items-end" : "items-start"
+      }`}
+    >
+      <span className="tabular-nums text-text-2">{formatoMoneda.format(lista)}</span>
+      <span className="tabular-nums text-[11.5px] text-ok">
+        efectivo {formatoMoneda.format(sku.precioEfectivo)}
+      </span>
+    </span>
+  );
+}
+
 export function PosClient({
   sucursalId,
   sucursalNombre,
@@ -1006,9 +1047,7 @@ export function PosClient({
                       · {s.marcaNombre} — {presentacionLabel(s.presentacion)}
                     </span>
                   </span>
-                  <span className="tabular-nums text-text-2">
-                    {s.precioEfectivo != null ? formatoMoneda.format(s.precioEfectivo) : "sin precio"}
-                  </span>
+                  <PrecioProducto sku={s} />
                 </button>
               ))}
             </div>
@@ -1055,8 +1094,8 @@ export function PosClient({
               className="rounded-[7px] border border-border bg-bg px-[9px] py-[6px] text-left hover:border-border-strong hover:bg-bg-2"
             >
               <b className="block truncate text-[13px] font-medium leading-tight text-text">{s.nombre}</b>
-              <small className="tabular-nums text-[12.5px] text-text-3">
-                {s.precioEfectivo != null ? formatoMoneda.format(s.precioEfectivo) : "sin precio"}
+              <small className="block text-[12.5px] text-text-3">
+                <PrecioProducto sku={s} alineado="izquierda" />
               </small>
             </button>
           ))}
@@ -1603,9 +1642,7 @@ export function PosClient({
                       · {s.marcaNombre} — {presentacionLabel(s.presentacion)}
                     </span>
                   </span>
-                  <span className="tabular-nums text-text-2">
-                    {s.precioEfectivo != null ? formatoMoneda.format(s.precioEfectivo) : "sin precio"}
-                  </span>
+                  <PrecioProducto sku={s} />
                 </div>
               ))}
             </div>

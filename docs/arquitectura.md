@@ -230,7 +230,13 @@ rigiendo el **porcentaje por categoría** (`descuentos_efectivo`, ej. Vinos en O
 sobre `recargos_sucursal`.
 
 - Se carga desde `/precios` y también desde **carga inicial**, con el producto en la
-  mano: ahí mismo se cargan el precio de lista, el precio en efectivo y la promo 2x.
+  mano. En carga inicial las dos ofertas son **excluyentes** (decisión del usuario
+  2026-10-14): un producto tiene precio propio en efectivo **o** promo por cantidad, se
+  elige una de las dos y la otra se saca. En `/precios` se pueden cargar por separado.
+- **En el POS cada producto muestra los dos números**: el precio normal y, debajo y más
+  chico, lo que sale pagando en efectivo. Esto no contradice el "un solo total a la
+  vista" de 1.8 — esa regla es sobre el total del ticket, que sigue siendo un número
+  solo.
 - Se guarda el monto, no un porcentaje (decisión del usuario): con el producto delante
   se piensa en el número que se va a cobrar. La contra aceptada es que si cambia el
   precio de lista, este número queda viejo y hay que tocarlo — igual que la excepción

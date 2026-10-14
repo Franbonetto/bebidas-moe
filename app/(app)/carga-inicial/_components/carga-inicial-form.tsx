@@ -37,6 +37,16 @@ const inputClass =
   "w-full rounded-[8px] border border-border bg-bg px-[12px] py-[9px] text-[16px] text-text outline-none focus:border-moe";
 const labelClass = "mb-[5px] block text-[12.5px] font-medium text-text-2";
 
+// Las dos ofertas posibles de un producto, excluyentes entre sí (decisión
+// del usuario 2026-10-14). Las dos aplican solo pagando en efectivo.
+type TipoOferta = "ninguna" | "efectivo" | "cantidad";
+
+const OPCIONES_OFERTA: { valor: TipoOferta; etiqueta: string }[] = [
+  { valor: "ninguna", etiqueta: "Sin oferta" },
+  { valor: "efectivo", etiqueta: "Precio en efectivo" },
+  { valor: "cantidad", etiqueta: "Promo por cantidad" },
+];
+
 function sumaLotesExtra(lotes: { cantidad: string }[]): number {
   return lotes.reduce((acc, l) => acc + Number(l.cantidad || 0), 0);
 }
@@ -74,6 +84,7 @@ export function CargaInicialForm({
   // bloque 6, solo en efectivo como todas.
   const [promoUnidades, setPromoUnidades] = useState("2");
   const [promoTotal, setPromoTotal] = useState("");
+  const [tipoOferta, setTipoOferta] = useState<TipoOferta>("ninguna");
   const [vencimiento, setVencimiento] = useState("");
   // Segundo vencimiento en adelante: {cantidad, fecha} por lote. Vacío =
   // una sola fecha (el caso normal), que usa el campo de arriba.
@@ -147,6 +158,7 @@ export function CargaInicialForm({
     setPrecioEfectivo("");
     setPromoUnidades("2");
     setPromoTotal("");
+    setTipoOferta("ninguna");
     setVencimiento("");
     setLotes([]);
     setProveedorId("");
@@ -170,6 +182,18 @@ export function CargaInicialForm({
     const promo = resultado.promoCantidad;
     setPromoUnidades(String(promo?.cantidadRequerida ?? 2));
     setPromoTotal(promo?.precioTotal !== null && promo != null ? String(promo.precioTotal) : "");
+    // El selector arranca en la oferta que el producto ya tiene, para que
+    // abrirlo y guardar no le borre nada sin querer.
+    // Con varias promos por cantidad la opción queda deshabilitada, así que
+    // no se puede arrancar ahí: se cae a "sin oferta" y el aviso explica que
+    // esas promos se editan desde Precios.
+    setTipoOferta(
+      resultado.precioEfectivo !== null
+        ? "efectivo"
+        : !resultado.promoVarias && promo != null && promo.precioTotal !== null
+          ? "cantidad"
+          : "ninguna",
+    );
     setVencimiento(fechaVencimientoDesdeIso(resultado.vencimientoUltimoLote));
     setProveedorId(resultado.proveedorId ?? "");
     setStockMinimo(String(resultado.stockMinimo));
@@ -187,6 +211,7 @@ export function CargaInicialForm({
     setPrecioEfectivo("");
     setPromoUnidades("2");
     setPromoTotal("");
+    setTipoOferta("ninguna");
     setVencimiento("");
     setLotes([]);
     setProveedorId("");
@@ -250,6 +275,11 @@ export function CargaInicialForm({
   const promoMayorALista =
     promoUnitario !== null && listaEnSucursal !== null && promoUnitario > listaEnSucursal;
 
+  // Puede venir con las dos cargadas (de antes, o desde /precios): al
+  // guardar queda solo la elegida, y conviene que no sea una sorpresa.
+  const tieneLasDos =
+    datos?.precioEfectivo != null && datos.promoCantidad?.precioTotal != null;
+
   const sucursalNombre = sucursales.find((s) => s.id === sucursalId)?.nombre ?? "";
 
   // La promo existe pero no tiene precio en esta sucursal: cargarlo acá la
@@ -298,29 +328,31 @@ export function CargaInicialForm({
       setError(`Los vencimientos suman ${sumaLotes} y contaste ${cantidadNum}: tienen que dar igual.`);
       return;
     }
-    if (precioEfectivo !== "" && !(Number(precioEfectivo) >= 0)) {
-      setError("El precio en efectivo tiene que ser un número, cero o más.");
-      return;
+    if (tipoOferta === "efectivo") {
+      if (precioEfectivo !== "" && !(Number(precioEfectivo) >= 0)) {
+        setError("El precio en efectivo tiene que ser un número, cero o más.");
+        return;
+      }
+      if (efectivoMayorALista) {
+        setError(
+          "El precio en efectivo no puede ser más alto que el de lista: el POS no deja cerrar una venta por encima del precio de lista.",
+        );
+        return;
+      }
     }
-    if (efectivoMayorALista) {
-      setError(
-        "El precio en efectivo no puede ser más alto que el de lista: el POS no deja cerrar una venta por encima del precio de lista.",
-      );
-      return;
-    }
-    if (promoMayorALista) {
-      setError(
-        "En la promo cada unidad sale más que el precio de lista: así no se puede vender. Bajá el total de la promo.",
-      );
-      return;
-    }
-    if (promoTotal !== "") {
+    if (tipoOferta === "cantidad" && promoTotal !== "") {
       if (!Number.isInteger(promoUnidadesNum) || promoUnidadesNum < 2) {
         setError("La promo por cantidad arranca en 2 unidades (2x, 3x...).");
         return;
       }
       if (!(promoTotalNum >= 0)) {
         setError("El total de la promo tiene que ser un número, cero o más.");
+        return;
+      }
+      if (promoMayorALista) {
+        setError(
+          "En la promo cada unidad sale más que el precio de lista: así no se puede vender. Bajá el total de la promo.",
+        );
         return;
       }
     }
@@ -334,14 +366,15 @@ export function CargaInicialForm({
       costo: costo === "" ? null : Number(costo),
       precio: precio === "" ? null : Number(precio),
       precio_laprida: precioLaprida === "" ? null : Number(precioLaprida),
-      precio_efectivo: precioEfectivo === "" ? null : Number(precioEfectivo),
+      // Las dos ofertas son excluyentes: la que no se eligió se saca. null
+      // borra lo que hubiera; undefined es "no tocar nada".
+      precio_efectivo:
+        tipoOferta === "efectivo" && precioEfectivo !== "" ? Number(precioEfectivo) : null,
       // Con más de una promo por cantidad cargada no se manda nada: carga
-      // inicial no elige cuál de ellas editar (se avisa en pantalla). Y si
-      // nunca hubo promo y el campo quedó vacío, tampoco hay nada que
-      // guardar.
+      // inicial no elige cuál de ellas editar (se avisa en pantalla).
       promo_cantidad: datos.promoVarias
         ? undefined
-        : promoTotal !== ""
+        : tipoOferta === "cantidad" && promoTotal !== ""
           ? { cantidad: promoUnidadesNum, precio_total: promoTotalNum }
           : datos.promoCantidad
             ? null
@@ -594,26 +627,55 @@ export function CargaInicialForm({
               </div>
             )}
 
-            {/* Precio en efectivo y promo por cantidad. Las dos cosas aplican
-                solo pagando en efectivo -- billete en mano, no débito ni
-                transferencia (arquitectura.md 1.7). Van juntas en su propio
-                bloque para que se lea de una que son "lo del efectivo", y
-                no dos campos más perdidos en la grilla de precios. */}
+            {/* Oferta del producto. Son dos opciones distintas y excluyentes
+                (decisión del usuario 2026-10-14): o el producto tiene un
+                precio propio en efectivo, o tiene una promo por cantidad.
+                Las dos aplican solo pagando en efectivo -- billete en mano,
+                no débito ni transferencia (arquitectura.md 1.7). */}
             <div className="mt-3 rounded-[8px] border border-border bg-bg-2 px-3 py-[10px]">
-              <p className="mb-[10px] text-[12.5px] font-medium text-text-2">
-                Solo pagando en efectivo
+              <p className="mb-[8px] text-[12.5px] font-medium text-text-2">
+                Oferta, solo pagando en efectivo
                 <span className="ml-[6px] font-normal text-text-3">{sucursalNombre}</span>
               </p>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelClass}>Precio en efectivo</label>
+              <div className="mb-[10px] flex flex-wrap gap-[6px]">
+                {OPCIONES_OFERTA.map((o) => {
+                  const bloqueada = o.valor === "cantidad" && datos.promoVarias;
+                  return (
+                    <button
+                      key={o.valor}
+                      type="button"
+                      disabled={bloqueada}
+                      onClick={() => setTipoOferta(o.valor)}
+                      className={`rounded-[6px] border px-[11px] py-[6px] text-[13px] font-medium disabled:opacity-50 ${
+                        tipoOferta === o.valor
+                          ? "border-moe bg-moe-soft text-moe"
+                          : "border-border bg-bg text-text-2 hover:bg-bg-2"
+                      }`}
+                    >
+                      {o.etiqueta}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {tipoOferta === "ninguna" && (
+                <p className="text-[11.5px] text-text-3">
+                  {efectivoPorCategoria !== null
+                    ? `En efectivo se cobra ${formatoMoneda.format(efectivoPorCategoria)} por el ${datos.descuentoEfectivoPct}% de la categoría.`
+                    : "Este producto se cobra igual en efectivo que con tarjeta."}
+                </p>
+              )}
+
+              {tipoOferta === "efectivo" && (
+                <div className="max-w-[260px]">
+                  <label className={labelClass}>Pagando en efectivo vale</label>
                   <input
                     type="number"
                     inputMode="decimal"
                     min={0}
                     step="0.01"
-                    placeholder="Opcional"
+                    placeholder="Precio en efectivo"
                     className={`${inputClass} tabular-nums ${
                       efectivoMayorALista || efectivoBajoCosto ? "border-warn/50" : ""
                     }`}
@@ -621,35 +683,35 @@ export function CargaInicialForm({
                     onChange={(e) => setPrecioEfectivo(e.target.value)}
                   />
                   <p className="mt-[3px] text-[11.5px] text-text-3">
-                    {efectivoPorCategoria !== null
-                      ? `Vacío: se cobra ${formatoMoneda.format(efectivoPorCategoria)} por el ${datos.descuentoEfectivoPct}% de la categoría`
-                      : "Vacío: en efectivo se cobra el mismo precio que con tarjeta"}
+                    {listaEnSucursal !== null
+                      ? `En el POS va a decir ${formatoMoneda.format(listaEnSucursal)} y abajo lo que sale en efectivo`
+                      : "Cargá primero el precio de venta"}
                   </p>
                 </div>
+              )}
 
+              {tipoOferta === "cantidad" && (
                 <div>
-                  <label className={labelClass}>Promo por cantidad</label>
+                  <label className={labelClass}>Llevando</label>
                   <div className="flex items-center gap-[6px]">
                     <input
                       type="number"
                       inputMode="numeric"
                       min={2}
                       step="1"
-                      disabled={datos.promoVarias}
-                      className={`${inputClass} w-[64px] shrink-0 tabular-nums disabled:opacity-60`}
+                      className={`${inputClass} w-[64px] shrink-0 tabular-nums`}
                       value={promoUnidades}
                       onChange={(e) => setPromoUnidades(e.target.value)}
                     />
-                    <span className="text-[14px] text-text-2">×</span>
+                    <span className="whitespace-nowrap text-[13px] text-text-2">quedan en</span>
                     <input
                       type="number"
                       inputMode="decimal"
                       min={0}
                       step="0.01"
                       placeholder="Total"
-                      disabled={datos.promoVarias}
-                      className={`${inputClass} tabular-nums disabled:opacity-60 ${
-                        promoBajoCosto ? "border-warn/50" : ""
+                      className={`${inputClass} tabular-nums ${
+                        promoBajoCosto || promoMayorALista ? "border-warn/50" : ""
                       }`}
                       value={promoTotal}
                       onChange={(e) => setPromoTotal(e.target.value)}
@@ -657,21 +719,22 @@ export function CargaInicialForm({
                   </div>
                   <p className="mt-[3px] text-[11.5px] text-text-3">
                     {promoUnitario !== null
-                      ? `${formatoMoneda.format(promoUnitario)} cada una llevando ${promoUnidadesNum}`
-                      : "El total de llevar las dos juntas, no el precio de cada una"}
+                      ? `${formatoMoneda.format(promoUnitario)} cada una. Llevando ${promoUnidadesNum * 2} son ${formatoMoneda.format(promoTotalNum * 2)}, y así.`
+                      : "El total de todas juntas, no el precio de cada una"}
                   </p>
                 </div>
-              </div>
+              )}
 
               {(efectivoMayorALista ||
                 efectivoBajoCosto ||
                 promoBajoCosto ||
                 promoMayorALista ||
                 datos.promoVarias ||
+                tieneLasDos ||
                 promoSoloEnLaOtra ||
                 promoDesactivada) && (
                 <div className="mt-[10px] flex flex-col gap-[6px]">
-                  {efectivoMayorALista && (
+                  {tipoOferta === "efectivo" && efectivoMayorALista && (
                     <p className="rounded-[6px] bg-err-bg px-[10px] py-[7px] text-[11.5px] text-err">
                       El precio en efectivo quedó más alto que el de lista
                       {listaEnSucursal !== null && ` (${formatoMoneda.format(listaEnSucursal)})`}: así
@@ -679,20 +742,20 @@ export function CargaInicialForm({
                       lista.
                     </p>
                   )}
-                  {promoMayorALista && (
+                  {tipoOferta === "efectivo" && efectivoBajoCosto && (
+                    <p className="rounded-[6px] bg-err-bg px-[10px] py-[7px] text-[11.5px] text-err">
+                      El precio en efectivo queda por debajo del costo (
+                      {formatoMoneda.format(datos.costoActual ?? 0)}). Se puede guardar igual.
+                    </p>
+                  )}
+                  {tipoOferta === "cantidad" && promoMayorALista && (
                     <p className="rounded-[6px] bg-err-bg px-[10px] py-[7px] text-[11.5px] text-err">
                       En la promo cada unidad sale más que el precio de lista
                       {listaEnSucursal !== null && ` (${formatoMoneda.format(listaEnSucursal)})`}: así
                       no se puede guardar.
                     </p>
                   )}
-                  {efectivoBajoCosto && (
-                    <p className="rounded-[6px] bg-err-bg px-[10px] py-[7px] text-[11.5px] text-err">
-                      El precio en efectivo queda por debajo del costo (
-                      {formatoMoneda.format(datos.costoActual ?? 0)}). Se puede guardar igual.
-                    </p>
-                  )}
-                  {promoBajoCosto && (
+                  {tipoOferta === "cantidad" && promoBajoCosto && (
                     <p className="rounded-[6px] bg-err-bg px-[10px] py-[7px] text-[11.5px] text-err">
                       En la promo cada unidad queda por debajo del costo (
                       {formatoMoneda.format(datos.costoActual ?? 0)}). Se puede guardar igual.
@@ -700,18 +763,24 @@ export function CargaInicialForm({
                   )}
                   {datos.promoVarias && (
                     <p className="rounded-[6px] bg-warn-bg px-[10px] py-[7px] text-[11.5px] text-warn">
-                      Este producto tiene más de una promo por cantidad cargada, así que desde acá
-                      no se toca ninguna: editalas en Precios → Promociones.
+                      Este producto tiene más de una promo por cantidad cargada, así que desde acá no
+                      se toca ninguna: editalas en Precios → Promociones.
                     </p>
                   )}
-                  {promoSoloEnLaOtra && (
+                  {tieneLasDos && (
+                    <p className="rounded-[6px] bg-warn-bg px-[10px] py-[7px] text-[11.5px] text-warn">
+                      Este producto tiene cargadas las dos cosas. Al guardar queda solo la que elijas
+                      acá.
+                    </p>
+                  )}
+                  {tipoOferta === "cantidad" && promoSoloEnLaOtra && (
                     <p className="rounded-[6px] bg-info-bg px-[10px] py-[7px] text-[11.5px] text-info">
                       Ya existe la promo «{datos.promoCantidad?.nombre}», pero cargada para la otra
                       sucursal. Si escribís un total acá, también empieza a correr en{" "}
                       {sucursalNombre}.
                     </p>
                   )}
-                  {promoDesactivada && (
+                  {tipoOferta === "cantidad" && promoDesactivada && (
                     <p className="rounded-[6px] bg-info-bg px-[10px] py-[7px] text-[11.5px] text-info">
                       La promo «{datos.promoCantidad?.nombre}» está desactivada. Cargar el total la
                       vuelve a activar.
