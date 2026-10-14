@@ -42,8 +42,14 @@ export default async function PreciosPage() {
   const puedeEditarPrecios = puedeVerCostos;
   const puedeEditarPoliticas = await esDueno(supabase);
 
-  const [{ data: sucursales }, { data: categorias }, { data: skusRaw }, { data: precios }, { data: preciosSucursal }] =
-    await Promise.all([
+  const [
+    { data: sucursales },
+    { data: categorias },
+    { data: skusRaw },
+    { data: precios },
+    { data: preciosSucursal },
+    { data: preciosEfectivo },
+  ] = await Promise.all([
       traerTodo(
         supabase.from("sucursales").select("id, nombre, es_central").eq("activo", true).order("es_central", { ascending: false }),
       ),
@@ -61,6 +67,10 @@ export default async function PreciosPage() {
       traerTodo(supabase.from("precios").select("sku_id, precio_base, actualizado_en"), "sku_id"),
       traerTodo(
         supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override, actualizado_en"),
+        ["sucursal_id", "sku_id"],
+      ),
+      traerTodo(
+        supabase.from("precios_efectivo").select("sucursal_id, sku_id, precio_efectivo, actualizado_en"),
         ["sucursal_id", "sku_id"],
       ),
     ]);
@@ -112,6 +122,10 @@ export default async function PreciosPage() {
   const descuentoPorClave = new Map<string, number>();
   for (const d of descuentosEfectivo ?? []) descuentoPorClave.set(`${d.sucursal_id}:${d.categoria_id}`, d.porcentaje);
 
+  const precioEfectivoPorClave = new Map<string, number>();
+  for (const p of preciosEfectivo ?? [])
+    precioEfectivoPorClave.set(`${p.sucursal_id}:${p.sku_id}`, p.precio_efectivo);
+
   function calcularParaSucursal(sku: SkuFila, sucursal: Sucursal) {
     const categoriaId = sku.producto?.categoria_id ?? "";
     const skuParaPrecio: SkuParaPrecio = {
@@ -128,6 +142,7 @@ export default async function PreciosPage() {
       recargoSkuMonto: recargoSkuPorClave.get(`${sucursal.id}:${sku.id}`) ?? null,
       recargoCategoriaMonto: recargoCategoriaPorClave.get(`${sucursal.id}:${categoriaId}`) ?? null,
       descuentoEfectivoPct: descuentoPorClave.get(`${sucursal.id}:${categoriaId}`) ?? null,
+      precioEfectivoSku: precioEfectivoPorClave.get(`${sucursal.id}:${sku.id}`) ?? null,
     });
   }
 

@@ -93,6 +93,7 @@ export default async function AlertasPage() {
     { data: movimientosEnvases },
     { data: precios },
     { data: preciosSucursal },
+    { data: preciosEfectivo },
     { data: recargosSucursal },
     { data: recargosSku },
     { data: descuentosEfectivo },
@@ -179,6 +180,12 @@ export default async function AlertasPage() {
       : Promise.resolve({ data: [] }),
     esDuenoRol
       ? traerTodo(supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override"), [
+          "sucursal_id",
+          "sku_id",
+        ])
+      : Promise.resolve({ data: [] }),
+    esDuenoRol
+      ? traerTodo(supabase.from("precios_efectivo").select("sucursal_id, sku_id, precio_efectivo"), [
           "sucursal_id",
           "sku_id",
         ])
@@ -316,6 +323,10 @@ export default async function AlertasPage() {
     for (const d of (descuentosEfectivo ?? []) as { sucursal_id: string; categoria_id: string; porcentaje: number }[])
       descuentoPorClave.set(`${d.sucursal_id}:${d.categoria_id}`, d.porcentaje);
 
+    const precioEfectivoPorClave = new Map<string, number>();
+    for (const p of (preciosEfectivo ?? []) as { sucursal_id: string; sku_id: string; precio_efectivo: number }[])
+      precioEfectivoPorClave.set(`${p.sucursal_id}:${p.sku_id}`, p.precio_efectivo);
+
     for (const sku of skusList) {
       if (sku.costo_actual == null) continue;
       const categoriaId = sku.producto?.categoria_id ?? "";
@@ -335,6 +346,7 @@ export default async function AlertasPage() {
           recargoSkuMonto: recargoSkuPorClave.get(`${sucursal.id}:${sku.id}`) ?? null,
           recargoCategoriaMonto: recargoCategoriaPorClave.get(`${sucursal.id}:${categoriaId}`) ?? null,
           descuentoEfectivoPct: descuentoPorClave.get(`${sucursal.id}:${categoriaId}`) ?? null,
+          precioEfectivoSku: precioEfectivoPorClave.get(`${sucursal.id}:${sku.id}`) ?? null,
         });
 
         if (precioVenta.precioEfectivo == null || precioVenta.costoReferencia == null) continue;

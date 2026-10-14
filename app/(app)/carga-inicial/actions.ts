@@ -2,13 +2,45 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { guardarPrecioBase, guardarOverride, eliminarOverride } from "@/app/(app)/precios/actions";
+import {
+  guardarPrecioBase,
+  guardarOverride,
+  eliminarOverride,
+  guardarPrecioEfectivo,
+  eliminarPrecioEfectivo,
+  guardarPromoCantidadSku,
+  promoCantidadDeSku,
+} from "@/app/(app)/precios/actions";
+import { presentacionLabel } from "@/app/(app)/productos/_lib/presentacion";
+
+export type PromoCantidadCarga = {
+  // Cuántas unidades entran en la promo (2 en un 2x).
+  cantidadRequerida: number;
+  // Total que paga el cliente por esas unidades en la sucursal que se está
+  // contando. null = la promo existe pero no corre acá.
+  precioTotal: number | null;
+  // El nombre con el que ya está cargada, que es el que sale en el ticket.
+  nombre: string;
+  activo: boolean;
+};
 
 export type DatosSkuCarga = {
   stockActual: number;
   costoActual: number | null;
   precioBase: number | null;
   codigoBarras: string | null;
+  // Precio en efectivo propio de este SKU en la sucursal que se está
+  // contando (precios_efectivo). null = no tiene uno y rige el descuento de
+  // la categoría, si la categoría tiene uno.
+  precioEfectivo: number | null;
+  // Porcentaje de descuento por efectivo de la categoría en esta sucursal,
+  // para poder mostrar cuánto se cobra hoy sin cargar nada.
+  descuentoEfectivoPct: number | null;
+  // Promo por cantidad (2x, 3x) de este SKU, si ya hay una.
+  promoCantidad: PromoCantidadCarga | null;
+  // Más de una promo por cantidad para el mismo SKU: no se toca desde acá,
+  // hay que ir a Precios.
+  promoVarias: boolean;
   // Proveedor ya asociado al SKU (proveedor_skus). Si tiene más de uno se
   // toma el primero solo para preseleccionarlo -- el resto no se toca.
   proveedorId: string | null;
@@ -97,6 +129,40 @@ async function contextoLaprida(
   };
 }
 
+// Nombre de la promo cuando se crea desde acá. Es lo que se imprime en el
+// ticket, así que tiene que leerse como lo diría la vendedora: "2x Abrasado
+// Malbec · 750 ml". Si la promo ya existe no se toca -- se puede renombrar
+// desde /precios.
+async function nombrePromoSugerido(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  skuId: string,
+  cantidad: number,
+): Promise<string> {
+  const { data: sku } = await supabase
+    .from("skus")
+    .select(
+      `nombre, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+       producto:productos ( nombre, marca:marcas ( nombre ) )`,
+    )
+    .eq("id", skuId)
+    .maybeSingle();
+
+  if (!sku) return `${cantidad}x`;
+
+  const producto = sku.producto as unknown as
+    | { nombre: string; marca: { nombre: string } | null }
+    | null;
+
+  const partes = [producto?.marca?.nombre, producto?.nombre ?? sku.nombre].filter(Boolean);
+
+  return `${cantidad}x ${partes.join(" ")} · ${presentacionLabel({
+    tipo_presentacion: sku.tipo_presentacion,
+    volumen: sku.volumen,
+    unidad_volumen: sku.unidad_volumen,
+    unidades_contenidas: sku.unidades_contenidas,
+  })}`;
+}
+
 // Lo que hay que mostrarle antes de que escriba nada: cuánto tiene el
 // sistema hoy (para que se dé cuenta si ya pasó por ese producto), el costo
 // y el precio ya cargados.
@@ -112,10 +178,12 @@ export async function datosSkuParaCarga(
     { data: precio },
     { data: proveedorSku },
     { data: lote },
+    { data: precioEfectivo },
+    promo,
   ] = await Promise.all([
     supabase
       .from("skus")
-      .select("costo_actual, codigo_barras, stock_minimo, stock_objetivo")
+      .select("costo_actual, codigo_barras, stock_minimo, stock_objetivo, producto:productos ( categoria_id )")
       .eq("id", skuId)
       .maybeSingle(),
     supabase
@@ -139,10 +207,29 @@ export async function datosSkuParaCarga(
       .order("fecha", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from("precios_efectivo")
+      .select("precio_efectivo")
+      .eq("sucursal_id", sucursalId)
+      .eq("sku_id", skuId)
+      .maybeSingle(),
+    promoCantidadDeSku(skuId, sucursalId),
   ]);
 
   if (errorSku) return { error: errorSku.message };
   if (!sku) return { error: "No encontramos ese producto." };
+
+  // El descuento por efectivo de la categoría: es el que rige mientras el
+  // SKU no tenga un precio en efectivo propio.
+  const categoriaIdSku = (sku.producto as unknown as { categoria_id: string } | null)?.categoria_id;
+  const { data: descuentoCategoria } = categoriaIdSku
+    ? await supabase
+        .from("descuentos_efectivo")
+        .select("porcentaje")
+        .eq("sucursal_id", sucursalId)
+        .eq("categoria_id", categoriaIdSku)
+        .maybeSingle()
+    : { data: null };
 
   const ctxLaprida = await contextoLaprida(supabase, skuId);
   let laprida: PrecioLaprida | null = null;
@@ -172,6 +259,18 @@ export async function datosSkuParaCarga(
     costoActual: sku.costo_actual ?? null,
     precioBase: precio?.precio_base ?? null,
     codigoBarras: sku.codigo_barras ?? null,
+    precioEfectivo: precioEfectivo?.precio_efectivo ?? null,
+    descuentoEfectivoPct: descuentoCategoria?.porcentaje ?? null,
+    promoCantidad:
+      "error" in promo || !promo.promo
+        ? null
+        : {
+            cantidadRequerida: promo.promo.cantidadRequerida,
+            precioTotal: promo.promo.precioTotal,
+            nombre: promo.promo.nombre,
+            activo: promo.promo.activo,
+          },
+    promoVarias: "error" in promo ? false : promo.varias,
     proveedorId: proveedorSku?.proveedor_id ?? null,
     vencimientoUltimoLote: lote?.fecha_vencimiento ?? null,
     stockMinimo: sku.stock_minimo ?? 0,
@@ -194,6 +293,16 @@ export async function guardarCargaInicial(datos: {
   // calculado tampoco se guarda nada: no tiene sentido congelar un SKU en
   // el valor que la regla ya le da.
   precio_laprida: number | null;
+  // Precio en efectivo propio de este SKU en la sucursal que se está
+  // contando. null = sin precio propio, vuelve a regir el descuento de la
+  // categoría (y se borra el que hubiera).
+  precio_efectivo: number | null;
+  // Promo por cantidad (2x, 3x) para la sucursal que se está contando.
+  // null = este producto no tiene promo acá (si tenía, se la saca).
+  // Ausente = no se toca la promo, pase lo que pase: es lo que manda el
+  // formulario cuando el SKU tiene más de una promo por cantidad cargada y
+  // no corresponde que carga inicial elija una.
+  promo_cantidad?: { cantidad: number; precio_total: number } | null;
   // Un lote por fecha de vencimiento. Vacío = no se cargó vencimiento.
   // Cuando hay más de uno, las cantidades tienen que sumar lo contado: un
   // producto puede tener 6 que vencen en marzo y 6 en septiembre.
@@ -208,6 +317,14 @@ export async function guardarCargaInicial(datos: {
   if (!Number.isInteger(datos.cantidad) || datos.cantidad < 0)
     return { error: "La cantidad contada tiene que ser un número entero, cero o más." };
   if (datos.costo !== null && datos.costo < 0) return { error: "El costo no puede ser negativo." };
+  if (datos.precio_efectivo !== null && datos.precio_efectivo < 0)
+    return { error: "El precio en efectivo no puede ser negativo." };
+  if (datos.promo_cantidad) {
+    if (!Number.isInteger(datos.promo_cantidad.cantidad) || datos.promo_cantidad.cantidad < 2)
+      return { error: "La promo por cantidad arranca en 2 unidades (2x, 3x...)." };
+    if (datos.promo_cantidad.precio_total < 0)
+      return { error: "El total de la promo no puede ser negativo." };
+  }
 
   for (const [valor, nombre] of [
     [datos.stock_minimo, "El stock mínimo"],
@@ -254,17 +371,34 @@ export async function guardarCargaInicial(datos: {
   // el campo quedó vacío), se borra cualquier excepción vieja y el SKU
   // vuelve a seguir el recargo. Así contar no convierte el catálogo entero
   // en 722 precios a mantener a mano.
-  const ctxLaprida = await contextoLaprida(supabase, datos.sku_id);
-  if (ctxLaprida) {
-    const { data: filaPrecio } = await supabase
-      .from("precios")
-      .select("precio_base")
-      .eq("sku_id", datos.sku_id)
-      .maybeSingle();
+  const { data: filaPrecio } = await supabase
+    .from("precios")
+    .select("precio_base")
+    .eq("sku_id", datos.sku_id)
+    .maybeSingle();
+  const precioBaseGuardado = filaPrecio?.precio_base ?? null;
 
-    const base = filaPrecio?.precio_base ?? null;
-    const calculado =
-      base == null ? null : Number(base) + ctxLaprida.montoPorUnidad * ctxLaprida.unidades;
+  const ctxLaprida = await contextoLaprida(supabase, datos.sku_id);
+
+  // Precio de lista en la sucursal que se está contando: en la central es
+  // el precio base; en la satélite, la excepción si se cargó una y si no el
+  // base más el recargo. Hace falta para no dejar guardar un precio en
+  // efectivo o una promo por encima de él -- confirmar_venta() rechaza
+  // cualquier línea con precio_unitario > precio_lista_unitario, así que un
+  // número más alto no se "vende más caro": no se puede vender.
+  const esLaSatelite = ctxLaprida != null && ctxLaprida.sucursalId === datos.sucursal_id;
+  const lapridaCalculado =
+    ctxLaprida == null || precioBaseGuardado == null
+      ? null
+      : Number(precioBaseGuardado) + ctxLaprida.montoPorUnidad * ctxLaprida.unidades;
+  const listaEnSucursal = esLaSatelite
+    ? (datos.precio_laprida ?? lapridaCalculado)
+    : precioBaseGuardado == null
+      ? null
+      : Number(precioBaseGuardado);
+
+  if (ctxLaprida) {
+    const calculado = lapridaCalculado;
 
     const esElCalculado =
       datos.precio_laprida !== null &&
@@ -278,6 +412,60 @@ export async function guardarCargaInicial(datos: {
 
     if ("error" in resultadoLaprida)
       return { error: `No se pudo guardar el precio de ${ctxLaprida.nombre}: ${resultadoLaprida.error}` };
+  }
+
+  // Precio en efectivo del SKU, para la sucursal que se está contando
+  // (20261014090000_precio_efectivo_sku.sql). Vacío = se borra el que
+  // hubiera y el SKU vuelve al descuento de su categoría.
+  if (datos.precio_efectivo !== null && precioBaseGuardado == null)
+    return {
+      error: "Para cargar un precio en efectivo hace falta el precio de venta: sin él el POS no puede cobrar con otro medio.",
+    };
+
+  if (
+    datos.precio_efectivo !== null &&
+    listaEnSucursal != null &&
+    datos.precio_efectivo > listaEnSucursal + 0.005
+  )
+    return {
+      error: `El precio en efectivo (${datos.precio_efectivo}) no puede ser mayor al de lista (${listaEnSucursal}): el POS no deja cerrar una venta por encima del precio de lista.`,
+    };
+
+  if (datos.promo_cantidad && listaEnSucursal != null) {
+    const unitarioPromo = datos.promo_cantidad.precio_total / datos.promo_cantidad.cantidad;
+    if (unitarioPromo > listaEnSucursal + 0.005)
+      return {
+        error: `En la promo cada unidad sale ${Math.round(unitarioPromo * 100) / 100} y el precio de lista es ${listaEnSucursal}: una promo más cara que el precio de lista no se puede vender.`,
+      };
+  }
+
+  const resultadoEfectivo =
+    datos.precio_efectivo === null
+      ? await eliminarPrecioEfectivo(datos.sucursal_id, datos.sku_id)
+      : await guardarPrecioEfectivo(datos.sucursal_id, datos.sku_id, datos.precio_efectivo);
+
+  if ("error" in resultadoEfectivo)
+    return { error: `No se pudo guardar el precio en efectivo: ${resultadoEfectivo.error}` };
+
+  // Promo por cantidad (2x, 3x). Es una promoción común del bloque 6, no
+  // algo propio de carga inicial: se guarda con la misma función que usa
+  // /precios, y como todas las promos aplica solo en efectivo.
+  if (datos.promo_cantidad !== undefined) {
+    const resultadoPromo = await guardarPromoCantidadSku({
+      skuId: datos.sku_id,
+      sucursalId: datos.sucursal_id,
+      cantidadRequerida: datos.promo_cantidad?.cantidad ?? 2,
+      precioTotal: datos.promo_cantidad?.precio_total ?? null,
+      // Solo hace falta si hay que crearla: si la promo ya existe se
+      // respeta el nombre que tiene, porque es el que se imprime en el
+      // ticket.
+      nombreSugerido: datos.promo_cantidad
+        ? await nombrePromoSugerido(supabase, datos.sku_id, datos.promo_cantidad.cantidad)
+        : "",
+    });
+
+    if ("error" in resultadoPromo)
+      return { error: `No se pudo guardar la promo: ${resultadoPromo.error}` };
   }
 
   const { data, error } = await supabase.rpc("cargar_stock_inicial", {

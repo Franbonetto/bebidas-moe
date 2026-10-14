@@ -24,6 +24,7 @@ export async function cargarDatosVenta(
     { data: skusRaw },
     { data: precios },
     { data: preciosSucursal },
+    { data: preciosEfectivo },
     { data: recargosSucursal },
     { data: recargosSku },
     { data: descuentosEfectivo },
@@ -47,6 +48,10 @@ export async function cargarDatosVenta(
     traerTodo(supabase.from("precios").select("sku_id, precio_base"), "sku_id"),
     traerTodo(
       supabase.from("precios_sucursal").select("sucursal_id, sku_id, precio_override").eq("sucursal_id", sucursal.id),
+      ["sucursal_id", "sku_id"],
+    ),
+    traerTodo(
+      supabase.from("precios_efectivo").select("sku_id, precio_efectivo").eq("sucursal_id", sucursal.id),
       ["sucursal_id", "sku_id"],
     ),
     traerTodo(
@@ -130,6 +135,9 @@ export async function cargarDatosVenta(
   const overridePorSku = new Map<string, number>();
   for (const p of preciosSucursal ?? []) overridePorSku.set(p.sku_id, p.precio_override);
 
+  const precioEfectivoPorSku = new Map<string, number>();
+  for (const p of preciosEfectivo ?? []) precioEfectivoPorSku.set(p.sku_id, p.precio_efectivo);
+
   const recargoCategoriaPorId = new Map<string, number>();
   for (const r of recargosSucursal ?? []) recargoCategoriaPorId.set(r.categoria_id, r.monto_fijo);
 
@@ -194,6 +202,7 @@ export async function cargarDatosVenta(
       recargoSkuMonto: recargoSkuPorId.get(s.id) ?? null,
       recargoCategoriaMonto: recargoCategoriaPorId.get(categoriaId) ?? null,
       descuentoEfectivoPct: descuentoPorCategoria.get(categoriaId) ?? null,
+      precioEfectivoSku: precioEfectivoPorSku.get(s.id) ?? null,
     });
 
     const padre = padreDesarmePorHijo.get(s.id) ?? null;

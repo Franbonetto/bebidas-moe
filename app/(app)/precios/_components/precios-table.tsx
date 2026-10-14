@@ -44,8 +44,18 @@ function CeldaPrecio({ precio }: { precio: PrecioVenta }) {
         <span className="tabular-nums text-text">{formatoMoneda.format(precio.precioBase)}</span>
       ) : (
         <>
-          <span className="tabular-nums text-text">
-            Efectivo {formatoMoneda.format(precio.precioEfectivo ?? 0)}
+          <span className="flex items-center gap-[5px]">
+            <span className="tabular-nums text-text">
+              Efectivo {formatoMoneda.format(precio.precioEfectivo ?? 0)}
+            </span>
+            {precio.efectivoEsPropio && (
+              <span
+                title="Monto fijo cargado para este producto: no sale del descuento de la categoría"
+                className="inline-block rounded-[4px] bg-warn-bg px-[5px] py-[1px] text-[10px] font-medium text-warn"
+              >
+                fijo
+              </span>
+            )}
           </span>
           <span className="tabular-nums text-text-3">
             Otro medio {formatoMoneda.format(precio.precioOtroMedio ?? 0)}

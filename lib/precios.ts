@@ -39,6 +39,11 @@ export type ContextoPrecio = {
   recargoCategoriaMonto: number | null;
   // descuentos_efectivo.porcentaje para (sucursal, categoria), si existe.
   descuentoEfectivoPct: number | null;
+  // precios_efectivo.precio_efectivo para (sucursal, sku), si existe: el
+  // precio en efectivo cargado a mano para ESTE SKU, como monto fijo
+  // (20261014090000_precio_efectivo_sku.sql). Null = el SKU no tiene uno
+  // propio y sigue rigiendo el descuento por categoria, como siempre.
+  precioEfectivoSku: number | null;
 };
 
 export type Origen = "excepcion" | "manual" | "recargo" | "sin_precio";
@@ -49,6 +54,11 @@ export type PrecioVenta = {
   precioBase: number | null;
   precioEfectivo: number | null;
   precioOtroMedio: number | null;
+  // true cuando el precio en efectivo es un monto fijo cargado para este
+  // SKU y no el resultado del descuento de la categoria. Lo usa la interfaz
+  // para distinguir un numero cargado a mano (que hay que mantener) de uno
+  // que se recalcula solo.
+  efectivoEsPropio: boolean;
   bajoCostoEfectivo: boolean;
   bajoCostoOtroMedio: boolean;
   // Expuesto para el motor de promociones (bloque 6): un combo o un 2x
@@ -78,11 +88,27 @@ export function calcularPrecioVenta(
     origen = "recargo";
   }
 
-  // El override es la ultima palabra del dueño: no se le vuelve a aplicar
-  // el descuento por efectivo encima.
-  let precioEfectivo = precioBase;
+  // Otro medio (debito, credito, transferencia, QR) paga siempre el precio
+  // de lista: el efectivo es lo unico que tiene precio propio
+  // (arquitectura.md 1.7, "efectivo = billete en mano").
   const precioOtroMedio = precioBase;
-  if (!esExcepcion && precioBase != null && ctx.descuentoEfectivoPct != null) {
+
+  // Cuanto sale pagando en efectivo, de lo mas especifico a lo mas general:
+  //
+  //   1. precios_efectivo: monto fijo cargado para este SKU en esta
+  //      sucursal. Le gana a todo, incluso al override -- es la instruccion
+  //      mas puntual que existe sobre cuanto se cobra en efectivo (mismo
+  //      criterio que recargos_sku sobre recargos_sucursal).
+  //   2. descuentos_efectivo: porcentaje de la categoria. No se aplica
+  //      sobre un override: el override es la ultima palabra del dueño y no
+  //      se le descuenta nada encima.
+  //   3. Sin ninguno de los dos, en efectivo se paga el precio de lista.
+  let precioEfectivo = precioBase;
+  const efectivoEsPropio = precioBase != null && ctx.precioEfectivoSku != null;
+
+  if (efectivoEsPropio) {
+    precioEfectivo = ctx.precioEfectivoSku;
+  } else if (!esExcepcion && precioBase != null && ctx.descuentoEfectivoPct != null) {
     precioEfectivo = precioBase * (1 - ctx.descuentoEfectivoPct / 100);
   }
 
@@ -99,6 +125,7 @@ export function calcularPrecioVenta(
     precioBase,
     precioEfectivo,
     precioOtroMedio,
+    efectivoEsPropio,
     bajoCostoEfectivo,
     bajoCostoOtroMedio,
     costoReferencia,

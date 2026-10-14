@@ -221,6 +221,25 @@ la fecha de última actualización de cada recargo** para que sea evidente cuán
 5. Precio base
 ```
 
+**Precio efectivo — dos formas, de lo más puntual a lo más general (2026-10-14).**
+Un SKU puede tener un **precio en efectivo propio**, cargado como monto fijo por
+sucursal (`precios_efectivo`): es lo que se cobra pagando en efectivo, sin importar el
+descuento de su categoría ni la excepción de `precios_sucursal`. Si no tiene uno, sigue
+rigiendo el **porcentaje por categoría** (`descuentos_efectivo`, ej. Vinos en Olavarría
+10%), igual que antes. Mismo criterio de "lo más específico gana" que `recargos_sku`
+sobre `recargos_sucursal`.
+
+- Se carga desde `/precios` y también desde **carga inicial**, con el producto en la
+  mano: ahí mismo se cargan el precio de lista, el precio en efectivo y la promo 2x.
+- Se guarda el monto, no un porcentaje (decisión del usuario): con el producto delante
+  se piensa en el número que se va a cobrar. La contra aceptada es que si cambia el
+  precio de lista, este número queda viejo y hay que tocarlo — igual que la excepción
+  de Laprida.
+- **Nunca puede ser mayor al precio de lista**, y el sistema no deja guardarlo: la venta
+  no se podría cerrar, porque `confirmar_venta()` rechaza toda línea con
+  `precio_unitario > precio_lista_unitario`.
+- Débito, crédito, transferencia y QR siguen pagando el precio de lista.
+
 - Promos con **vigencia opcional**: sin fechas = permanente.
 - **Advertencia automática** cuando el precio final queda por debajo del costo. Avisa, no bloquea, y queda registrado.
 - Al enc. de Laprida (que no ve costos) la advertencia se muestra sin revelar el número.
@@ -950,14 +969,16 @@ Jack Daniel's litro 2x$93.000, "tienen que ser dos botellas diferentes".
 Es un 2x que valida que los dos productos NO sean el mismo SKU, dentro de
 un conjunto acotado (Apple, Fire, etc.).
 
-**3. Descuento por efectivo fuera de vinos.**
+~~**3. Descuento por efectivo fuera de vinos.**~~ **Resuelto el 2026-10-14.**
 Whisky en botellas de 3 litros: "abonando en efectivo 10% de descuento".
-El modelo actual tiene el descuento por efectivo solo para vinos en
-Olavarría. Este caso requiere que el descuento se pueda definir por SKU
-además de por categoría.
+El descuento por efectivo dejó de ser solo por categoría: cada SKU puede
+tener su propio precio en efectivo, como monto fijo por sucursal
+(`precios_efectivo`, migración `20261014090000_precio_efectivo_sku.sql`).
+Ver "Precio efectivo — dos formas" en 1.7. Se carga desde `/precios` y desde
+carga inicial.
 
-Mientras tanto, estos casos se cargan a mano en el ticket ajustando el
-precio de las líneas.
+Mientras tanto, los dos casos que siguen abiertos (1 y 2) se cargan a mano
+en el ticket ajustando el precio de las líneas.
 
 **Pantalla de administración de promociones — implementada.** Pestaña
 separada dentro de `/precios` (`PreciosTabs` + `PromocionesPanel` +
