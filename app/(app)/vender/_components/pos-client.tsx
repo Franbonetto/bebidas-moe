@@ -369,6 +369,12 @@ export function PosClient({
   // el tipo Pago. sumaPagos/restante sirven para validar que lo tipeado
   // cierre exacto antes de dejar cobrar.
   const esEfectivoPuro = pagos.length === 1 && pagos[0].medioPago === "efectivo";
+  // Ya se eligió un medio de pago y no es efectivo puro: ninguna promoción
+  // aplica y cada unidad va a su precio individual (arquitectura.md 1.7,
+  // "todas las promociones son solo en efectivo"; confirmar_venta() además
+  // lo rechaza si la app intentara lo contrario). Una venta con pago
+  // dividido tampoco es efectivo puro: parte se cobró con otro medio.
+  const promosNoAplican = pagos.length > 0 && !esEfectivoPuro;
   const totalACobrar = esEfectivoPuro ? totalEfectivo : totalOtroMedio;
   const sumaPagos = pagos.reduce((acc, p) => acc + p.monto, 0);
   const restante = Math.round((totalACobrar - sumaPagos) * 100) / 100;
@@ -1219,10 +1225,10 @@ export function PosClient({
                             lista. */}
                         {tramos.length > 0 &&
                         tramos.every((t) => t.origen === "combo") &&
-                        !(pagos.length > 0 && !esEfectivoPuro)
+                        !promosNoAplican
                           ? "—"
                           : formatoMoneda.format(
-                              pagos.length > 0 && !esEfectivoPuro
+                              promosNoAplican
                                 ? (sku.precioOtroMedio ?? 0) * l.cantidad
                                 : subtotal,
                             )}
@@ -1256,18 +1262,36 @@ export function PosClient({
                         </label>
                       )}
 
+                      {/* Con otro medio de pago la promo no corre: el cartel
+                          va tachado y en gris, para que se vea por qué el
+                          importe de arriba es el precio individual y no el de
+                          la promo. Mismo tratamiento que la fila del combo. */}
                       {tramos.map((t, i) =>
                         t.origen === "combo" || t.origen === "cantidad" ? (
                           <span
                             key={i}
-                            className="col-span-4 mt-[1px] inline-block w-fit rounded-[4px] bg-ok-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-ok"
+                            className={`col-span-4 mt-[1px] inline-block w-fit rounded-[4px] px-[6px] py-[1.5px] text-[12.5px] font-medium ${
+                              promosNoAplican
+                                ? "bg-bg-2 text-text-3 line-through"
+                                : "bg-ok-bg text-ok"
+                            }`}
                           >
                             {t.cantidad} × {t.promocionNombre ?? ORIGEN_LABEL[t.origen]}
                           </span>
                         ) : null,
                       )}
 
-                      {tramos.some((t) => t.bajoCosto) && (
+                      {promosNoAplican &&
+                        tramos.some((t) => t.origen === "combo" || t.origen === "cantidad") && (
+                          <span className="col-span-4 mt-[1px] inline-block w-fit rounded-[4px] bg-warn-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-warn">
+                            La promo es solo en efectivo: va a su precio individual
+                          </span>
+                        )}
+
+                      {/* El aviso de bajo costo sale del precio de la promo,
+                          así que no tiene sentido cuando se está cobrando el
+                          precio individual. */}
+                      {!promosNoAplican && tramos.some((t) => t.bajoCosto) && (
                         <span className="col-span-4 mt-[1px] inline-block w-fit rounded-[4px] bg-orange-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-orange">
                           Precio por debajo del costo
                         </span>
@@ -1285,16 +1309,14 @@ export function PosClient({
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-medium text-text">{combo.nombre}</p>
                     <p className="text-[13px] text-text-3">
-                      {pagos.length > 0 && !esEfectivoPuro
+                      {promosNoAplican
                         ? "Promoción · no aplica con este medio de pago"
                         : "Promoción · precio en efectivo"}
                     </p>
                   </div>
                   <span
                     className={`shrink-0 text-[15px] font-medium tabular-nums ${
-                      pagos.length > 0 && !esEfectivoPuro
-                        ? "text-text-3 line-through"
-                        : "text-text"
+                      promosNoAplican ? "text-text-3 line-through" : "text-text"
                     }`}
                   >
                     {formatoMoneda.format(combo.total)}
@@ -1373,7 +1395,7 @@ export function PosClient({
               </span>
             </div>
 
-            {hayDescuento && pagos.length > 0 && !esEfectivoPuro && (
+            {hayDescuento && promosNoAplican && (
               <p className="mb-[9px] text-[13px] text-warn">
                 <span className="tabular-nums line-through">{formatoMoneda.format(totalEfectivo)}</span>{" "}
                 era pagando en efectivo.

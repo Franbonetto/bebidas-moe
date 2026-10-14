@@ -33,8 +33,12 @@ type Cargado = {
 //     escanear el siguiente sin tocar nada;
 //   - la cantidad es el TOTAL contado, y siempre se muestra primero lo que
 //     el sistema ya tiene, para que se note si ese producto ya se cargó.
-const inputClass =
-  "w-full rounded-[8px] border border-border bg-bg px-[12px] py-[9px] text-[16px] text-text outline-none focus:border-moe";
+// El ancho va aparte: si un campo lleva w-full y además su propio ancho,
+// cuál gana depende del orden del CSS generado y no del orden en el
+// atributo. Los campos que van en fila usan inputBase y ponen el suyo.
+const inputBase =
+  "rounded-[8px] border border-border bg-bg px-[12px] py-[9px] text-[16px] text-text outline-none focus:border-moe";
+const inputClass = `w-full ${inputBase}`;
 const labelClass = "mb-[5px] block text-[12.5px] font-medium text-text-2";
 
 // Las dos ofertas posibles de un producto, excluyentes entre sí (decisión
@@ -693,24 +697,26 @@ export function CargaInicialForm({
               {tipoOferta === "cantidad" && (
                 <div>
                   <label className={labelClass}>Llevando</label>
-                  <div className="flex items-center gap-[6px]">
+                  <div className="flex max-w-[400px] items-center gap-[8px]">
                     <input
                       type="number"
                       inputMode="numeric"
                       min={2}
                       step="1"
-                      className={`${inputClass} w-[64px] shrink-0 tabular-nums`}
+                      className={`${inputBase} w-[70px] shrink-0 text-center tabular-nums`}
                       value={promoUnidades}
                       onChange={(e) => setPromoUnidades(e.target.value)}
                     />
-                    <span className="whitespace-nowrap text-[13px] text-text-2">quedan en</span>
+                    <span className="shrink-0 whitespace-nowrap text-[13px] text-text-2">
+                      quedan en
+                    </span>
                     <input
                       type="number"
                       inputMode="decimal"
                       min={0}
                       step="0.01"
                       placeholder="Total"
-                      className={`${inputClass} tabular-nums ${
+                      className={`${inputBase} min-w-0 flex-1 tabular-nums ${
                         promoBajoCosto || promoMayorALista ? "border-warn/50" : ""
                       }`}
                       value={promoTotal}
@@ -856,7 +862,7 @@ export function CargaInicialForm({
                         min={1}
                         step={1}
                         placeholder="Cant."
-                        className={`${inputClass} w-[90px] tabular-nums`}
+                        className={`${inputBase} w-[90px] shrink-0 tabular-nums`}
                         value={lote.cantidad}
                         onChange={(e) =>
                           setLotes((prev) =>
