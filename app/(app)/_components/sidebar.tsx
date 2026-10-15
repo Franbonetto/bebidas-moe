@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -230,6 +231,19 @@ export function Sidebar({
   onCerrar?: () => void;
 }) {
   const pathname = usePathname();
+
+  // Con el drawer abierto el body no scrollea: si no, el dedo arrastra la
+  // pantalla de atrás detrás del fondo oscuro y se ve pasar la lista
+  // mientras el menú queda quieto.
+  useEffect(() => {
+    if (!abierto) return;
+    const previo = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previo;
+    };
+  }, [abierto]);
+
   const nav = NAV.filter(
     (item) =>
       (!item.restringido || puedeVerCostos) &&
@@ -243,11 +257,24 @@ export function Sidebar({
 
   return (
     <>
+      {/* Fondo oscuro del drawer. Va al 55%: con 30% la pantalla de atrás
+          (en /precios, las tablas de precios y de categorías, llenas de
+          números e inputs) seguía legible al costado del menú y no se leía
+          como "menú abierto sobre la página" sino como dos cosas a la vez
+          -- pedido del usuario 2026-10-15. */}
       {abierto && (
-        <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={onCerrar} aria-hidden="true" />
+        <div className="fixed inset-0 z-[45] bg-black/55 lg:hidden" onClick={onCerrar} aria-hidden="true" />
       )}
+      {/* z-[45], no z-40: /inventarios tiene su barra de acciones fija en
+          z-40 y, al ir después en el DOM, se dibujaba por encima del menú
+          abierto. Queda arriba de eso y abajo de los modales (z-50).
+          En celular el drawer ocupa casi todo el ancho (hasta 300px) para
+          que la pantalla de atrás desaparezca de verdad; en desktop
+          vuelve a los 216px de siempre, fijo en el flujo normal.
+          overflow-y-auto: en un teléfono bajo, el menú completo del dueño
+          no entra y si no scrollea quedan ítems inalcanzables. */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[216px] shrink-0 flex-col border-r border-border bg-bg-2 p-3 transition-transform duration-200 lg:static lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-[45] flex w-[min(86vw,300px)] shrink-0 flex-col overflow-y-auto border-r border-border bg-bg-2 p-3 transition-transform duration-200 lg:static lg:w-[216px] lg:translate-x-0 lg:overflow-visible ${
           abierto ? "translate-x-0" : "-translate-x-full"
         }`}
       >

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
@@ -20,6 +20,20 @@ export function AppShell({
 }) {
   const [menuAbierto, setMenuAbierto] = useState(false);
   const pathname = usePathname();
+
+  // Al pasar a desktop (lg:) la sidebar deja de ser drawer y el fondo
+  // oscuro desaparece, así que un menú que quedó "abierto" no se ve pero
+  // sigue bloqueando el scroll del body. Pasa de verdad en una tablet que
+  // rota de vertical (768) a horizontal (1024).
+  useEffect(() => {
+    const lg = window.matchMedia("(min-width: 1024px)");
+    const cerrarSiDesktop = () => {
+      if (lg.matches) setMenuAbierto(false);
+    };
+    cerrarSiDesktop();
+    lg.addEventListener("change", cerrarSiDesktop);
+    return () => lg.removeEventListener("change", cerrarSiDesktop);
+  }, []);
   // El punto de venta necesita el máximo alto posible para el ticket -- ver
   // comentario en header.tsx.
   const esPuntoDeVenta = pathname === "/vender";
