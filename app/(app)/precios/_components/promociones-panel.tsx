@@ -91,7 +91,7 @@ export function PromocionesPanel({
         <button
           type="button"
           onClick={() => setFormAbierto("nueva")}
-          className="whitespace-nowrap rounded-[6px] bg-moe px-[11px] py-[6px] text-[12.5px] font-medium text-white hover:bg-moe/90"
+          className="whitespace-nowrap rounded-[6px] bg-moe px-[12px] py-[8px] text-[13px] font-medium text-white hover:bg-moe/90 sm:px-[11px] sm:py-[6px] sm:text-[12.5px]"
         >
           Nueva promoción
         </button>
@@ -107,7 +107,65 @@ export function PromocionesPanel({
           </p>
         </div>
       ) : (
-        <table className="w-full text-[13px]">
+        <>
+        {/* Celular: una tarjeta por promoción. La tabla tiene seis columnas
+            y en un teléfono no entra (identidad-visual.md: las tablas se
+            adaptan, no se comprimen). */}
+        <div className="flex flex-col divide-y divide-[#F1F1F3] md:hidden">
+          {promociones.map((pr) => {
+            const sucursal = sucursales.find((s) => s.id === pr.sucursal_id);
+            return (
+              <div key={pr.id} className="px-[14px] py-[11px]">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-[15px] font-medium leading-tight text-text">{pr.nombre}</p>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => toggleActivo(pr)}
+                    className={`shrink-0 rounded-[4px] px-[9px] py-[3px] text-[12px] font-medium ${
+                      pr.activo ? "bg-ok-bg text-ok" : "bg-bg-2 text-text-3"
+                    }`}
+                  >
+                    {pr.activo ? "Activa" : "Inactiva"}
+                  </button>
+                </div>
+
+                <p className="mt-[3px] text-[12.5px] text-text-3">
+                  {pr.tipo === "combo" ? "Combo" : "Cantidad"} ·{" "}
+                  {sucursal ? sucursal.nombre : "Ambas sucursales"} ·{" "}
+                  {pr.vigente_desde || pr.vigente_hasta
+                    ? `${pr.vigente_desde ? formatoFecha.format(new Date(pr.vigente_desde)) : "…"} — ${
+                        pr.vigente_hasta ? formatoFecha.format(new Date(pr.vigente_hasta)) : "…"
+                      }`
+                    : "Permanente"}
+                </p>
+
+                <p className="mt-[4px] text-[13px] text-text-2">{resumenItems(pr, skuPorId)}</p>
+                <p className="text-[13px] text-text">{resumenPrecios(pr, sucursales)}</p>
+
+                <div className="mt-[9px] flex gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setFormAbierto(pr)}
+                    className="text-[13px] font-medium text-moe"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => eliminar(pr)}
+                    className="text-[13px] text-text-3"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <table className="hidden w-full text-[13px] md:table">
           <thead>
             <tr className="border-b border-border text-left text-[11.5px] uppercase text-text-3">
               <th className="px-[14px] py-[8px] font-medium">Nombre</th>
@@ -171,6 +229,7 @@ export function PromocionesPanel({
             })}
           </tbody>
         </table>
+        </>
       )}
 
       {formAbierto && (
