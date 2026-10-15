@@ -349,11 +349,18 @@ export function Sidebar({
     <>
       {/* Fondo oscuro del drawer. Va al 55%: con 30% la pantalla de atrás
           (en /precios, las tablas de precios y de categorías, llenas de
-          números e inputs) seguía legible al costado del menú y no se leía
-          como "menú abierto sobre la página" sino como dos cosas a la vez
-          -- pedido del usuario 2026-10-15. */}
+          números e inputs) seguía legible al costado del menú.
+          El color va escrito como rgba() a mano y NO como `bg-black/55`:
+          Tailwind v4 compila eso a color-mix(in oklab, ...), que un Chrome
+          anterior al 111 descarta entero y deja el fondo transparente --
+          el menú quedaba flotando sobre la página sin oscurecer nada
+          (visto en el Motorola del local, 2026-10-15). */}
       {abierto && (
-        <div className="fixed inset-0 z-[45] bg-black/55 lg:hidden" onClick={onCerrar} aria-hidden="true" />
+        <div
+          className="fixed inset-0 z-[45] bg-[rgba(0,0,0,0.55)] lg:hidden"
+          onClick={onCerrar}
+          aria-hidden="true"
+        />
       )}
       {/* z-[45], no z-40: /inventarios tiene su barra de acciones fija en
           z-40 y, al ir después en el DOM, se dibujaba por encima del menú
@@ -365,10 +372,20 @@ export function Sidebar({
           entra, scrollea solo hasta el alto de la ventana.
 
           En desktop vuelve a ser la columna de siempre: 216px, fija en el
-          flujo normal y del alto completo. */}
+          flujo normal y del alto completo.
+
+          Cerrado se esconde con `hidden` (display:none) y no deslizándose
+          con -translate-x-full: Tailwind v4 compila eso a la propiedad
+          `translate:`, que recién existe desde Chrome 104. En un navegador
+          más viejo la regla se ignora, el menú NUNCA se iba de la pantalla
+          y tapaba la página entera -- el botón de cerrar "no hacía nada"
+          porque el menú ya estaba cerrado, solo que seguía a la vista
+          (Motorola del local, 2026-10-15). display:none anda en cualquier
+          navegador. Se pierde el deslizamiento al abrir; que el menú se
+          vea o no se vea importa bastante más. */}
       <aside
-        className={`fixed left-0 top-0 z-[45] flex max-h-[100dvh] w-[min(86vw,300px)] shrink-0 flex-col overflow-y-auto rounded-br-[8px] border-b border-r border-border bg-bg-2 p-3 transition-transform duration-200 lg:static lg:max-h-none lg:w-[216px] lg:translate-x-0 lg:overflow-visible lg:rounded-none lg:border-b-0 ${
-          abierto ? "translate-x-0" : "-translate-x-full"
+        className={`fixed left-0 top-0 z-[45] max-h-screen w-[min(86vw,300px)] shrink-0 flex-col overflow-y-auto rounded-br-[8px] border-b border-r border-border bg-bg-2 p-3 lg:static lg:flex lg:max-h-none lg:w-[216px] lg:overflow-visible lg:rounded-none lg:border-b-0 ${
+          abierto ? "flex" : "hidden"
         }`}
       >
         <div className="flex items-center gap-2 px-2 pb-3 pt-1 text-[15px] font-bold tracking-tight text-text lg:pb-4">
