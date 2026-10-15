@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -162,12 +162,81 @@ const ROL_LABEL: Record<string, string> = {
   encargado: "Encargado",
 };
 
+// Qué secciones del menú dejó desplegadas el usuario en este teléfono.
+// Se guarda en el navegador y no en la base: es una preferencia de cómo ve
+// el menú en ESE aparato, no un dato del negocio.
+//
+// Se lee con useSyncExternalStore y no con useState + useEffect por dos
+// razones: el render del servidor no puede ver localStorage (devuelve null
+// y queda el default, sin desajuste de hidratación), y el lint del
+// proyecto no permite setState dentro de un efecto.
+const STORAGE_SECCIONES = "moe:menu-secciones";
+
+function esSeccion(valor: unknown): valor is Seccion {
+  return valor === "operacion" || valor === "catalogo" || valor === "personas";
+}
+
+const oyentes = new Set<() => void>();
+let cacheLeido = false;
+// null = el usuario todavía no tocó ninguna sección en este navegador.
+let cacheSecciones: Seccion[] | null = null;
+
+// useSyncExternalStore compara por referencia, así que esto tiene que
+// devolver siempre el mismo array hasta que algo cambie de verdad.
+function leerSeccionesGuardadas(): Seccion[] | null {
+  if (!cacheLeido) {
+    cacheLeido = true;
+    try {
+      const crudo = window.localStorage.getItem(STORAGE_SECCIONES);
+      const parseado: unknown = crudo ? JSON.parse(crudo) : null;
+      cacheSecciones = Array.isArray(parseado) ? parseado.filter(esSeccion) : null;
+    } catch {
+      // Storage bloqueado (incógnito, permisos) o JSON roto: sin preferencia.
+      cacheSecciones = null;
+    }
+  }
+  return cacheSecciones;
+}
+
+// En el servidor no hay localStorage: sin preferencia, y el primer render
+// del navegador usa esto mismo, así que el HTML coincide.
+function sinPreferencia(): Seccion[] | null {
+  return null;
+}
+
+function suscribirSecciones(oyente: () => void) {
+  // Otra pestaña abierta en el mismo celular/PC: que el menú no quede
+  // desincronizado.
+  const alCambiarStorage = (evento: StorageEvent) => {
+    if (evento.key !== null && evento.key !== STORAGE_SECCIONES) return;
+    cacheLeido = false;
+    oyente();
+  };
+  oyentes.add(oyente);
+  window.addEventListener("storage", alCambiarStorage);
+  return () => {
+    oyentes.delete(oyente);
+    window.removeEventListener("storage", alCambiarStorage);
+  };
+}
+
+function guardarSecciones(secciones: Seccion[]) {
+  cacheLeido = true;
+  cacheSecciones = secciones;
+  try {
+    window.localStorage.setItem(STORAGE_SECCIONES, JSON.stringify(secciones));
+  } catch {
+    // Si no se puede guardar, igual vale para esta sesión.
+  }
+  for (const oyente of oyentes) oyente();
+}
+
+function esItemActivo(href: string, pathname: string) {
+  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
 function renderNavItem(item: NavItem, pathname: string, onCerrar?: () => void, badge?: number) {
-  const active = item.href
-    ? item.href === "/"
-      ? pathname === "/"
-      : pathname.startsWith(item.href)
-    : false;
+  const active = item.href ? esItemActivo(item.href, pathname) : false;
   const content = (
     <>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-4 w-4 shrink-0">
@@ -255,6 +324,27 @@ export function Sidebar({
     .map((seccion) => ({ seccion, items: nav.filter((item) => item.seccion === seccion) }))
     .filter((s) => s.items.length > 0);
 
+  // En celular las secciones se pliegan: con OPERACIÓN, CATÁLOGO y
+  // PERSONAS abiertas a la vez el menú ocupa el alto entero del teléfono
+  // (pedido del usuario 2026-10-15). En desktop esto no se aplica: los
+  // ítems van `lg:flex`, siempre visibles, que es donde sobra lugar.
+  const guardadas = useSyncExternalStore(suscribirSecciones, leerSeccionesGuardadas, sinPreferencia);
+
+  const seccionDelPathname =
+    nav.find((item) => item.href && item.seccion && esItemActivo(item.href, pathname))?.seccion ?? null;
+
+  // Mientras el usuario no haya plegado nada, queda abierta la sección
+  // donde está parado, para que vea dónde está sin tener que abrir nada.
+  const desplegadas = guardadas ?? (seccionDelPathname ? [seccionDelPathname] : []);
+
+  function alternarSeccion(seccion: Seccion) {
+    guardarSecciones(
+      desplegadas.includes(seccion)
+        ? desplegadas.filter((s) => s !== seccion)
+        : [...desplegadas, seccion],
+    );
+  }
+
   return (
     <>
       {/* Fondo oscuro del drawer. Va al 55%: con 30% la pantalla de atrás
@@ -285,21 +375,55 @@ export function Sidebar({
 
         <nav className="flex flex-col gap-px">
           {inicio.map((item) => renderNavItem(item, pathname, onCerrar))}
-          {secciones.map(({ seccion, items }) => (
-            <div key={seccion} className="mt-3 flex flex-col gap-px first:mt-0">
-              <p className="px-2 pb-1 text-[10.5px] font-semibold tracking-wide text-moe">
-                {SECCION_LABEL[seccion]}
-              </p>
-              {items.map((item) =>
-                renderNavItem(
-                  item,
-                  pathname,
-                  onCerrar,
-                  item.href === "/pedidos" ? pedidosCompraSinVer : undefined,
-                ),
-              )}
-            </div>
-          ))}
+          {secciones.map(({ seccion, items }) => {
+            const desplegada = desplegadas.includes(seccion);
+            // El badge de pedidos sin ver no puede quedar escondido dentro
+            // de una sección plegada: si está cerrada, se muestra en el
+            // título. En desktop nunca se pliega, así que ahí sobra.
+            const badgeSeccion =
+              items.some((item) => item.href === "/pedidos") && !desplegada ? pedidosCompraSinVer : 0;
+
+            return (
+              <div key={seccion} className="mt-3 flex flex-col gap-px first:mt-0">
+                <button
+                  type="button"
+                  onClick={() => alternarSeccion(seccion)}
+                  aria-expanded={desplegada}
+                  className="flex w-full items-center gap-2 rounded-[6px] px-2 py-[9px] text-left text-[10.5px] font-semibold tracking-wide text-moe active:bg-[#EFEFF1] lg:pointer-events-none lg:py-0 lg:pb-1"
+                >
+                  {SECCION_LABEL[seccion]}
+                  {!!badgeSeccion && (
+                    <span className="ml-auto grid h-[17px] min-w-[17px] place-items-center rounded-full bg-err px-1 text-[10.5px] font-semibold leading-none text-white lg:hidden">
+                      {badgeSeccion > 9 ? "9+" : badgeSeccion}
+                    </span>
+                  )}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.5}
+                    aria-hidden="true"
+                    className={`h-3.5 w-3.5 shrink-0 text-text-3 transition-transform duration-150 lg:hidden ${
+                      badgeSeccion ? "" : "ml-auto"
+                    } ${desplegada ? "rotate-180" : ""}`}
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
+
+                <div className={`flex-col gap-px ${desplegada ? "flex" : "hidden lg:flex"}`}>
+                  {items.map((item) =>
+                    renderNavItem(
+                      item,
+                      pathname,
+                      onCerrar,
+                      item.href === "/pedidos" ? pedidosCompraSinVer : undefined,
+                    ),
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </nav>
 
         <div className="mt-auto border-t border-border pt-2">
