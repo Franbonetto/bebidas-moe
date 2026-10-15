@@ -49,8 +49,13 @@ function derivadoPorNivel(nivel: number, nombreProducto: string): DerivadoForm {
       };
 }
 
-const inputClass =
-  "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe";
+// El ancho va aparte: si un campo lleva w-full y además su propio ancho,
+// cuál gana depende del orden del CSS generado y no del orden en el
+// atributo. Los campos con ancho propio usan inputBase y lo ponen una sola
+// vez.
+const inputBase =
+  "rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe";
+const inputClass = `w-full ${inputBase}`;
 const labelClass = "mb-[4px] block text-[12px] font-medium text-text-2";
 const seccionClass = "rounded-card border border-border bg-bg p-4";
 const modoBtnClass = (activo: boolean) =>
@@ -776,7 +781,7 @@ export function ProductoSkuForm({
                   value={tipoEnvaseValorDeposito}
                   onChange={(e) => setTipoEnvaseValorDeposito(e.target.value)}
                   placeholder="Depósito $"
-                  className={`${inputClass} w-[120px]`}
+                  className={`${inputBase} w-[120px]`}
                 />
                 <label className="flex items-center gap-1 whitespace-nowrap px-[6px] text-[12.5px] text-text-2">
                   <input
