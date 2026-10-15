@@ -330,12 +330,12 @@ export function Sidebar({
   // ítems van `lg:flex`, siempre visibles, que es donde sobra lugar.
   const guardadas = useSyncExternalStore(suscribirSecciones, leerSeccionesGuardadas, sinPreferencia);
 
-  const seccionDelPathname =
-    nav.find((item) => item.href && item.seccion && esItemActivo(item.href, pathname))?.seccion ?? null;
-
-  // Mientras el usuario no haya plegado nada, queda abierta la sección
-  // donde está parado, para que vea dónde está sin tener que abrir nada.
-  const desplegadas = guardadas ?? (seccionDelPathname ? [seccionDelPathname] : []);
+  // Por defecto arranca TODO plegado: el menú son cinco renglones (Inicio,
+  // los tres títulos y el pie) y la pantalla queda libre. Antes se abría
+  // sola la sección donde estaba parado el usuario, pero en /precios esa
+  // es CATÁLOGO -- seis ítems -- y el menú seguía ocupando casi lo mismo
+  // que antes (pedido del usuario 2026-10-15: "sigue exactamente igual").
+  const desplegadas = guardadas ?? [];
 
   function alternarSeccion(seccion: Seccion) {
     guardarSecciones(
@@ -358,19 +358,34 @@ export function Sidebar({
       {/* z-[45], no z-40: /inventarios tiene su barra de acciones fija en
           z-40 y, al ir después en el DOM, se dibujaba por encima del menú
           abierto. Queda arriba de eso y abajo de los modales (z-50).
-          En celular el drawer ocupa casi todo el ancho (hasta 300px) para
-          que la pantalla de atrás desaparezca de verdad; en desktop
-          vuelve a los 216px de siempre, fijo en el flujo normal.
-          overflow-y-auto: en un teléfono bajo, el menú completo del dueño
-          no entra y si no scrollea quedan ítems inalcanzables. */}
+
+          En celular el panel mide lo que mide su contenido (`top-0`, sin
+          `bottom-0`): con las secciones plegadas son cinco renglones y
+          abajo se sigue viendo la pantalla. Si se despliega todo y no
+          entra, scrollea solo hasta el alto de la ventana.
+
+          En desktop vuelve a ser la columna de siempre: 216px, fija en el
+          flujo normal y del alto completo. */}
       <aside
-        className={`fixed inset-y-0 left-0 z-[45] flex w-[min(86vw,300px)] shrink-0 flex-col overflow-y-auto border-r border-border bg-bg-2 p-3 transition-transform duration-200 lg:static lg:w-[216px] lg:translate-x-0 lg:overflow-visible ${
+        className={`fixed left-0 top-0 z-[45] flex max-h-[100dvh] w-[min(86vw,300px)] shrink-0 flex-col overflow-y-auto rounded-br-[8px] border-b border-r border-border bg-bg-2 p-3 transition-transform duration-200 lg:static lg:max-h-none lg:w-[216px] lg:translate-x-0 lg:overflow-visible lg:rounded-none lg:border-b-0 ${
           abierto ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center gap-2 px-2 pb-4 pt-1 text-[15px] font-bold tracking-tight text-text">
+        <div className="flex items-center gap-2 px-2 pb-3 pt-1 text-[15px] font-bold tracking-tight text-text lg:pb-4">
           <Image src="/logo-moe.png" alt="" width={22} height={22} className="h-[22px] w-[22px] shrink-0" priority />
           Bebidas Moe
+          {/* Cerrar a la vista: tocar el costado también cierra, pero en un
+              teléfono ese costado es una franja finita y no se adivina. */}
+          <button
+            type="button"
+            onClick={onCerrar}
+            aria-label="Cerrar menú"
+            className="-mr-1 ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-[6px] text-text-2 active:bg-[#EFEFF1] lg:hidden"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
         </div>
 
         <nav className="flex flex-col gap-px">
