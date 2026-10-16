@@ -171,23 +171,23 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
       </div>
 
       <div className="text-center">
-        <p className="text-[15px] font-bold">Bebidas Moe</p>
+        <p className="tk-nombre text-[15px] font-bold">Bebidas Moe</p>
         {/* La dirección sale de sucursales.direccion: cada sucursal imprime
             la suya, no se hardcodea ninguna. */}
         {venta.sucursal?.direccion && (
-          <p className="text-[12px] text-text-3">{venta.sucursal.direccion}</p>
+          <p className="tk-chico text-[12px] text-text-3">{venta.sucursal.direccion}</p>
         )}
-        <p className="text-[12px] text-text-3">{venta.sucursal?.nombre}</p>
-        <p className="mt-1 text-[11.5px] text-text-3">{formatoFechaHora.format(new Date(venta.fecha))}</p>
+        <p className="tk-chico text-[12px] text-text-3">{venta.sucursal?.nombre}</p>
+        <p className="tk-chico mt-1 text-[11.5px] text-text-3">{formatoFechaHora.format(new Date(venta.fecha))}</p>
       </div>
 
       {venta.es_envio && (
         <>
           <div className="my-3 border-t border-dashed border-border" />
           <div className="text-center">
-            <p className="text-[13px] font-bold uppercase tracking-wide">Envío</p>
-            <p className="text-[12.5px]">Motomandado: {venta.motomandado}</p>
-            <p className="text-[12.5px]">Dirección: {venta.direccion_envio}</p>
+            <p className="text-[12px] font-bold uppercase tracking-wide">Envío</p>
+            <p className="tk-chico text-[12.5px]">Motomandado: {venta.motomandado}</p>
+            <p className="tk-chico text-[12.5px]">Dirección: {venta.direccion_envio}</p>
           </div>
         </>
       )}
@@ -197,9 +197,9 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
       <div className="flex flex-col gap-1">
         {lineasTicket.map((l) => (
           <div key={l.clave} className="flex justify-between gap-2">
-            <span className="min-w-0">
+            <span className="tk-desc min-w-0">
               {l.titulo}
-              {l.detalle && <span className="block text-[11px] text-text-3">{l.detalle}</span>}
+              {l.detalle && <span className="tk-chico block text-[11px] text-text-3">{l.detalle}</span>}
             </span>
             <span className="shrink-0 tabular-nums">{formatoMoneda.format(l.total)}</span>
           </div>
@@ -225,7 +225,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
             <span className="tabular-nums">{formatoMoneda.format(venta.deposito_envases)}</span>
           </div>
         )}
-        <div className="flex justify-between text-[15px] font-bold">
+        <div className="tk-total flex justify-between text-[15px] font-bold">
           <span>Total</span>
           <span className="tabular-nums">{formatoMoneda.format(venta.total)}</span>
         </div>
@@ -252,15 +252,15 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
             Factura {comprobante!.tipo_cbte} — Pto. Vta. {comprobante!.punto_venta?.numero_arca ?? "?"} N°{" "}
             {comprobante!.numero_comprobante}
           </p>
-          {cuitEmisor && <p className="text-[11.5px] text-text-3">CUIT emisor {cuitEmisor}</p>}
-          <p className="text-[11.5px] text-text-3">
+          {cuitEmisor && <p className="tk-chico text-[11.5px] text-text-3">CUIT emisor {cuitEmisor}</p>}
+          <p className="tk-chico text-[11.5px] text-text-3">
             CAE {comprobante!.cae} · Vto. {comprobante!.vencimiento_cae}
           </p>
           {comprobante!.condicion_iva && (
-            <p className="text-[11.5px] text-text-3">{comprobante!.condicion_iva.nombre}</p>
+            <p className="tk-chico text-[11.5px] text-text-3">{comprobante!.condicion_iva.nombre}</p>
           )}
           {comprobante!.razon_social_receptor && (
-            <p className="text-[11.5px] text-text-3">
+            <p className="tk-chico text-[11.5px] text-text-3">
               {comprobante!.razon_social_receptor} — CUIT {comprobante!.cuit_receptor}
             </p>
           )}
@@ -270,7 +270,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
           )}
         </div>
       ) : (
-        <p className="text-center text-[11.5px] font-medium text-text-2">
+        <p className="tk-chico text-center text-[11.5px] font-medium text-text-2">
           Documento no válido como factura
         </p>
       )}

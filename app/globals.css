@@ -81,6 +81,7 @@ body {
   body {
     margin: 0;
     padding: 0;
+    background: #fff !important;
     /* El layout raíz pone h-full en el <html> y min-h-full flex en el
        <body> para que la app ocupe la ventana. Al imprimir eso obliga a la
        hoja a tener el alto completo de la página aunque el ticket sean diez
@@ -93,15 +94,20 @@ body {
     display: block !important;
   }
 
-  /* En pantalla el ticket se limita a 380px para que se lea cómodo; en el
-     rollo tiene que ocupar el ancho del papel (80mm ≈ 302px), si no el
-     contenido se desborda y el motor de impresión agrega una hoja. */
   .ticket-print {
-    /* 48mm sobre el papel de 58. No es una decision de diseño: es el area
-       que la XP-58 puede imprimir, y el driver lo declara asi ("58(48)").
-       Mas ancho que esto no entra, por mas que sobre papel. */
-    width: 48mm !important;
+    /* Ancho fluido, NO fijo en 48mm. Si el diálogo de Chrome tiene elegido
+       un formulario de Windows (ej. "Ticket 58x80") con márgenes
+       predeterminados, esa elección pisa al @page de acá: la hoja pasa a
+       ser de 58mm con ~5mm de margen a cada lado. Con un ancho fijo de
+       48mm el ticket arrancaba después del margen izquierdo y terminaba a
+       los 53mm, fuera de los 48mm que el cabezal puede imprimir, así que
+       se perdía la franja derecha -- justo donde van los importes (visto
+       en papel el 2026-10-16). Ocupando el 100% del área que la hoja deje
+       libre, entra entero con cualquier combinación de papel y márgenes.
+       El mejor resultado igual se consigue con "Márgenes: Ninguno". */
+    width: 100% !important;
     max-width: none !important;
+    box-sizing: border-box !important;
     /* Pegado a la izquierda, NO centrado. El cabezal de la XP-58 imprime
        desde el borde izquierdo del papel: su area util son los primeros
        48mm de los 58. Centrando el ticket quedaba de 5mm a 53mm, o sea 5mm
@@ -116,7 +122,43 @@ body {
        segunda hoja, con el blanco en el medio (visto en papel el
        2026-10-08). Por eso el ticket se comprime a lo alto: cuanto más
        corto, más chance de entrar en una sola. */
+    font-size: 11px !important;
     line-height: 1.25 !important;
+  }
+
+  /* La térmica no tiene grises: los simula con puntitos y el texto queda
+     lavado. En pantalla el ticket usa text-2/text-3 para jerarquía; en el
+     papel va todo negro o no se lee (la dirección, el detalle del producto
+     y el medio de pago salían casi invisibles). */
+  .ticket-print,
+  .ticket-print * {
+    color: #000 !important;
+  }
+
+  /* Tamaños del papel, independientes de los de pantalla. */
+  .ticket-print .tk-nombre {
+    font-size: 14px !important;
+  }
+
+  .ticket-print .tk-total {
+    font-size: 13px !important;
+  }
+
+  .ticket-print .tk-chico {
+    font-size: 9.5px !important;
+  }
+
+  /* Un nombre largo corta de línea en vez de empujar el precio fuera del
+     papel: la columna de importes nunca se mueve. */
+  .ticket-print .tk-desc {
+    overflow-wrap: anywhere;
+    hyphens: auto;
+  }
+
+  /* El QR de ARCA a 140px (37mm) rozaba los bordes del área imprimible. */
+  .ticket-print img {
+    width: 30mm !important;
+    height: 30mm !important;
   }
 
   /* Separadores punteados: 1.5mm de aire en vez de los 12px de pantalla. */
