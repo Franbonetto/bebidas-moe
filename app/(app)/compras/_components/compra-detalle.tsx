@@ -374,6 +374,15 @@ export function CompraDetalle({
     [compra.items],
   );
 
+  // Los impuestos del pie son de toda la factura, así que para saber cuánto
+  // salió de verdad cada cosa se reparten entre las líneas según cuánto
+  // pesa cada una: lo pagado dividido lo que suman los productos.
+  //
+  // Sale bien carguen las líneas en neto (el factor da 1,28: IVA más las
+  // dos percepciones) o con IVA adentro (da 1,06: solo las percepciones,
+  // porque el IVA ya está en el costo). Nunca duplica.
+  const factorImpuestos = hayPie && compra.total > 0 ? totalPagado / compra.total : 1;
+
   // Propuesta de desglose para cuando la factura llega después: el costo
   // cargado es el precio final pagado, el neto sale para atrás.
   const desgloseSugerido = useMemo(
@@ -512,8 +521,14 @@ export function CompraDetalle({
       </div>
 
       <div className="overflow-hidden rounded-card border border-border bg-bg">
-        <div className="flex items-center justify-between border-b border-border px-[14px] py-[11px]">
+        <div className="flex flex-wrap items-center justify-between gap-1 border-b border-border px-[14px] py-[11px]">
           <h3 className="text-[13px] font-semibold text-text">Líneas</h3>
+          {hayPie && (
+            <p className="text-[11.5px] text-text-3">
+              El costo con impuestos reparte el IVA y las percepciones de la factura entre las
+              líneas (acá, × {factorImpuestos.toLocaleString("es-AR", { maximumFractionDigits: 3 })}).
+            </p>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -529,6 +544,14 @@ export function CompraDetalle({
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                   Costo unit.
                 </th>
+                {hayPie && (
+                  <th
+                    className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2"
+                    title="Lo que salió cada unidad con el IVA y las percepciones de la factura repartidos"
+                  >
+                    Costo con impuestos
+                  </th>
+                )}
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                   Subtotal
                 </th>
@@ -543,7 +566,10 @@ export function CompraDetalle({
             <tbody>
               {compra.items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-[14px] py-[16px] text-center text-[12.5px] text-text-3">
+                  <td
+                    colSpan={hayPie ? 7 : 6}
+                    className="px-[14px] py-[16px] text-center text-[12.5px] text-text-3"
+                  >
                     Todavía no hay líneas en esta compra.
                   </td>
                 </tr>
@@ -560,6 +586,11 @@ export function CompraDetalle({
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
                       {formatoMoneda.format(item.costo_unitario)}
                     </td>
+                    {hayPie && (
+                      <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
+                        {formatoMoneda.format(redondearPeso(item.costo_unitario * factorImpuestos))}
+                      </td>
+                    )}
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text">
                       {formatoMoneda.format(item.subtotal)}
                     </td>
