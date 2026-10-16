@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatoFecha, formatoMoneda } from "../_lib/formato";
-import { TIPO_COMPROBANTE_LABEL, type TipoComprobante } from "../_lib/comprobante";
+import {
+  TIPO_COMPROBANTE_LABEL,
+  totalPagadoCompra,
+  type TipoComprobante,
+} from "../_lib/comprobante";
 
 export type Compra = {
   id: string;
@@ -142,7 +146,7 @@ export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; pued
                   Estado
                 </th>
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
-                  Total
+                  Total pagado
                 </th>
               </tr>
             </thead>
@@ -166,8 +170,11 @@ export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; pued
                   <td className="px-[14px] py-[9px] align-middle">
                     <EstadoCompraBadge estado={c.estado} />
                   </td>
-                  <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
-                    {formatoMoneda.format(c.total)}
+                  <td
+                    className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text"
+                    title="Productos más impuestos y percepciones, como figura al pie de la factura"
+                  >
+                    {formatoMoneda.format(totalPagadoCompra(c))}
                   </td>
                 </tr>
               ))}

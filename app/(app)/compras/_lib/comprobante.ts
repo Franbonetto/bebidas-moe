@@ -60,6 +60,40 @@ export function desglosarIvaCompra(
   return { neto, iva };
 }
 
+// Lo que realmente se pagó: el total que figura abajo de todo en la
+// factura (neto + internos + IVA + percepciones). Las líneas solas nunca
+// son ese número -- les faltan los impuestos del pie.
+//
+// Sirve igual carguen las líneas en neto o con IVA adentro: el pie se copia
+// tal cual del papel, así que neto + IVA ya es lo que suman las líneas en
+// un caso y el neto solo en el otro.
+//
+// Sin pie cargado (remito, o una compra vieja sin clasificar) lo único que
+// se sabe es lo que suman las líneas.
+export function totalPagadoCompra(compra: {
+  total: number;
+  neto_gravado: number | null;
+  iva: number | null;
+  impuestos_internos: number | null;
+  percepcion_iva: number | null;
+  percepcion_iibb: number | null;
+}): number {
+  if (compra.neto_gravado === null || compra.iva === null) return compra.total;
+  return redondearPeso(
+    compra.neto_gravado +
+      (compra.impuestos_internos ?? 0) +
+      compra.iva +
+      (compra.percepcion_iva ?? 0) +
+      (compra.percepcion_iibb ?? 0),
+  );
+}
+
+// Una compra tiene pie cuando se copió el cuadro fiscal del papel. Es lo
+// que habilita mostrar el desglose.
+export function tienePieFiscal(compra: { neto_gravado: number | null; iva: number | null }): boolean {
+  return compra.neto_gravado !== null && compra.iva !== null;
+}
+
 export function redondearPeso(valor: number): number {
   return Math.round(valor * 100) / 100;
 }

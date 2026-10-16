@@ -6,13 +6,15 @@ import {
   presentacionLabel,
   type SkuPresentacion,
 } from "@/app/(app)/productos/_components/productos-table";
-import { formatoFechaHora, formatoMoneda } from "../_lib/formato";
+import { formatoFechaHora, formatoMoneda, formatoMonedaExacto } from "../_lib/formato";
 import {
   TIPOS_COMPROBANTE,
   TIPO_COMPROBANTE_AYUDA,
   TIPO_COMPROBANTE_LABEL,
   desglosarIvaCompra,
   redondearPeso,
+  tienePieFiscal,
+  totalPagadoCompra,
   type TipoComprobante,
 } from "../_lib/comprobante";
 import { reclasificarComprobanteCompra } from "../actions";
@@ -85,6 +87,42 @@ function formatoVencimiento(fecha: string | null) {
   if (!fecha) return "—";
   const [aaaa, mm, dd] = fecha.split("-");
   return `${dd}/${mm}/${aaaa}`;
+}
+
+// Una fila del desglose: concepto a la izquierda, monto a la derecha,
+// leído igual que el cuadro de abajo de la factura.
+function FilaDesglose({
+  label,
+  ayuda,
+  monto,
+  apagado,
+  fuerte,
+}: {
+  label: string;
+  ayuda?: string;
+  monto: number;
+  apagado?: boolean;
+  fuerte?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-[2px]">
+      <span className={`text-[12.5px] ${fuerte ? "font-medium text-text" : "text-text-2"}`}>
+        {label}
+        {ayuda && <span className="mt-[1px] block text-[11px] leading-[1.3] text-text-3">{ayuda}</span>}
+      </span>
+      <span
+        className={`whitespace-nowrap tabular-nums ${
+          fuerte
+            ? "text-[13.5px] font-semibold text-text"
+            : apagado
+              ? "text-[12.5px] text-text-3"
+              : "text-[12.5px] text-text"
+        }`}
+      >
+        {formatoMonedaExacto.format(monto)}
+      </span>
+    </div>
+  );
 }
 
 const inputClass =
@@ -324,6 +362,17 @@ export function CompraDetalle({
   const itemsPorId = useMemo(() => new Map(compra.items.map((i) => [i.id, i])), [compra.items]);
   const router = useRouter();
   const [editando, setEditando] = useState(false);
+  const [verDesglose, setVerDesglose] = useState(false);
+
+  // Lo que se pagó por la compra: productos más todo lo que suma el pie.
+  // Es el número grande de la pantalla, el mismo que figura abajo de todo
+  // en el papel (usuario 2026-10-16).
+  const totalPagado = totalPagadoCompra(compra);
+  const hayPie = tienePieFiscal(compra);
+  const unidades = useMemo(
+    () => compra.items.reduce((acc, it) => acc + it.cantidad, 0),
+    [compra.items],
+  );
 
   // Propuesta de desglose para cuando la factura llega después: el costo
   // cargado es el precio final pagado, el neto sale para atrás.
@@ -358,55 +407,66 @@ export function CompraDetalle({
         </div>
 
         <div className="mt-3 border-t border-border pt-3">
-          {compra.tipo_comprobante === "factura_a" ? (
-            <div className="flex flex-wrap gap-x-[22px] gap-y-[4px] text-[12.5px] text-text-2">
-              <span>
-                Neto gravado:{" "}
-                <b className="font-medium tabular-nums text-text">
-                  {formatoMoneda.format(compra.neto_gravado ?? 0)}
-                </b>
-              </span>
-              <span>
-                IVA:{" "}
-                <b className="font-medium tabular-nums text-text">
-                  {formatoMoneda.format(compra.iva ?? 0)}
-                </b>
-              </span>
-              {compra.impuestos_internos !== null && compra.impuestos_internos > 0 && (
-                <span>
-                  Impuestos internos:{" "}
-                  <b className="font-medium tabular-nums text-text">
-                    {formatoMoneda.format(compra.impuestos_internos)}
-                  </b>
-                </span>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-[12px] text-text-2">Total pagado</p>
+              <p className="text-[22px] font-semibold leading-[1.25] tabular-nums text-text">
+                {formatoMonedaExacto.format(totalPagado)}
+              </p>
+              {hayPie ? (
+                <button
+                  type="button"
+                  onClick={() => setVerDesglose((v) => !v)}
+                  className="mt-[2px] text-[12.5px] font-medium text-moe hover:underline"
+                >
+                  {verDesglose ? "Ocultar desglose" : "Ver desglose"}
+                </button>
+              ) : (
+                <p className="mt-[2px] text-[12px] text-text-3">
+                  Es lo que suman las líneas: esta compra no tiene cargado el pie de la factura.
+                </p>
               )}
-              {compra.percepcion_iva !== null && compra.percepcion_iva > 0 && (
-                <span>
-                  Percepción IVA:{" "}
-                  <b className="font-medium tabular-nums text-text">
-                    {formatoMoneda.format(compra.percepcion_iva)}
-                  </b>
-                </span>
-              )}
-              {compra.percepcion_iibb !== null && compra.percepcion_iibb > 0 && (
-                <span>
-                  Percepción IIBB:{" "}
-                  <b className="font-medium tabular-nums text-text">
-                    {formatoMoneda.format(compra.percepcion_iibb)}
-                  </b>
-                </span>
-              )}
-              <span className="text-ok">Descuenta IVA</span>
             </div>
-          ) : (
-            <p className="text-[12.5px] text-text-2">
-              {compra.tipo_comprobante === "factura_b"
-                ? "Factura B: no discrimina IVA, así que esta compra no descuenta IVA."
-                : compra.tipo_comprobante === "remito"
-                  ? "Llegó con remito: esta compra no descuenta IVA."
-                  : "Esta compra se cargó antes de que el sistema pidiera el comprobante, así que no sabemos con qué vino."}
-            </p>
-          )}
+
+            {hayPie && verDesglose && (
+              <div className="w-full rounded-[6px] border border-border bg-bg-2 px-[12px] py-[10px] sm:w-[330px]">
+                <FilaDesglose
+                  label="Productos"
+                  ayuda={`${compra.items.length} ${
+                    compra.items.length === 1 ? "línea" : "líneas"
+                  } · ${unidades} u. — el detalle, abajo`}
+                  monto={compra.total}
+                  apagado
+                />
+                <div className="my-[7px] border-t border-border" />
+                <FilaDesglose label="Neto gravado" monto={compra.neto_gravado ?? 0} />
+                {!!compra.impuestos_internos && (
+                  <FilaDesglose label="Impuestos internos" monto={compra.impuestos_internos} />
+                )}
+                <FilaDesglose label="IVA" monto={compra.iva ?? 0} />
+                {!!compra.percepcion_iva && (
+                  <FilaDesglose label="Percepción IVA" monto={compra.percepcion_iva} />
+                )}
+                {!!compra.percepcion_iibb && (
+                  <FilaDesglose label="Percepción IIBB" monto={compra.percepcion_iibb} />
+                )}
+                <div className="my-[7px] border-t border-border" />
+                <FilaDesglose label="Total pagado" monto={totalPagado} fuerte />
+              </div>
+            )}
+          </div>
+
+          <p className="mt-[6px] text-[12.5px] text-text-2">
+            {compra.tipo_comprobante === "factura_a" ? (
+              <span className="text-ok">Descuenta IVA</span>
+            ) : compra.tipo_comprobante === "factura_b" ? (
+              "Factura B: no discrimina IVA, así que esta compra no descuenta IVA."
+            ) : compra.tipo_comprobante === "remito" ? (
+              "Llegó con remito: esta compra no descuenta IVA."
+            ) : (
+              "Esta compra se cargó antes de que el sistema pidiera el comprobante, así que no sabemos con qué vino."
+            )}
+          </p>
 
           {puedeReclasificar && !editando && (
             <button
@@ -516,10 +576,16 @@ export function CompraDetalle({
           </table>
         </div>
 
-        <div className="flex items-center justify-between border-t border-border px-[14px] py-[10px]">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-[14px] py-[10px]">
           <p className="text-[13px] font-semibold text-text">
-            Total: <span className="tabular-nums">{formatoMoneda.format(compra.total)}</span>
+            Total de los productos:{" "}
+            <span className="tabular-nums">{formatoMonedaExacto.format(compra.total)}</span>
           </p>
+          {hayPie && (
+            <p className="text-[12px] text-text-3">
+              Sin impuestos — lo pagado está arriba de todo.
+            </p>
+          )}
         </div>
       </div>
 
