@@ -24,11 +24,19 @@ import { SkuPicker, type SkuCatalogo } from "./sku-picker";
 
 type Proveedor = { id: string; razon_social: string; nombre_comercial: string | null };
 type CostoReferencia = { proveedor_id: string; sku_id: string; costo_referencia: number | null };
+type PrecioBase = { sku_id: string; precio_base: number };
 
 type Linea = {
   sku: SkuCatalogo;
   cantidad: number;
   costoUnitario: number;
+  // El papel viene de las dos formas: a veces el costo por unidad y a veces
+  // el total de la línea ("vino 6x750ml 2u. $55.080" es el total de las dos
+  // cajas, no lo que sale cada una -- usuario 2026-10-16). Se carga
+  // cualquiera de los dos y el otro lo calcula el sistema.
+  // null = no escribió el total, la columna muestra el calculado. Con
+  // valor, es lo que escribió y de ahí sale el costo unitario.
+  totalInput: string | null;
   precioVenta: number | null;
   // Opcional: no todos los productos vencen (ej. vinos), otros sí (ej.
   // gaseosa) -- pedido del usuario 2026-09-22.
@@ -89,14 +97,25 @@ function FilaPie({
   );
 }
 
+// El costo unitario es siempre lo que se guarda; si lo cargado fue el total
+// de la línea, sale de dividirlo por la cantidad. El papel manda, así que
+// también se recalcula cuando después se corrige la cantidad.
+function costoDesdeTotal(totalInput: string, cantidad: number): number {
+  const total = Number(totalInput);
+  if (!Number.isFinite(total) || !Number.isFinite(cantidad) || cantidad <= 0) return 0;
+  return redondearPeso(total / cantidad);
+}
+
 export function CompraDirectaForm({
   proveedores,
   skus,
   costosReferencia,
+  preciosBase,
 }: {
   proveedores: Proveedor[];
   skus: SkuCatalogo[];
   costosReferencia: CostoReferencia[];
+  preciosBase: PrecioBase[];
 }) {
   const router = useRouter();
   const [proveedorId, setProveedorId] = useState("");
@@ -125,6 +144,14 @@ export function CompraDirectaForm({
 
   const excluirIds = useMemo(() => new Set(lineas.map((l) => l.sku.id)), [lineas]);
   const total = lineas.reduce((acc, l) => acc + l.cantidad * l.costoUnitario, 0);
+
+  // Precio de venta que ya tiene cargado cada SKU. Es solo una sugerencia
+  // al lado del campo: el precio se sigue escribiendo a mano en cada
+  // entrada, nunca se completa solo (usuario 2026-10-16).
+  const precioActualPorSku = useMemo(
+    () => new Map(preciosBase.map((p) => [p.sku_id, Number(p.precio_base)])),
+    [preciosBase],
+  );
 
   // Desglose propuesto: el costo cargado es el precio final pagado (IVA
   // incluido), así que el neto sale para atrás con la alícuota de cada
@@ -223,9 +250,25 @@ export function CompraDirectaForm({
       let siguiente: Linea[];
       if (idx >= 0) {
         siguiente = [...prev];
-        siguiente[idx] = siguiente[idx].soloPrecio
-          ? { ...siguiente[idx], soloPrecio: false, cantidad: 1, costoUnitario: costoSugerido(sku.id) }
-          : { ...siguiente[idx], cantidad: siguiente[idx].cantidad + 1 };
+        const actual = siguiente[idx];
+        siguiente[idx] = actual.soloPrecio
+          ? {
+              ...actual,
+              soloPrecio: false,
+              cantidad: 1,
+              costoUnitario: costoSugerido(sku.id),
+              totalInput: null,
+            }
+          : {
+              ...actual,
+              cantidad: actual.cantidad + 1,
+              // Si lo cargado fue el total de la linea, el costo por unidad
+              // se reparte de nuevo entre la cantidad nueva.
+              costoUnitario:
+                actual.totalInput === null
+                  ? actual.costoUnitario
+                  : costoDesdeTotal(actual.totalInput, actual.cantidad + 1),
+            };
       } else {
         siguiente = [
           ...prev,
@@ -233,6 +276,7 @@ export function CompraDirectaForm({
             sku,
             cantidad: 1,
             costoUnitario: costoSugerido(sku.id),
+            totalInput: null,
             precioVenta: null,
             fechaVencimiento: "",
             soloPrecio: false,
@@ -247,6 +291,7 @@ export function CompraDirectaForm({
             sku: familiar,
             cantidad: 0,
             costoUnitario: 0,
+            totalInput: null,
             precioVenta: null,
             fechaVencimiento: "",
             soloPrecio: true,
@@ -258,12 +303,45 @@ export function CompraDirectaForm({
     });
   }
 
-  function actualizarLinea(
-    index: number,
-    campo: "cantidad" | "costoUnitario" | "precioVenta",
-    valor: number | null,
-  ) {
-    setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, [campo]: valor } : l)));
+  function actualizarPrecioVenta(index: number, valor: number | null) {
+    setLineas((prev) => prev.map((l, i) => (i === index ? { ...l, precioVenta: valor } : l)));
+  }
+
+  // Corregir la cantidad con el total ya cargado reparte ese total entre la
+  // cantidad nueva (dos cajas a $55.080 el total son $27.540 cada una).
+  function actualizarCantidad(index: number, cantidad: number) {
+    setLineas((prev) =>
+      prev.map((l, i) =>
+        i === index
+          ? {
+              ...l,
+              cantidad,
+              costoUnitario:
+                l.totalInput === null ? l.costoUnitario : costoDesdeTotal(l.totalInput, cantidad),
+            }
+          : l,
+      ),
+    );
+  }
+
+  // Escribir el costo por unidad vuelve a dejar el total como número
+  // calculado (totalInput en null).
+  function actualizarCostoUnitario(index: number, costoUnitario: number) {
+    setLineas((prev) =>
+      prev.map((l, i) => (i === index ? { ...l, costoUnitario, totalInput: null } : l)),
+    );
+  }
+
+  // Y al revés: cargar el total de la línea deja el costo por unidad como
+  // número calculado. Borrarlo devuelve la línea a cero, sin costo cargado.
+  function actualizarTotalLinea(index: number, valor: string) {
+    setLineas((prev) =>
+      prev.map((l, i) => {
+        if (i !== index) return l;
+        if (valor === "") return { ...l, totalInput: null, costoUnitario: 0 };
+        return { ...l, totalInput: valor, costoUnitario: costoDesdeTotal(valor, l.cantidad) };
+      }),
+    );
   }
 
   function actualizarFechaVencimiento(index: number, valor: string) {
@@ -424,9 +502,12 @@ export function CompraDirectaForm({
       <p className="mb-4 text-[12.5px] text-text-3">
         Elegí el proveedor, marcá con qué vino (factura o remito), cargá lo que entró, el costo y el
         precio de venta, y queda todo actualizado (compra, stock, costo y precio) en un solo paso.
-        Cada presentación (x24, x6,
-        unidad) tiene su propio precio, siempre cargado a mano y obligatorio. Si agregás un pack
-        que se desarma, el resto de la familia aparece abajo para cargarle el precio ahí mismo. El
+        El costo cargalo como viene en el papel: el de cada unidad o el total de la línea. Si la
+        factura dice «6x750ml 2u. $55.080», son dos cajones a $27.540 cada uno: cargá 2 de cantidad
+        y $55.080 en el total. El número que falta lo calcula el sistema y queda en gris. Cada
+        presentación (x24, x6, unidad) tiene su propio precio, siempre cargado a mano y obligatorio
+        — si ya tenía uno, aparece debajo del campo como sugerencia. Si agregás un pack que se
+        desarma, el resto de la familia aparece abajo para cargarle el precio ahí mismo. El
         vencimiento es opcional: cargalo solo si el producto lo tiene.
       </p>
 
@@ -535,20 +616,20 @@ export function CompraDirectaForm({
               <th className="border-b border-border bg-bg-2 px-[12px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
                 SKU
               </th>
-              <th className="w-[100px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+              <th className="w-[90px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                 Cantidad
               </th>
-              <th className="w-[140px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+              <th className="w-[130px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                 Costo unit.
+              </th>
+              <th className="w-[130px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                Total de la línea
               </th>
               <th className="w-[140px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                 Precio de venta
               </th>
-              <th className="w-[150px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+              <th className="w-[140px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                 Vencimiento
-              </th>
-              <th className="w-[120px] border-b border-border bg-bg-2 px-[12px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
-                Subtotal
               </th>
               <th className="w-[40px] border-b border-border bg-bg-2 px-[12px] py-[7px]" />
             </tr>
@@ -561,132 +642,171 @@ export function CompraDirectaForm({
                 </td>
               </tr>
             ) : (
-              lineas.map((l, i) => (
-                <tr
-                  key={l.sku.id}
-                  className={`border-b border-[#F1F1F3] last:border-b-0 ${l.soloPrecio ? "bg-bg-2/40" : ""}`}
-                >
-                  <td className="px-[12px] py-[7px] align-middle">
-                    <p className="font-medium text-text">{l.sku.producto?.nombre}</p>
-                    <p className="text-[11.5px] text-text-3">
-                      {l.sku.producto?.marca?.nombre} — {presentacionLabel(l.sku)}
-                    </p>
-                    {!l.sku.codigo_barras &&
-                      (filaAsignandoCodigo === i ? (
-                        <div className="mt-1 flex items-center gap-1">
-                          <input
-                            autoFocus
-                            type="text"
-                            value={codigoInput}
-                            onChange={(e) => setCodigoInput(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                confirmarAsignarCodigo(i);
-                              }
-                              if (e.key === "Escape") cancelarAsignarCodigo();
-                            }}
-                            placeholder="Escaneá el código…"
-                            className="w-[150px] rounded-[4px] border border-border bg-bg px-[6px] py-[2px] text-[11.5px] outline-none focus:border-moe"
-                          />
+              lineas.map((l, i) => {
+                // El número que escribió la encargada se ve en negro y el que
+                // calcula el sistema en gris, para saber de un vistazo cuál es
+                // cuál.
+                const costoCalculado = l.totalInput !== null;
+                const totalLinea = redondearPeso(l.cantidad * l.costoUnitario);
+                const precioActual = precioActualPorSku.get(l.sku.id);
+                return (
+                  <tr
+                    key={l.sku.id}
+                    className={`border-b border-[#F1F1F3] last:border-b-0 ${l.soloPrecio ? "bg-bg-2/40" : ""}`}
+                  >
+                    <td className="px-[12px] py-[7px] align-middle">
+                      <p className="font-medium text-text">{l.sku.producto?.nombre}</p>
+                      <p className="text-[11.5px] text-text-3">
+                        {l.sku.producto?.marca?.nombre} — {presentacionLabel(l.sku)}
+                      </p>
+                      {!l.sku.codigo_barras &&
+                        (filaAsignandoCodigo === i ? (
+                          <div className="mt-1 flex items-center gap-1">
+                            <input
+                              autoFocus
+                              type="text"
+                              value={codigoInput}
+                              onChange={(e) => setCodigoInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  confirmarAsignarCodigo(i);
+                                }
+                                if (e.key === "Escape") cancelarAsignarCodigo();
+                              }}
+                              placeholder="Escaneá el código…"
+                              className="w-[150px] rounded-[4px] border border-border bg-bg px-[6px] py-[2px] text-[11.5px] outline-none focus:border-moe"
+                            />
+                            <button
+                              type="button"
+                              onClick={cancelarAsignarCodigo}
+                              className="text-[11px] text-text-3 hover:text-err"
+                            >
+                              Cancelar
+                            </button>
+                            {errorCodigo && <p className="text-[11px] text-err">{errorCodigo}</p>}
+                          </div>
+                        ) : (
                           <button
                             type="button"
-                            onClick={cancelarAsignarCodigo}
-                            className="text-[11px] text-text-3 hover:text-err"
+                            onClick={() => iniciarAsignarCodigo(i)}
+                            className="mt-0.5 text-[11px] text-warn underline underline-offset-2"
                           >
-                            Cancelar
+                            Sin código de barras · asignar
                           </button>
-                          {errorCodigo && <p className="text-[11px] text-err">{errorCodigo}</p>}
-                        </div>
+                        ))}
+                      {filaCodigoOk === i && (
+                        <p className="mt-0.5 text-[11px] text-ok">Código de barras asignado ✓</p>
+                      )}
+                    </td>
+                    <td className="px-[12px] py-[7px] align-middle">
+                      {l.soloPrecio ? (
+                        <span className="block text-right text-[12.5px] text-text-3">—</span>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => iniciarAsignarCodigo(i)}
-                          className="mt-0.5 text-[11px] text-warn underline underline-offset-2"
-                        >
-                          Sin código de barras · asignar
-                        </button>
-                      ))}
-                    {filaCodigoOk === i && (
-                      <p className="mt-0.5 text-[11px] text-ok">Código de barras asignado ✓</p>
-                    )}
-                  </td>
-                  <td className="px-[12px] py-[7px] align-middle">
-                    {l.soloPrecio ? (
-                      <span className="block text-right text-[12.5px] text-text-3">—</span>
-                    ) : (
-                      <input
-                        type="number"
-                        min={1}
-                        className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                        value={l.cantidad}
-                        onChange={(e) => actualizarLinea(i, "cantidad", Number(e.target.value))}
-                      />
-                    )}
-                  </td>
-                  <td className="px-[12px] py-[7px] align-middle">
-                    {l.soloPrecio ? (
-                      <span className="block text-right text-[12.5px] text-text-3">—</span>
-                    ) : (
+                        <input
+                          type="number"
+                          min={1}
+                          className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
+                          value={l.cantidad}
+                          onChange={(e) => actualizarCantidad(i, Number(e.target.value))}
+                        />
+                      )}
+                    </td>
+                    <td className="px-[12px] py-[7px] align-middle">
+                      {l.soloPrecio ? (
+                        <span className="block text-right text-[12.5px] text-text-3">—</span>
+                      ) : (
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          title="Lo que sale cada unidad de esta presentación, con IVA incluido"
+                          className={`w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe ${
+                            costoCalculado ? "text-text-3" : "text-text"
+                          }`}
+                          value={l.costoUnitario}
+                          onChange={(e) => actualizarCostoUnitario(i, Number(e.target.value))}
+                        />
+                      )}
+                    </td>
+                    <td className="px-[12px] py-[7px] align-middle">
+                      {l.soloPrecio ? (
+                        <span className="block text-right text-[12.5px] text-text-3">—</span>
+                      ) : (
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          title="El total que figura en la factura por esa cantidad, con IVA incluido"
+                          className={`w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe ${
+                            costoCalculado ? "text-text" : "text-text-3"
+                          }`}
+                          value={l.totalInput ?? (totalLinea > 0 ? totalLinea : "")}
+                          onChange={(e) => actualizarTotalLinea(i, e.target.value)}
+                        />
+                      )}
+                    </td>
+                    <td className="px-[12px] py-[7px] align-middle">
                       <input
                         type="number"
                         min={0}
                         step="0.01"
-                        className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none focus:border-moe"
-                        value={l.costoUnitario}
-                        onChange={(e) => actualizarLinea(i, "costoUnitario", Number(e.target.value))}
+                        placeholder="Obligatorio"
+                        className={`w-full rounded-[6px] border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe ${
+                          l.precioVenta === null ? "border-warn/50" : "border-border"
+                        }`}
+                        value={l.precioVenta ?? ""}
+                        onChange={(e) =>
+                          actualizarPrecioVenta(
+                            i,
+                            e.target.value === "" ? null : Number(e.target.value),
+                          )
+                        }
                       />
-                    )}
-                  </td>
-                  <td className="px-[12px] py-[7px] align-middle">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      placeholder="Obligatorio"
-                      className={`w-full rounded-[6px] border bg-bg px-[8px] py-[4px] text-right text-[13px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe ${
-                        l.precioVenta === null ? "border-warn/50" : "border-border"
-                      }`}
-                      value={l.precioVenta ?? ""}
-                      onChange={(e) =>
-                        actualizarLinea(
-                          i,
-                          "precioVenta",
-                          e.target.value === "" ? null : Number(e.target.value),
-                        )
-                      }
-                    />
-                  </td>
-                  <td className="px-[12px] py-[7px] align-middle">
-                    {l.soloPrecio ? (
-                      <span className="block text-right text-[12.5px] text-text-3">—</span>
-                    ) : (
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="dd/mm/aaaa"
-                        title="Opcional — solo si el producto vence"
-                        maxLength={10}
-                        className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[12.5px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
-                        value={l.fechaVencimiento}
-                        onChange={(e) => actualizarFechaVencimiento(i, e.target.value)}
-                      />
-                    )}
-                  </td>
-                  <td className="px-[12px] py-[7px] text-right align-middle tabular-nums text-text">
-                    {l.soloPrecio ? "—" : formatoMoneda.format(l.cantidad * l.costoUnitario)}
-                  </td>
-                  <td className="px-[12px] py-[7px] text-right align-middle">
-                    <button
-                      type="button"
-                      onClick={() => quitarLinea(i)}
-                      className="text-[12px] text-text-3 hover:text-err"
-                    >
-                      Quitar
-                    </button>
-                  </td>
-                </tr>
-              ))
+                      {/* El precio que ya tenía cargado, como sugerencia: se
+                          muestra, no se escribe solo. Si no cambió, con un
+                          click queda el mismo. */}
+                      {precioActual !== undefined &&
+                        (l.precioVenta === precioActual ? (
+                          <p className="mt-0.5 text-right text-[11px] text-text-3">Igual al actual</p>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => actualizarPrecioVenta(i, precioActual)}
+                            className="mt-0.5 block w-full text-right text-[11px] text-text-3 underline underline-offset-2 hover:text-moe"
+                          >
+                            Actual {formatoMoneda.format(precioActual)} · usar
+                          </button>
+                        ))}
+                    </td>
+                    <td className="px-[12px] py-[7px] align-middle">
+                      {l.soloPrecio ? (
+                        <span className="block text-right text-[12.5px] text-text-3">—</span>
+                      ) : (
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="dd/mm/aaaa"
+                          title="Opcional — solo si el producto vence"
+                          maxLength={10}
+                          className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-right text-[12.5px] tabular-nums outline-none placeholder:text-text-3 focus:border-moe"
+                          value={l.fechaVencimiento}
+                          onChange={(e) => actualizarFechaVencimiento(i, e.target.value)}
+                        />
+                      )}
+                    </td>
+                    <td className="px-[12px] py-[7px] text-right align-middle">
+                      <button
+                        type="button"
+                        onClick={() => quitarLinea(i)}
+                        className="text-[12px] text-text-3 hover:text-err"
+                      >
+                        Quitar
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

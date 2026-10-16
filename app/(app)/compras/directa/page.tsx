@@ -24,35 +24,40 @@ export default async function CompraDirectaPage() {
     );
   }
 
-  const [{ data: proveedores }, { data: skus }, { data: costosReferencia }] = await Promise.all([
-    traerTodo(
-      supabase
-        .from("proveedores")
-        .select("id, razon_social, nombre_comercial")
-        .eq("activo", true)
-        .order("razon_social"),
-    ),
-    traerTodo(
-      supabase
-        .from("skus")
-        .select(
-          `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           desarma_en_sku_id,
-           producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( alicuota_iva ) )`,
-        )
-        .eq("activo", true),
-    ),
-    traerTodo(supabase.from("proveedor_skus").select("proveedor_id, sku_id, costo_referencia"), [
-      "proveedor_id",
-      "sku_id",
-    ]),
-  ]);
+  const [{ data: proveedores }, { data: skus }, { data: costosReferencia }, { data: preciosBase }] =
+    await Promise.all([
+      traerTodo(
+        supabase
+          .from("proveedores")
+          .select("id, razon_social, nombre_comercial")
+          .eq("activo", true)
+          .order("razon_social"),
+      ),
+      traerTodo(
+        supabase
+          .from("skus")
+          .select(
+            `id, codigo_interno, codigo_barras, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+             desarma_en_sku_id,
+             producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( alicuota_iva ) )`,
+          )
+          .eq("activo", true),
+      ),
+      traerTodo(supabase.from("proveedor_skus").select("proveedor_id, sku_id, costo_referencia"), [
+        "proveedor_id",
+        "sku_id",
+      ]),
+      // El precio de venta que ya tiene cada SKU: se muestra como sugerencia
+      // al lado del campo, no se carga solo (usuario 2026-10-16).
+      traerTodo(supabase.from("precios").select("sku_id, precio_base"), "sku_id"),
+    ]);
 
   return (
     <CompraDirectaForm
       proveedores={proveedores ?? []}
       skus={(skus ?? []) as unknown as SkuCatalogo[]}
       costosReferencia={costosReferencia ?? []}
+      preciosBase={preciosBase ?? []}
     />
   );
 }
