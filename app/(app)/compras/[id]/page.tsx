@@ -20,7 +20,7 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
        tipo_comprobante, neto_gravado, iva, impuestos_internos, percepcion_iva, percepcion_iibb,
        proveedor:proveedores ( id, razon_social, nombre_comercial ),
        compra_items (
-         id, sku_id, cantidad, costo_unitario, subtotal, fecha_vencimiento,
+         id, sku_id, cantidad, costo_unitario, costo_con_impuestos, subtotal, fecha_vencimiento,
          sku:skus ( nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
                     producto:productos ( nombre, marca:marcas ( nombre ),
                                          categoria:categorias ( alicuota_iva ) ) )

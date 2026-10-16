@@ -35,6 +35,12 @@ export type ItemCompraDetalle = {
   sku_id: string;
   cantidad: number;
   costo_unitario: number;
+  // Lo que salio de verdad cada unidad, con los impuestos del pie
+  // repartidos. Lo calcula la base al cargar la compra
+  // (20261016090000_costo_con_impuestos.sql) y es el costo que el sistema
+  // usa para el margen. null = compra sin pie (remito) o anterior a esa
+  // migracion.
+  costo_con_impuestos: number | null;
   subtotal: number;
   fecha_vencimiento: string | null;
   recibido_previo: number;
@@ -525,8 +531,9 @@ export function CompraDetalle({
           <h3 className="text-[13px] font-semibold text-text">Líneas</h3>
           {hayPie && (
             <p className="text-[11.5px] text-text-3">
-              El costo con impuestos reparte el IVA y las percepciones de la factura entre las
-              líneas (acá, × {factorImpuestos.toLocaleString("es-AR", { maximumFractionDigits: 3 })}).
+              El costo con impuestos es el que el sistema toma como costo del producto: reparte el
+              IVA y las percepciones de la factura entre las líneas (acá, ×{" "}
+              {factorImpuestos.toLocaleString("es-AR", { maximumFractionDigits: 3 })}).
             </p>
           )}
         </div>
@@ -588,7 +595,10 @@ export function CompraDetalle({
                     </td>
                     {hayPie && (
                       <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
-                        {formatoMoneda.format(redondearPeso(item.costo_unitario * factorImpuestos))}
+                        {formatoMoneda.format(
+                          item.costo_con_impuestos ??
+                            redondearPeso(item.costo_unitario * factorImpuestos),
+                        )}
                       </td>
                     )}
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text">
