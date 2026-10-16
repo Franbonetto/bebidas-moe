@@ -158,6 +158,14 @@ Historial completo por lote/recepción. El stock **no** rastrea de qué lote sal
 unidad. `costo_actual` = costo del último lote recibido. Preparado para migrar a FIFO
 sin perder datos.
 
+**El costo del producto es lo que se pagó, con impuestos adentro.** La Factura A lista
+el detalle sin IVA, así que la encargada carga el número del papel y el sistema reparte
+los impuestos del pie entre las líneas: `factor = total pagado / total de las líneas`.
+`costo_unitario` queda como lo que decía la factura y `costo_con_impuestos` al lado;
+`skus.costo_actual` = `coalesce(costo_con_impuestos, costo_unitario)`. Con remito o
+Factura B no hay pie: manda el costo unitario pelado. Ver `docs/arquitectura.md` 1.6,
+*Costo con impuestos* (2026-10-16).
+
 ### Pedidos y transferencias
 ```
 PEDIDO:        borrador → enviado → en_preparacion → preparado → despachado → cerrado

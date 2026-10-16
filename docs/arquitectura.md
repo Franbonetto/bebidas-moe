@@ -142,10 +142,12 @@ obligatorio. Es el dato que alimenta el balance de IVA del dueño (ver 1.8).
 - **Solo la Factura A da crédito fiscal.** Moe es Responsable Inscripto: como receptor, la B no
   le discrimina IVA y el remito no existe fiscalmente. La B se registra como gasto sin crédito y
   el remito como compra sin comprobante — los tres se muestran separados en el reporte.
-- **El costo por línea no cambia de significado:** sigue siendo el precio final pagado, IVA
-  incluido (es lo que usan el margen y la cascada de precios). El dato fiscal —neto gravado e
-  IVA— vive en el **encabezado** de la compra, tal como figura al pie del comprobante. El sistema
-  lo propone calculándolo con `categorias.alicuota_iva` y la encargada lo corrige contra el papel.
+- **El costo del producto es el precio final pagado, impuestos incluidos** (es lo que usan el
+  margen y la cascada de precios). El dato fiscal —neto gravado e IVA— vive en el **encabezado**
+  de la compra, tal como figura al pie del comprobante. El sistema lo propone calculándolo con
+  `categorias.alicuota_iva` y la encargada lo corrige contra el papel. Ojo: lo que se carga en
+  cada línea es el número del papel, que en una Factura A viene **sin** IVA — cómo se llega de
+  uno al otro está abajo, en *Costo con impuestos* (2026-10-16).
 - **El pie se carga completo, con la misma estructura que traen las facturas reales**
   (relevado 2026-09-29 sobre facturas de Dellepiane y Coca-Cola Andina):
   `neto gravado + impuestos internos + IVA + percepción IVA + percepción IIBB = total`.
@@ -178,6 +180,45 @@ obligatorio. Es el dato que alimenta el balance de IVA del dueño (ver 1.8).
   costos.
 - El "costo actual" mostrado = costo del último lote recibido.
 - Migrable a FIFO más adelante sin perder datos, porque el historial ya se guarda desde el día uno.
+
+### Costo con impuestos (2026-10-16)
+
+La Factura A **lista el detalle sin IVA**: el papel dice `FERUS MALBEC 6X750 … 109.710,75` y
+recién al pie suma IVA, percepción de IVA y percepción de IIBB. Cargando ese número tal cual, el
+costo guardado quedaba ~28% abajo del real, y con él el margen del dueño y la advertencia de
+precio bajo costo.
+
+Se descartó pedirle a la encargada que haga la cuenta (pedido explícito del usuario: carga lo que
+dice el papel y nada más). **El sistema reparte los impuestos del pie entre las líneas**, en
+proporción a lo que pesa cada una:
+
+```
+factor = total pagado / total de las líneas
+costo con impuestos = costo unitario × factor
+```
+
+En la factura de Aitor Ider Balbo del 2026-10-06: `747.583,50 / 584.049,60 = 1,28`. El Ferus,
+cargado a $6.095,04, costó $7.801,65.
+
+- **El factor se acomoda solo.** Si las líneas se cargan en neto da 1,28 (IVA más las dos
+  percepciones); si alguna vez se cargan con el IVA ya adentro da 1,06 (solo las percepciones,
+  porque el IVA ya está en el costo). Nunca duplica.
+- **Entran todos los impuestos del pie**, percepciones incluidas (decisión del usuario): es la
+  plata que sale del bolsillo por esa mercadería.
+- **Con remito o Factura B no hay pie**: no hay nada que repartir y el costo del producto es el
+  costo unitario pelado.
+- **El costo del papel no se pisa.** `costo_unitario` sigue siendo el número de la factura (es lo
+  que cuadra contra el comprobante) y el costo con impuestos se guarda al lado, tanto en la línea
+  de la compra como en el lote.
+- **`skus.costo_actual` = `coalesce(costo_con_impuestos, costo_unitario)`**. Como todo lo que
+  mira el costo (margen, alertas, panel del dueño, promociones) lee `costo_actual`, no hubo que
+  tocar ninguna otra pantalla.
+- **La factura que llega después del remito sí corrige el costo**: al cargarla se recalcula la
+  compra, se completa el dato en los lotes ya recibidos y se refresca el costo de los SKU cuyo
+  último lote sea ese. No se reescribe el lote — se llena una columna que hasta ese momento no
+  tenía respuesta posible —, y queda el log de la reclasificación con quién y por qué.
+- Las compras cargadas antes de esta decisión quedan como están: se corrigen solas a medida que
+  entra mercadería nueva, porque el costo actual es el del último lote.
 
 ## 1.7 Precios y promociones
 
@@ -714,6 +755,9 @@ compras_reclasificacion_fiscal
 
 compra_items
   id, compra_id, sku_id, cantidad, costo_unitario, subtotal
+  costo_con_impuestos    ← costo_unitario × (total pagado / total de las líneas).
+                           null = sin pie que repartir (remito, Factura B o compra
+                           anterior al 2026-10-16). Lo calcula la base, nunca la app.
 
 recepciones_compra
   id, compra_id, fecha, usuario_id
@@ -725,8 +769,12 @@ recepcion_items
 
 historial_costos
   id, sku_id, proveedor_id, recepcion_id
-  costo_unitario, cantidad, fecha
-  ← una fila por lote recibido. Nunca se sobrescribe.
+  costo_unitario, costo_con_impuestos, cantidad, fecha
+  ← una fila por lote recibido. Nunca se sobrescribe: la única excepción es
+    completar costo_con_impuestos cuando estaba vacío (el remito al que después
+    le llega la factura), y solo desde recalcular_costo_con_impuestos_compra().
+    costo_unitario es lo que decía el papel; costo_con_impuestos, lo que salió
+    de verdad. skus.costo_actual sale del segundo cuando existe.
 ```
 
 ## 2.6 Pedidos y transferencias
