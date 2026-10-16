@@ -127,6 +127,18 @@ body {
     line-height: 1.25 !important;
   }
 
+  /* Papel en blanco despues de la ultima linea. El cabezal de la XP-58
+     queda ~12mm antes de la barra de corte, asi que lo ultimo que imprime
+     nunca llega a pasarla: habia que tironear el papel para cortar sin
+     comerse la leyenda del pie (pedido del usuario 2026-10-16). Va como
+     ::after y no como padding para no tocar nada del bloque en si, que
+     recien ahora imprime bien. */
+  .ticket-print::after {
+    content: "";
+    display: block;
+    height: 12mm;
+  }
+
   /* La térmica no tiene grises: los simula con puntitos y el texto queda
      lavado. En pantalla el ticket usa text-2/text-3 para jerarquía; en el
      papel va todo negro o no se lee (la dirección, el detalle del producto
