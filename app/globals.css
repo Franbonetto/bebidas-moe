@@ -95,18 +95,19 @@ body {
   }
 
   .ticket-print {
-    /* Ancho fluido, NO fijo en 48mm. Si el diálogo de Chrome tiene elegido
-       un formulario de Windows (ej. "Ticket 58x80") con márgenes
-       predeterminados, esa elección pisa al @page de acá: la hoja pasa a
-       ser de 58mm con ~5mm de margen a cada lado. Con un ancho fijo de
-       48mm el ticket arrancaba después del margen izquierdo y terminaba a
-       los 53mm, fuera de los 48mm que el cabezal puede imprimir, así que
-       se perdía la franja derecha -- justo donde van los importes (visto
-       en papel el 2026-10-16). Ocupando el 100% del área que la hoja deje
-       libre, entra entero con cualquier combinación de papel y márgenes.
-       El mejor resultado igual se consigue con "Márgenes: Ninguno". */
+    /* Ancho fluido, NO fijo. Si el diálogo de Chrome tiene elegido un
+       formulario de Windows, esa elección pisa al @page de acá y el ancho
+       de la hoja deja de ser el que pide el CSS. Ocupando el 100% del
+       área que la hoja deje libre, el ticket entra entero con cualquier
+       combinación de papel y márgenes. */
     width: 100% !important;
-    max-width: none !important;
+    /* Y tope de 48mm, que es lo que el cabezal imprime. Midiendo el papel
+       del 2026-10-16: el formulario "Ticket 58x80" declara 80mm de ancho,
+       no 58, asi que con ancho 100% el ticket se estiraba a ~60mm y los
+       importes quedaban 20mm afuera del papel. Entre el 100% y el tope de
+       48mm el ticket entra siempre: nunca mas ancho que el cabezal, nunca
+       mas ancho que la hoja. */
+    max-width: 48mm !important;
     box-sizing: border-box !important;
     /* Pegado a la izquierda, NO centrado. El cabezal de la XP-58 imprime
        desde el borde izquierdo del papel: su area util son los primeros
