@@ -474,6 +474,41 @@ export function PosClient({
   // dividido tampoco es efectivo puro: parte se cobró con otro medio.
   const promosNoAplican = pagos.length > 0 && !esEfectivoPuro;
   const totalACobrar = esEfectivoPuro ? totalEfectivo : totalOtroMedio;
+  // El último medio de pago se acomoda solo cuando cambia el total
+  // (decisión del usuario 2026-10-17). Antes el monto quedaba congelado en
+  // el valor que tenía al elegir el medio: se editaba un precio con el
+  // lápiz, el total de arriba cambiaba, el del medio no, y al cobrar
+  // saltaba "ajustá los montos" -- que con un solo medio era imposible de
+  // hacer, porque el monto no era editable ni se podía sacar el medio.
+  //
+  // Se ajusta DURANTE el render y no en un useEffect: es el patrón que
+  // documenta React para "corregir estado cuando cambia otro valor", no
+  // dibuja el número viejo ni un instante, y no dispara el render extra
+  // que sí tendría un efecto.
+  //
+  // La condición es que haya cambiado el TOTAL, nunca los pagos. Esa es la
+  // diferencia entre acomodar y molestar: si se recalculara con cada
+  // tecla, no se podría tipear "6000 en efectivo" para después dividir el
+  // resto, porque lo pisaría al instante.
+  const [totalAnterior, setTotalAnterior] = useState(totalACobrar);
+  if (totalAnterior !== totalACobrar) {
+    setTotalAnterior(totalACobrar);
+    if (pagos.length > 0) {
+      const ultimoIdx = pagos.length - 1;
+      const otros = pagos.slice(0, ultimoIdx).reduce((acc, p) => acc + p.monto, 0);
+      // Si se sacaron productos y lo ya cargado en los otros medios se pasa
+      // del total, el último queda en cero y el aviso muestra lo que sobra:
+      // un monto negativo no significa nada y la base lo rechaza igual.
+      const ultimo = Math.max(0, Math.round((totalACobrar - otros) * 100) / 100);
+      if (ultimo !== pagos[ultimoIdx].monto) {
+        actualizarTicketActivo((t) => ({
+          ...t,
+          pagos: t.pagos.map((p, i) => (i === ultimoIdx ? { ...p, monto: ultimo } : p)),
+        }));
+      }
+    }
+  }
+
   const sumaPagos = pagos.reduce((acc, p) => acc + p.monto, 0);
   const restante = Math.round((totalACobrar - sumaPagos) * 100) / 100;
 
@@ -549,18 +584,14 @@ export function PosClient({
     actualizarTicketActivo((t) => ({ ...t, pagos: t.pagos.filter((_, i) => i !== index) }));
   }
 
+  // Solo cambia el medio. El monto lo acomoda el efecto de arriba: pasar
+  // de efectivo a QR cambia el total (se cae la promo), y eso es
+  // exactamente lo que ese efecto escucha. Recalcularlo también acá lo
+  // ajustaría dos veces.
   function cambiarMedioPago(index: number, medio: MedioPago) {
     actualizarTicketActivo((t) => ({
       ...t,
-      pagos: t.pagos.map((p, i) => {
-        if (i !== index) return p;
-        // Con un solo medio el monto es el total de ese medio: cambiar de
-        // efectivo a QR tiene que recalcularlo, porque el precio de la
-        // promoción deja de aplicar. Con pago dividido no se toca: ahí los
-        // montos los reparte la persona a mano.
-        if (t.pagos.length !== 1) return { ...p, medioPago: medio };
-        return { medioPago: medio, monto: medio === "efectivo" ? totalEfectivo : totalOtroMedio };
-      }),
+      pagos: t.pagos.map((p, i) => (i === index ? { ...p, medioPago: medio } : p)),
     }));
   }
 
@@ -1061,27 +1092,23 @@ export function PosClient({
                 </option>
               ))}
             </select>
-            {pagos.length === 1 ? (
-              <span className="flex-1 text-right text-[14.5px] tabular-nums text-text-2">
-                {formatoMoneda.format(p.monto)}
-              </span>
-            ) : (
-              <input
-                type="number"
-                value={p.monto}
-                onChange={(e) => cambiarMontoPago(i, Number(e.target.value) || 0)}
-                className="w-[100px] flex-1 rounded-[6px] border border-border bg-bg px-[8px] py-[5px] text-right text-[14.5px] tabular-nums text-text outline-none focus:border-moe"
-              />
-            )}
-            {pagos.length > 1 && (
-              <button
-                type="button"
-                onClick={() => quitarMedio(i)}
-                className="shrink-0 text-[14.5px] text-text-3 hover:text-err"
-              >
-                ×
-              </button>
-            )}
+            {/* Editable siempre, aunque sea el único medio: es lo que
+                permite cobrar 6000 en efectivo y dividir el resto, y lo que
+                saca a la cajera del callejón cuando el monto no cierra. */}
+            <input
+              type="number"
+              value={p.monto}
+              onChange={(e) => cambiarMontoPago(i, Number(e.target.value) || 0)}
+              className="w-[100px] flex-1 rounded-[6px] border border-border bg-bg px-[8px] py-[5px] text-right text-[14.5px] tabular-nums text-text outline-none focus:border-moe"
+            />
+            <button
+              type="button"
+              onClick={() => quitarMedio(i)}
+              title="Sacar este medio de pago"
+              className="shrink-0 text-[14.5px] text-text-3 hover:text-err"
+            >
+              ×
+            </button>
           </div>
         ))}
 
@@ -1095,7 +1122,7 @@ export function PosClient({
           </button>
         )}
 
-        {pagos.length > 1 && restante !== 0 && (
+        {restante !== 0 && (
           <p className={`text-[13.5px] font-medium ${restante > 0 ? "text-warn" : "text-err"}`}>
             {restante > 0
               ? `Falta asignar ${formatoMoneda.format(restante)}`
