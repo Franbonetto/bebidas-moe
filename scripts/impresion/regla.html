@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Regla 48mm — prueba de impresión</title>
+<style>
+  /* EXACTAMENTE la misma configuración de página que el ticket
+     (app/globals.css, bloque @media print). Si Chrome estira o corre el
+     ticket, hace lo mismo con esto, y la regla lo deja a la vista. */
+  @page { size: 48mm auto; margin: 0; }
+
+  html, body {
+    margin: 0; padding: 0; background: #fff;
+    height: auto; min-height: 0;
+    font-family: Arial, sans-serif;
+    color: #000;
+  }
+
+  /* Mismo ancho que el ticket: 100% del area imprimible, tope de 48mm. */
+  .regla {
+    width: 100%;
+    max-width: 48mm;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Barra negra pegada al borde izquierdo: dice si el contenido arranca
+     en el borde del papel o corrido hacia adentro. */
+  .arranque {
+    height: 3mm;
+    background: #000;
+    margin-bottom: 1mm;
+  }
+
+  .tira { display: flex; width: 100%; }
+
+  /* Cada celda son 5mm. El numero marca su borde IZQUIERDO. */
+  .c {
+    width: 5mm;
+    flex: 0 0 5mm;
+    box-sizing: border-box;
+    border-left: 0.3mm solid #000;
+    height: 7mm;
+    font-size: 7px;
+    line-height: 1;
+    padding-left: 0.4mm;
+  }
+  .c.alta { height: 10mm; font-weight: 700; }
+
+  .pie { font-size: 8px; margin-top: 1mm; font-weight: 700; }
+
+  @media screen {
+    body { background: #f7f7f8; padding: 24px; }
+    .regla { background: #fff; outline: 1px dashed #c8201a; }
+    .ayuda { max-width: 460px; font-size: 13px; color: #333; margin-bottom: 16px; line-height: 1.45; }
+  }
+  @media print { .ayuda { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="ayuda">
+  <p><strong>Prueba de impresión del ticket.</strong> Imprimila en la térmica
+  con la misma configuración con la que imprimís los tickets, y después mirá
+  el papel:</p>
+  <ol>
+    <li>¿Cuál es el <strong>último número</strong> que se llega a ver?</li>
+    <li>La barra negra de arriba, ¿arranca pegada al borde izquierdo del
+    papel o queda un blanco antes?</li>
+    <li>¿Cuánto mide la barra negra sobre el papel, con una regla?
+    (tiene que dar 48 mm)</li>
+  </ol>
+</div>
+
+<div class="regla">
+  <div class="arranque"></div>
+  <div class="tira">
+    <div class="c alta">0</div>
+    <div class="c">5</div>
+    <div class="c alta">10</div>
+    <div class="c">15</div>
+    <div class="c alta">20</div>
+    <div class="c">25</div>
+    <div class="c alta">30</div>
+    <div class="c">35</div>
+    <div class="c alta">40</div>
+    <div class="c">45</div>
+  </div>
+  <div class="pie">Si ves el 45, el ticket entra entero.</div>
+</div>
+
+</body>
+</html>

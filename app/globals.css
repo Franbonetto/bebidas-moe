@@ -101,13 +101,36 @@ body {
        área que la hoja deje libre, el ticket entra entero con cualquier
        combinación de papel y márgenes. */
     width: 100% !important;
-    /* Y tope de 48mm, que es lo que el cabezal imprime. Midiendo el papel
-       del 2026-10-16: el formulario "Ticket 58x80" declara 80mm de ancho,
-       no 58, asi que con ancho 100% el ticket se estiraba a ~60mm y los
-       importes quedaban 20mm afuera del papel. Entre el 100% y el tope de
-       48mm el ticket entra siempre: nunca mas ancho que el cabezal, nunca
-       mas ancho que la hoja. */
-    max-width: 48mm !important;
+    /* Tope de 39mm, no de 48, y el motivo no es estetico.
+       -----------------------------------------------------------------
+       Chrome NO respeta el ancho que declara el @page de arriba: lo estira
+       hasta llenar el area imprimible del papel elegido en el dialogo. Con
+       el formulario de 80mm (2026-10-17) los 48mm declarados se imprimieron
+       como 60: medido sobre el papel, el texto salio 24% mas grande que el
+       del dia anterior, y los importes quedaron fuera del cabezal. No fue
+       un recorte, fue un estiramiento.
+       -----------------------------------------------------------------
+       Como el ancho real depende de un desplegable que se mueve solo --
+       Chrome resetea los margenes cada vez que se cambia el tamaño de papel
+       --, el ticket tiene que aguantar el peor caso en vez de depender de
+       que este bien configurado. Dentro de los papeles de 58mm, el peor
+       caso es un formulario que declare 58mm imprimibles: factor 58/48 =
+       1,21. Para no pasarse nunca de los 48mm que imprime el cabezal:
+
+           48 / 1,21 = 39mm
+
+       Con 39mm entra con cualquier combinacion de margenes y de formulario
+       de 58: estirado da 47mm y entra, sin estirar da 39mm y sobra papel a
+       la derecha. Se pierde un 17% de ancho cuando la configuracion esta
+       bien, y es a proposito: vale mas un ticket un poco mas angosto todos
+       los dias que uno perfecto hasta que alguien toca el dialogo.
+       -----------------------------------------------------------------
+       Lo unico que esto NO cubre es elegir un formulario de 80mm (factor
+       1,5): ahi harian falta 32mm y el ticket quedaria ilegible. Si vuelve
+       a salir cortado, lo primero que hay que mirar es el tamaño de papel
+       del dialogo, y la regla de scripts/impresion/regla.html lo confirma
+       en una impresion. */
+    max-width: 39mm !important;
     box-sizing: border-box !important;
     /* Pegado a la izquierda, NO centrado. El cabezal de la XP-58 imprime
        desde el borde izquierdo del papel: su area util son los primeros
@@ -123,7 +146,11 @@ body {
        segunda hoja, con el blanco en el medio (visto en papel el
        2026-10-08). Por eso el ticket se comprime a lo alto: cuanto más
        corto, más chance de entrar en una sola. */
-    font-size: 11px !important;
+    /* Un punto menos que antes: el bloque paso de 48 a 39mm y los nombres
+       largos ("1x Mani Mix Cervecero" con su importe al lado) dejaban de
+       entrar en un renglon. A 10px vuelven a entrar, y la termica los
+       imprime igual de nitidos. */
+    font-size: 10px !important;
     line-height: 1.25 !important;
   }
 
@@ -150,15 +177,15 @@ body {
 
   /* Tamaños del papel, independientes de los de pantalla. */
   .ticket-print .tk-nombre {
-    font-size: 14px !important;
-  }
-
-  .ticket-print .tk-total {
     font-size: 13px !important;
   }
 
+  .ticket-print .tk-total {
+    font-size: 12px !important;
+  }
+
   .ticket-print .tk-chico {
-    font-size: 9.5px !important;
+    font-size: 9px !important;
   }
 
   /* Un nombre largo corta de línea en vez de empujar el precio fuera del
@@ -168,10 +195,10 @@ body {
     hyphens: auto;
   }
 
-  /* El QR de ARCA a 140px (37mm) rozaba los bordes del área imprimible. */
+  /* El QR de ARCA a 140px (37mm) se pasaba del bloque de 39mm. */
   .ticket-print img {
-    width: 30mm !important;
-    height: 30mm !important;
+    width: 26mm !important;
+    height: 26mm !important;
   }
 
   /* Separadores punteados: 1.5mm de aire en vez de los 12px de pantalla. */
