@@ -152,6 +152,12 @@ Las promociones aplican solo pagando en efectivo.
 - **Producto particular:** una línea sin SKU, con descripción y precio escritos a
   mano (picada, canasta de regalería). No descuenta stock —no hay nada que
   descontar—, no entra en promociones y va al 21% si se factura.
+- **Precio tocado a mano (2026-10-17):** cada línea del ticket tiene un lápiz
+  (reemplaza el precio de ese producto en esa venta) y un recargo por frío (suma
+  un monto por unidad). Solo dueño y Olavarría (`ve_costos()`). El lápiz arregla
+  la venta, **no el catálogo**. Ninguno de los dos aplica sobre una línea con
+  promoción ni sobre un producto particular. Ver `docs/arquitectura.md` 1.8,
+  *Precio tocado a mano en el mostrador*.
 
 ### Costo
 Historial completo por lote/recepción. El stock **no** rastrea de qué lote sale cada

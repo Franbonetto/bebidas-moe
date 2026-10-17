@@ -13,6 +13,17 @@ export type LineaVenta = {
   precio_lista_unitario: number;
   promocion_id: string | null;
   con_envase: boolean;
+  // Recargo por frio y precio editado a mano (2026-10-17, ver
+  // 20261017090000_precio_manual_y_recargo_frio.sql). Los dos son el RASTRO
+  // de como se llego al precio: `precio_unitario` ya viene con el recargo
+  // adentro y con el precio tipeado, no se vuelven a sumar del lado de la
+  // base.
+  //
+  //   recargo_frio    cuanto de precio_unitario es recargo, por unidad
+  //   precio_catalogo que precio tenia el SKU antes de que lo tocaran
+  recargo_frio?: number;
+  precio_editado?: boolean;
+  precio_catalogo?: number | null;
 };
 
 export type ComprobanteResumen = {

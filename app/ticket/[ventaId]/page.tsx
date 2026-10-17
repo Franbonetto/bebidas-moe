@@ -17,6 +17,13 @@ type VentaItemFila = {
   id: string;
   cantidad: number;
   precio_unitario: number;
+  // Cuánto de precio_unitario es recargo por frío (ya está sumado adentro,
+  // ver 20261017090000_precio_manual_y_recargo_frio.sql). En el ticket se
+  // muestra desglosado: el producto a su precio y el recargo abajo, para
+  // que el cliente vea por qué pagó más -- decisión del usuario
+  // 2026-10-17. Un precio editado con el lápiz NO se desglosa: para el
+  // cliente es el precio del producto y listo.
+  recargo_frio: number;
   // Producto particular (picada, canasta de regalería): no tiene SKU, lleva
   // la descripción que se tipeó al venderlo.
   descripcion: string | null;
@@ -84,7 +91,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
       supabase
         .from("venta_items")
         .select(
-          `id, cantidad, precio_unitario, descripcion, promocion_id,
+          `id, cantidad, precio_unitario, recargo_frio, descripcion, promocion_id,
            promocion:promociones ( nombre ),
            sku:skus ( id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
              producto:productos ( nombre, marca:marcas ( nombre ) ) )`,
@@ -120,7 +127,13 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
   // Una promoción puede haber consumido varias líneas (un combo son dos o
   // más productos): en el ticket se muestran como una sola, con el nombre
   // de la promo y lo que se pagó por ella.
-  type LineaTicketImpreso = { clave: string; titulo: string; detalle: string | null; total: number };
+  type LineaTicketImpreso = {
+    clave: string;
+    titulo: string;
+    detalle: string | null;
+    total: number;
+    recargoFrio: number;
+  };
   const lineasTicket: LineaTicketImpreso[] = [];
   const porPromo = new Map<string, LineaTicketImpreso>();
 
@@ -138,11 +151,16 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
         titulo: it.promocion?.nombre ?? "Promoción",
         detalle: "Promoción",
         total,
+        // Una línea con promoción no puede llevar recargo (lo impide un
+        // check de la base), así que acá nunca hay nada que desglosar.
+        recargoFrio: 0,
       };
       porPromo.set(it.promocion_id, linea);
       lineasTicket.push(linea);
       continue;
     }
+
+    const recargoLinea = (it.recargo_frio ?? 0) * it.cantidad;
 
     lineasTicket.push({
       clave: it.id,
@@ -150,7 +168,10 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
       detalle: it.sku
         ? `${it.sku.producto?.marca?.nombre ?? ""} — ${presentacionLabel(it.sku)}`
         : "Producto particular",
-      total,
+      // El producto se imprime a su precio y el recargo aparte: los dos
+      // juntos suman lo que se cobró.
+      total: total - recargoLinea,
+      recargoFrio: recargoLinea,
     });
   }
 
@@ -196,12 +217,24 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
 
       <div className="flex flex-col gap-1">
         {lineasTicket.map((l) => (
-          <div key={l.clave} className="flex justify-between gap-2">
-            <span className="tk-desc min-w-0">
-              {l.titulo}
-              {l.detalle && <span className="tk-chico block text-[11px] text-text-3">{l.detalle}</span>}
-            </span>
-            <span className="shrink-0 tabular-nums">{formatoMoneda.format(l.total)}</span>
+          <div key={l.clave}>
+            <div className="flex justify-between gap-2">
+              <span className="tk-desc min-w-0">
+                {l.titulo}
+                {l.detalle && (
+                  <span className="tk-chico block text-[11px] text-text-3">{l.detalle}</span>
+                )}
+              </span>
+              <span className="shrink-0 tabular-nums">{formatoMoneda.format(l.total)}</span>
+            </div>
+            {l.recargoFrio > 0 && (
+              <div className="flex justify-between gap-2 pl-2">
+                <span className="tk-chico tk-desc min-w-0 text-[11px]">+ Recargo por frío</span>
+                <span className="tk-chico shrink-0 text-[11px] tabular-nums">
+                  {formatoMoneda.format(l.recargoFrio)}
+                </span>
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
-import { operaSucursal, esDueno } from "@/lib/permisos";
+import { operaSucursal, esDueno, veCostos } from "@/lib/permisos";
 import { cargarDatosVenta } from "../vender/_lib/cargar-datos-venta";
 import { PosClient } from "../vender/_components/pos-client";
 import { EnviosHistorialTable, type EnvioRow } from "./_components/envios-historial-table";
@@ -94,8 +94,13 @@ export default async function EnviosPage({
 
   const sucursal = sucursalesOperables.find((s) => s.id === sucursalParam) ?? sucursalesOperables[0];
 
+  // Mismo criterio que /vender: el costo solo viaja al navegador de quien
+  // ya lo ve en pantalla, para poder advertir si un precio escrito a mano
+  // queda bajo el costo (2026-10-17).
+  const puedeTocarPrecios = await veCostos(supabase);
+
   const { skusPos, combos, promosCantidad, puedeFacturar, cajaHoy, cantidadTicketsHoy } =
-    await cargarDatosVenta(supabase, sucursal);
+    await cargarDatosVenta(supabase, sucursal, { incluirCosto: puedeTocarPrecios });
 
   // Envíos usa el mismo POS, así que también necesita la caja abierta y, con
   // ella, quién la abre.
@@ -132,6 +137,7 @@ export default async function EnviosPage({
         sucursalId={sucursal.id}
         sucursalNombre={sucursal.nombre}
         puedeFacturar={puedeFacturar}
+        puedeTocarPrecios={puedeTocarPrecios}
         skus={skusPos}
         combos={combos}
         promosCantidad={promosCantidad}

@@ -19,6 +19,12 @@ export type DatosVenta = {
 export async function cargarDatosVenta(
   supabase: SupabaseClient,
   sucursal: { id: string; es_central: boolean },
+  // El costo de referencia de cada SKU solo se manda al navegador de quien
+  // ya lo puede ver en pantalla (ve_costos(): dueño y Olavarría), para
+  // advertir cuando un precio escrito a mano en el POS queda bajo el costo
+  // -- pedido del usuario 2026-10-17. Para el resto viaja en null, igual
+  // que hasta ahora.
+  opciones: { incluirCosto?: boolean } = {},
 ): Promise<DatosVenta> {
   const [
     { data: skusRaw },
@@ -181,10 +187,11 @@ export async function cargarDatosVenta(
     }
   }
 
-  // Solo para uso interno de esta función (ver combos/promosCantidad más
-  // abajo): nunca se manda al cliente. El número de costo en sí es
-  // información restringida (arquitectura.md 1.7/1.11); lo único que cruza
-  // al navegador es el booleano "bajoCosto" ya resuelto.
+  // Para uso interno de esta función (ver combos/promosCantidad más
+  // abajo). El número de costo en sí es información restringida
+  // (arquitectura.md 1.7/1.11): de las promociones lo único que cruza al
+  // navegador es el booleano "bajoCosto" ya resuelto, y el número solo
+  // viaja cuando `incluirCosto`, o sea cuando el que mira ya ve costos.
   const costoReferenciaPorSku = new Map<string, number | null>();
 
   const skusPos: SkuPos[] = skusList.map((s) => {
@@ -229,6 +236,7 @@ export async function cargarDatosVenta(
       origen: precio.origen,
       bajoCostoEfectivo: precio.bajoCostoEfectivo,
       vendidosUltimos30Dias: vendidosPorSku.get(s.id) ?? 0,
+      costoReferencia: opciones.incluirCosto ? precio.costoReferencia : null,
     };
   });
 

@@ -8,9 +8,14 @@ export async function veCostos(supabase: SupabaseClient): Promise<boolean> {
   return data === true;
 }
 
-// Espejo de es_dueno() (bloque 1): unico rol que puede editar precios,
-// recargos y descuentos por efectivo (arquitectura.md 1.11: "Precios de
-// venta: edita" es exclusivo del dueño, los encargados solo leen).
+// Espejo de es_dueno() (bloque 1). OJO: ya no es "el unico que toca
+// precios". Arquitectura.md 1.11 decia eso, pero la decision del
+// 2026-10-08 (CLAUDE.md, "Precios de venta: control detectivo, no
+// preventivo") paso la carga de precios a ve_costos() -- dueño + encargado
+// de Olavarria --, y lo mismo vale para el recargo por frio y el lapiz del
+// POS (2026-10-17). es_dueno() queda para lo que de verdad es solo del
+// dueño: las politicas de precios, la rentabilidad global, auditoria y
+// usuarios.
 export async function esDueno(supabase: SupabaseClient): Promise<boolean> {
   const { data } = await supabase.rpc("es_dueno");
   return data === true;

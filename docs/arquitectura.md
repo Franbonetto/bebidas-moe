@@ -312,6 +312,39 @@ Buscar/agregar productos → ticket con el total en efectivo
 - **Sin stock:** permite vender, advierte, y marca el producto para revisión de inventario.
 - **Caja diaria por sucursal:** total, desglose por medio de pago, cantidad de tickets, diferencia entre sistema y efectivo real.
 
+### Precio tocado a mano en el mostrador (2026-10-17)
+
+Dos controles por línea del ticket, para **dueño y encargado de Olavarría** (`ve_costos()`,
+el mismo permiso que gobierna productos y precios; Laprida no los ve):
+
+| | Qué hace | Para qué |
+|---|---|---|
+| **Recargo por frío** | Suma un monto en pesos **por unidad** sobre el precio del producto | Hay productos que se cobran más caros fríos (la Coca de la heladera). El único recargo por frío que existía estaba horneado en el precio de la lata individual, que no sirve para el resto |
+| **Lápiz** | **Reemplaza** el precio de ese producto en esa venta | Durante la puesta en marcha hay productos cargados mal o sin precio, y el mostrador no puede esperar a que alguien arregle el catálogo |
+
+Decisiones:
+
+- **El lápiz arregla la venta, no el catálogo.** El SKU sigue con el precio que tenía: la
+  próxima venta vuelve a salir al precio de siempre. Es a propósito — corregir el catálogo
+  es una decisión de precios, no algo que se resuelva con un cliente esperando.
+- **Un precio escrito a mano no es un descuento:** reemplaza tanto al precio de lista como
+  al de efectivo, así que la venta se puede cobrar con cualquier medio de pago y el precio
+  puede subir o bajar. El recargo por frío, en cambio, se suma a los dos por igual y deja
+  intacto el descuento por efectivo de esa línea.
+- **Ninguno de los dos aplica sobre una línea con promoción.** El precio de un combo lo
+  reparte el sistema entre sus productos (1.7) y pisar un componente lo desincroniza. Una
+  línea con precio a mano queda fuera del motor de promociones mientras lo tenga.
+- **Tampoco sobre un producto particular**, donde el precio ya se tipea entero a mano.
+- La advertencia de precio bajo el costo sigue valiendo (1.7): se avisa, no se bloquea.
+- **Trazabilidad:** `venta_items` guarda cuánto del precio fue recargo, si el precio se
+  escribió a mano y cuánto valía en el catálogo. Quién y cuándo ya los dice la venta.
+  El precio que se cobró viaja con el recargo adentro: las columnas nuevas son el rastro
+  de cómo se llegó a ese número, no una parte del cálculo — por eso devoluciones y
+  facturación no se tocaron.
+- En el ticket impreso el recargo se desglosa debajo del producto ("+ Recargo por frío"),
+  porque el cliente tiene que ver por qué pagó más. El precio editado con el lápiz no se
+  desglosa: para el cliente es el precio del producto y listo.
+
 ### Situación fiscal — ETAPA 2 EN CURSO (desde 2026-09-05)
 
 **El cliente ya tiene un sistema que emite facturas A y B.** La integración con ARCA
@@ -875,6 +908,9 @@ venta_items
   cantidad, precio_unitario, promocion_aplicada_id
   con_envase                    ← para retornables
   vendido_sin_stock             ← marca para revisión de inventario
+  recargo_frio                  ← cuánto de precio_unitario es recargo (ya sumado adentro)
+  precio_editado                ← el precio lo escribió una persona, no el catálogo
+  precio_catalogo               ← cuánto valía antes de que lo pisaran (null = no tenía precio)
 
 cajas
   id, sucursal_id, fecha

@@ -40,6 +40,12 @@ export type SkuPos = {
   origen: "excepcion" | "manual" | "recargo" | "sin_precio";
   bajoCostoEfectivo: boolean;
   vendidosUltimos30Dias: number;
+  // Solo viaja al navegador de quien ya puede ver costos en pantalla
+  // (ve_costos(): dueño y Olavarría), para poder advertir cuando un precio
+  // tipeado a mano queda por debajo del costo -- CLAUDE.md, Promociones:
+  // "advertir siempre si el precio final queda bajo el costo". Para el
+  // resto llega en null, y el lápiz tampoco se les muestra.
+  costoReferencia: number | null;
 };
 
 export type ComboData = ComboDef;
@@ -47,7 +53,61 @@ export type PromoCantidadData = PromoCantidadDef;
 
 type MedioPago = "efectivo" | "debito" | "credito" | "transferencia" | "qr";
 
-type LineaTicket = { skuId: string; cantidad: number };
+// Una línea del ticket. `precioManual` y `recargoFrio` son el pedido del
+// usuario 2026-10-17 y son independientes entre sí: el lápiz REEMPLAZA el
+// precio del catálogo (un producto cargado mal, o sin precio), el recargo
+// por frío se SUMA arriba de lo que haya (la Coca de la heladera). Se puede
+// tener uno, el otro o los dos.
+//
+// Los dos son por unidad, y solo duran esta venta: el catálogo no se toca.
+type LineaTicket = {
+  skuId: string;
+  cantidad: number;
+  precioManual: number | null;
+  recargoFrio: number;
+};
+
+function tieneAjustePrecio(l: LineaTicket) {
+  return l.precioManual != null || l.recargoFrio > 0;
+}
+
+// Un precio tipeado a mano vale lo mismo pague como pague (decisión
+// 2026-10-17: reemplaza al precio, no es un descuento), así que pisa tanto
+// el de efectivo como el de otro medio. El recargo por frío, en cambio, se
+// suma a los dos por igual y deja intacta la diferencia entre ellos: una
+// Coca fría pagada en efectivo sigue teniendo su descuento.
+function precioEfectivoLinea(l: LineaTicket, sku: SkuPos | undefined) {
+  return (l.precioManual ?? sku?.precioEfectivo ?? 0) + l.recargoFrio;
+}
+
+function precioOtroMedioLinea(l: LineaTicket, sku: SkuPos | undefined) {
+  return (l.precioManual ?? sku?.precioOtroMedio ?? 0) + l.recargoFrio;
+}
+
+// Lo que se manda a la base para dejar registrado CÓMO se llegó a ese
+// precio (20261017090000_precio_manual_y_recargo_frio.sql). El precio ya
+// viaja con el recargo adentro: esto es el rastro, no una parte de la
+// cuenta. Una línea sin tocar no manda nada y se guarda como siempre.
+function rastroAjuste(l: LineaTicket, sku: SkuPos | undefined) {
+  if (!tieneAjustePrecio(l)) return {};
+  return {
+    recargo_frio: l.recargoFrio,
+    precio_editado: l.precioManual != null,
+    // null también cuando el producto no tenía precio cargado, que es el
+    // caso que motivó el lápiz. Por eso `precio_editado` es una columna
+    // aparte y no se deduce de este campo.
+    precio_catalogo: l.precioManual == null ? null : (sku?.precioOtroMedio ?? null),
+  };
+}
+
+// "Advertir siempre si el precio final queda bajo el costo" (CLAUDE.md,
+// Promociones) también cuando el precio lo escribió una persona. Sin costo
+// en las props -- que es lo que le llega a Laprida -- no hay nada que
+// comparar y esto es siempre false.
+function bajoCostoLinea(l: LineaTicket, sku: SkuPos | undefined) {
+  if (!sku || sku.costoReferencia == null) return false;
+  return precioEfectivoLinea(l, sku) < sku.costoReferencia;
+}
 
 // Producto particular: lo que se vende y no está (ni va a estar) en el
 // catálogo -- una picada armada en el momento, una canasta de regalería con
@@ -171,6 +231,7 @@ export function PosClient({
   sucursalId,
   sucursalNombre,
   puedeFacturar,
+  puedeTocarPrecios,
   skus,
   combos,
   promosCantidad,
@@ -183,6 +244,10 @@ export function PosClient({
   sucursalId: string;
   sucursalNombre: string;
   puedeFacturar: boolean;
+  // Recargo por frío y lápiz de precio: dueño y encargado de Olavarría, no
+  // Laprida (decisión del usuario 2026-10-17). confirmar_venta() lo vuelve
+  // a chequear, esto solo decide si los íconos se dibujan.
+  puedeTocarPrecios: boolean;
   skus: SkuPos[];
   combos: ComboData[];
   promosCantidad: PromoCantidadData[];
@@ -227,6 +292,12 @@ export function PosClient({
   const [mostrarPago, setMostrarPago] = useState(false);
   // Alta de un producto particular (picada, canasta de regalería): se pide
   // qué es y cuánto sale, nada más. No hay catálogo detrás.
+  // Recargo por frío y lápiz de precio (2026-10-17): los dos editan el
+  // precio de una línea del ticket, así que comparten el mismo popover.
+  const [ajusteSkuId, setAjusteSkuId] = useState<string | null>(null);
+  const [ajusteModo, setAjusteModo] = useState<"precio" | "frio">("precio");
+  const [ajusteValor, setAjusteValor] = useState("");
+  const [ajusteError, setAjusteError] = useState<string | null>(null);
   const [mostrarParticular, setMostrarParticular] = useState(false);
   const [particularDescripcion, setParticularDescripcion] = useState("");
   const [particularPrecio, setParticularPrecio] = useState("");
@@ -308,8 +379,35 @@ export function PosClient({
     };
   }
 
+  // Las líneas con el precio tocado a mano no pasan por el motor de
+  // promociones: una promo y un precio escrito por una persona son dos
+  // respuestas distintas a "cuánto sale esto", y manda lo escrito
+  // (confirmar_venta() además rechaza una línea que traiga las dos cosas).
+  // A esas se les arma el tramo acá, con su precio y sin promoción.
   const tramosPorSku = useMemo(
-    () => resolverTicketEfectivo(lineas, combos, promosCantidad, obtenerBase),
+    () => {
+      const mapa = resolverTicketEfectivo(
+        lineas.filter((l) => !tieneAjustePrecio(l)),
+        combos,
+        promosCantidad,
+        obtenerBase,
+      );
+      for (const l of lineas) {
+        if (!tieneAjustePrecio(l)) continue;
+        const sku = skuPorId.get(l.skuId);
+        mapa.set(l.skuId, [
+          {
+            cantidad: l.cantidad,
+            precioUnitario: precioEfectivoLinea(l, sku),
+            origen: "manual",
+            promocionId: null,
+            promocionNombre: null,
+            bajoCosto: bajoCostoLinea(l, sku),
+          },
+        ]);
+      }
+      return mapa;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [lineas, combos, promosCantidad, skus],
   );
@@ -320,7 +418,7 @@ export function PosClient({
   for (const l of lineas) {
     const sku = skuPorId.get(l.skuId);
     if (!sku) continue;
-    totalOtroMedio += (sku.precioOtroMedio ?? 0) * l.cantidad;
+    totalOtroMedio += precioOtroMedioLinea(l, sku) * l.cantidad;
     if (sku.esRetornable && envaseChecked[l.skuId]) {
       depositoTotal += sku.valorDeposito * l.cantidad;
     }
@@ -391,7 +489,7 @@ export function PosClient({
         lineas = [...t.lineas];
         lineas[idx] = { ...lineas[idx], cantidad: lineas[idx].cantidad + cantidad };
       } else {
-        lineas = [...t.lineas, { skuId: sku.id, cantidad }];
+        lineas = [...t.lineas, { skuId: sku.id, cantidad, precioManual: null, recargoFrio: 0 }];
       }
       const envaseChecked =
         sku.esRetornable && !(sku.id in t.envaseChecked)
@@ -624,11 +722,69 @@ export function PosClient({
     }));
   }
 
+  function abrirAjuste(skuId: string, modo: "precio" | "frio") {
+    const l = lineas.find((x) => x.skuId === skuId);
+    const sku = skuPorId.get(skuId);
+    // El lápiz arranca con el precio que se está por cobrar (el de la
+    // última edición, o el del catálogo) para corregirlo en vez de
+    // escribirlo de cero. El recargo arranca vacío salvo que ya tenga uno.
+    const actual =
+      modo === "precio" ? (l?.precioManual ?? sku?.precioOtroMedio ?? null) : (l?.recargoFrio ?? 0);
+    setAjusteSkuId(skuId);
+    setAjusteModo(modo);
+    setAjusteValor(actual == null || actual === 0 ? "" : String(actual));
+    setAjusteError(null);
+  }
+
+  function cerrarAjuste() {
+    setAjusteSkuId(null);
+    setAjusteError(null);
+  }
+
+  function guardarAjuste() {
+    if (!ajusteSkuId) return;
+    const valor = Number(ajusteValor);
+    if (ajusteValor.trim() === "" || !Number.isFinite(valor) || valor < 0) {
+      setAjusteError("Escribí un monto en pesos, sin signos ni letras.");
+      return;
+    }
+    const skuId = ajusteSkuId;
+    const modo = ajusteModo;
+    actualizarTicketActivo((t) => ({
+      ...t,
+      lineas: t.lineas.map((l) =>
+        l.skuId !== skuId
+          ? l
+          : modo === "precio"
+            ? { ...l, precioManual: valor }
+            : { ...l, recargoFrio: valor },
+      ),
+    }));
+    cerrarAjuste();
+  }
+
+  // Volver atrás: cada uno se saca por su lado, porque son independientes
+  // (se puede querer dejar el recargo y soltar el precio a mano, o al
+  // revés).
+  function sacarAjuste(skuId: string, modo: "precio" | "frio") {
+    actualizarTicketActivo((t) => ({
+      ...t,
+      lineas: t.lineas.map((l) =>
+        l.skuId !== skuId
+          ? l
+          : modo === "precio"
+            ? { ...l, precioManual: null }
+            : { ...l, recargoFrio: 0 },
+      ),
+    }));
+    cerrarAjuste();
+  }
+
   function construirLineasVenta(esEfectivoPuro: boolean): LineaVenta[] {
     if (!esEfectivoPuro) {
       return lineas.map((l): LineaVenta => {
         const sku = skuPorId.get(l.skuId);
-        const precio = sku?.precioOtroMedio ?? 0;
+        const precio = precioOtroMedioLinea(l, sku);
         return {
           sku_id: l.skuId,
           cantidad: l.cantidad,
@@ -636,6 +792,7 @@ export function PosClient({
           precio_lista_unitario: precio,
           promocion_id: null,
           con_envase: Boolean(sku?.esRetornable && envaseChecked[l.skuId]),
+          ...rastroAjuste(l, sku),
         };
       }).concat(lineasParticulares());
     }
@@ -650,9 +807,16 @@ export function PosClient({
           sku_id: l.skuId,
           cantidad: t.cantidad,
           precio_unitario: t.precioUnitario,
-          precio_lista_unitario: sku.precioOtroMedio ?? t.precioUnitario,
+          // Con precio tocado a mano el de lista también lleva el recargo:
+          // así la diferencia entre los dos sigue siendo el descuento por
+          // efectivo y nada más (con el lápiz no hay diferencia, porque el
+          // precio escrito reemplaza a los dos).
+          precio_lista_unitario: tieneAjustePrecio(l)
+            ? precioOtroMedioLinea(l, sku)
+            : (sku.precioOtroMedio ?? t.precioUnitario),
           promocion_id: t.promocionId,
           con_envase: Boolean(sku.esRetornable && envaseChecked[l.skuId]),
+          ...rastroAjuste(l, sku),
         });
       }
     }
@@ -1170,6 +1334,12 @@ export function PosClient({
                 const faltante = Math.max(0, l.cantidad - sku.stock);
                 const sinStock = faltante > 0;
                 const seleccionada = l.skuId === lineaSeleccionada;
+                // Una línea con promoción no se toca: el precio de la promo
+                // lo reparte el sistema entre sus productos y pisar uno lo
+                // desincroniza (decisión 2026-10-17, y confirmar_venta()
+                // rechaza la combinación igual).
+                const enPromo = tramos.some((t) => t.origen === "combo" || t.origen === "cantidad");
+                const ajustada = tieneAjustePrecio(l);
 
                 return (
                   <div
@@ -1229,21 +1399,72 @@ export function PosClient({
                           ? "—"
                           : formatoMoneda.format(
                               promosNoAplican
-                                ? (sku.precioOtroMedio ?? 0) * l.cantidad
+                                ? precioOtroMedioLinea(l, sku) * l.cantidad
                                 : subtotal,
                             )}
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          quitarLinea(l.skuId);
-                        }}
-                        className="text-[13px] text-text-3 hover:text-err"
+                      <div
+                        className="flex items-center gap-[8px]"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        Quitar
-                      </button>
+                        {/* Lápiz y recargo por frío: solo dueño y Olavarría
+                            (2026-10-17), y nunca sobre una línea que está
+                            entrando por una promoción. */}
+                        {puedeTocarPrecios && !enPromo && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => abrirAjuste(l.skuId, "precio")}
+                              title="Cambiar el precio en esta venta"
+                              aria-label="Cambiar el precio en esta venta"
+                              className={`grid h-[22px] w-[22px] place-items-center rounded-[5px] hover:bg-bg-2 ${
+                                l.precioManual != null ? "text-info" : "text-text-3 hover:text-moe"
+                              }`}
+                            >
+                              <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={1.75}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-[14px] w-[14px]"
+                              >
+                                <path d="M12 20h9" />
+                                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => abrirAjuste(l.skuId, "frio")}
+                              title="Recargo por frío"
+                              aria-label="Recargo por frío"
+                              className={`grid h-[22px] w-[22px] place-items-center rounded-[5px] hover:bg-bg-2 ${
+                                l.recargoFrio > 0 ? "text-info" : "text-text-3 hover:text-moe"
+                              }`}
+                            >
+                              <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={1.75}
+                                strokeLinecap="round"
+                                className="h-[14px] w-[14px]"
+                              >
+                                <path d="M12 2v20M2 12h20M4.9 4.9l14.2 14.2M19.1 4.9 4.9 19.1" />
+                              </svg>
+                            </button>
+                          </>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => quitarLinea(l.skuId)}
+                          className="text-[13px] text-text-3 hover:text-err"
+                        >
+                          Quitar
+                        </button>
+                      </div>
 
                       {/* El envase solo ocupa su renglón cuando el producto
                           es retornable: para el resto no hay nada que poner
@@ -1260,6 +1481,27 @@ export function PosClient({
                           />
                           Con envase
                         </label>
+                      )}
+
+                      {/* Qué se le tocó a esta línea: un precio distinto al
+                          del catálogo no puede quedar sin explicación en
+                          pantalla, es la contracara de dejar editarlo. */}
+                      {ajustada && (
+                        <span className="col-span-4 mt-[1px] flex w-fit flex-wrap items-center gap-[6px]">
+                          {l.precioManual != null && (
+                            <span className="rounded-[4px] bg-info-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-info">
+                              Precio de esta venta {formatoMoneda.format(l.precioManual)}
+                              {sku.precioOtroMedio != null
+                                ? ` · catálogo ${formatoMoneda.format(sku.precioOtroMedio)}`
+                                : " · no tenía precio cargado"}
+                            </span>
+                          )}
+                          {l.recargoFrio > 0 && (
+                            <span className="rounded-[4px] bg-info-bg px-[6px] py-[1.5px] text-[12.5px] font-medium text-info">
+                              Recargo por frío +{formatoMoneda.format(l.recargoFrio)} por unidad
+                            </span>
+                          )}
+                        </span>
                       )}
 
                       {/* Con otro medio de pago la promo no corre: el cartel
@@ -1438,6 +1680,138 @@ export function PosClient({
       </div>
 
       {/* ============ Modal: medio de pago ============ */}
+      {/* Precio de una línea en esta venta: el lápiz (reemplaza el precio
+          del catálogo) y el recargo por frío (se suma por unidad). Pedido
+          del usuario 2026-10-17. Los dos comparten popover porque son la
+          misma operación con distinto signo. */}
+      {ajusteSkuId &&
+        (() => {
+          const linea = lineas.find((x) => x.skuId === ajusteSkuId);
+          const sku = skuPorId.get(ajusteSkuId);
+          if (!linea || !sku) return null;
+
+          const esPrecio = ajusteModo === "precio";
+          const valor = Number(ajusteValor);
+          const valorOk = ajusteValor.trim() !== "" && Number.isFinite(valor) && valor >= 0;
+          const base = esPrecio ? valor : (linea.precioManual ?? sku.precioEfectivo ?? 0);
+          const precioFinal = base + (esPrecio ? linea.recargoFrio : valor);
+          const bajoCosto =
+            valorOk && sku.costoReferencia != null && precioFinal < sku.costoReferencia;
+          const yaTiene = esPrecio ? linea.precioManual != null : linea.recargoFrio > 0;
+
+          return (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+              onClick={cerrarAjuste}
+            >
+              <div
+                className="w-[400px] rounded-card border border-border bg-bg p-5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h2 className="mb-1 text-[15.5px] font-semibold text-text">
+                  {esPrecio ? "Precio en esta venta" : "Recargo por frío"}
+                </h2>
+                <p className="mb-1 text-[13.5px] text-text-2">
+                  {sku.nombre} · {presentacionLabel(sku.presentacion)}
+                </p>
+                <p className="mb-3 text-[13px] text-text-3">
+                  {esPrecio
+                    ? "Cambia lo que se cobra por este producto en esta venta. El catálogo no se toca: la próxima vez vuelve a salir al precio de siempre."
+                    : "Se suma al precio del producto, por cada unidad."}
+                </p>
+
+                <label className="mb-[4px] block text-[12.5px] font-medium text-text-2">
+                  {esPrecio ? "Precio por unidad" : "Recargo por unidad"}
+                </label>
+                <input
+                  autoFocus
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={ajusteValor}
+                  onChange={(e) => {
+                    setAjusteValor(e.target.value);
+                    setAjusteError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      guardarAjuste();
+                    }
+                    if (e.key === "Escape") cerrarAjuste();
+                  }}
+                  placeholder="0"
+                  className={`${inputClass} tabular-nums`}
+                />
+
+                {esPrecio && (
+                  <p className="mt-[6px] text-[12.5px] text-text-3">
+                    {sku.precioOtroMedio != null
+                      ? `En el catálogo está a ${formatoMoneda.format(sku.precioOtroMedio)}`
+                      : "Este producto no tiene precio cargado en el catálogo"}
+                  </p>
+                )}
+
+                {valorOk && (
+                  <p className="mt-[6px] text-[12.5px] text-text-2">
+                    Se cobra{" "}
+                    <span className="font-medium tabular-nums text-text">
+                      {linea.cantidad} × {formatoMoneda.format(precioFinal)} ={" "}
+                      {formatoMoneda.format(precioFinal * linea.cantidad)}
+                    </span>
+                  </p>
+                )}
+
+                {/* CLAUDE.md, Promociones: advertir siempre si el precio
+                    final queda bajo el costo. Avisa, no bloquea. */}
+                {bajoCosto && (
+                  <p className="mt-[8px] rounded-[6px] bg-orange-bg px-[8px] py-[5px] text-[12.5px] font-medium text-orange">
+                    Ese precio queda por debajo del costo
+                    {sku.costoReferencia != null
+                      ? ` (${formatoMoneda.format(sku.costoReferencia)})`
+                      : ""}
+                    . Se puede cobrar igual.
+                  </p>
+                )}
+
+                <p className="mt-[8px] text-[12.5px] text-text-3">
+                  Mientras tenga un precio puesto a mano, esta línea no entra en promociones.
+                </p>
+
+                {ajusteError && (
+                  <p className="mt-[8px] text-[12.5px] font-medium text-err">{ajusteError}</p>
+                )}
+
+                <div className="mt-4 flex items-center justify-end gap-3">
+                  {yaTiene && (
+                    <button
+                      type="button"
+                      onClick={() => sacarAjuste(linea.skuId, ajusteModo)}
+                      className="mr-auto text-[13.5px] text-text-3 hover:text-err"
+                    >
+                      {esPrecio ? "Volver al precio del catálogo" : "Sacar el recargo"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={cerrarAjuste}
+                    className="text-[13.5px] text-text-3 hover:text-text"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={guardarAjuste}
+                    className="rounded-[7px] bg-moe px-[14px] py-[8px] text-[13.5px] font-medium text-white hover:bg-moe/90"
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
       {mostrarParticular && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"

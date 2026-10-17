@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
-import { operaSucursal } from "@/lib/permisos";
+import { operaSucursal, veCostos } from "@/lib/permisos";
 import { cargarDatosVenta } from "./_lib/cargar-datos-venta";
 import { PosClient } from "./_components/pos-client";
 
@@ -36,8 +36,14 @@ export default async function VenderPage({
   const sucursal =
     sucursalesOperables.find((s) => s.id === sucursalParam) ?? sucursalesOperables[0];
 
+  // Quién puede tocar el precio de una línea en el mostrador (recargo por
+  // frío y lápiz): dueño y encargado de Olavarría, no Laprida -- decisión
+  // del usuario 2026-10-17, mismo permiso que ya gobierna productos y
+  // precios. confirmar_venta() lo vuelve a chequear server-side.
+  const puedeTocarPrecios = await veCostos(supabase);
+
   const { skusPos, combos, promosCantidad, puedeFacturar, cajaHoy, cantidadTicketsHoy } =
-    await cargarDatosVenta(supabase, sucursal);
+    await cargarDatosVenta(supabase, sucursal, { incluirCosto: puedeTocarPrecios });
 
   // Quién abre la caja (empleados de esta sucursal), que no es lo mismo que
   // con qué cuenta se entró al sistema -- ver 20261008090000_empleado_caja.
@@ -74,6 +80,7 @@ export default async function VenderPage({
         sucursalId={sucursal.id}
         sucursalNombre={sucursal.nombre}
         puedeFacturar={puedeFacturar}
+        puedeTocarPrecios={puedeTocarPrecios}
         skus={skusPos}
         combos={combos}
         promosCantidad={promosCantidad}
