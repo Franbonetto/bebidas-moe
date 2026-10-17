@@ -1,5 +1,20 @@
 # Limpieza de ventas y cajas de prueba (2026-10-15)
 
+> **ESTE SCRIPT NUNCA SE APLICO.** Lo de abajo dice que se corrio y que el
+> informe cerro, pero el `commit;` final no se llego a escribir: el
+> 2026-10-17 las 14 ventas del 08 al 14/10 seguian en la base, con sus 9
+> cajas y 3 comprobantes. Lo verificado el 2026-10-15 fue el informe
+> **dentro de la transaccion**, que es lo que se ve antes de confirmar.
+>
+> La limpieza de verdad la hizo
+> `scripts/limpieza-ventas-prueba-2026-10-17/`, que ademas tuvo que
+> resolver algo que aca no existia: entre medio se conto casi todo el
+> catalogo, y como `cargar_stock_inicial()` FIJA el stock en vez de
+> sumarlo, el conteo posterior ya habia absorbido esas ventas falsas.
+>
+> Lo de abajo queda como registro de lo que se penso aquel dia. **No
+> correrlo.**
+
 Segundo reseteo, distinto del de octubre. Esta vez **el catálogo y la carga
 inicial se conservan enteros**: se van solo las ventas, las cajas y lo que
 cuelga de ellas (devoluciones, comprobantes, movimientos de caja y los
