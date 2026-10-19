@@ -53,10 +53,22 @@ export type FacturarVentaInput = {
   razonSocialReceptor: string | null;
 };
 
-export async function facturarVenta(
+export type ComprobanteEmitido = {
+  tipoCbte: "A" | "B";
+  numeroComprobante: number;
+  cae: string;
+  vencimientoCae: string;
+};
+
+// Núcleo de la emisión, compartido por el botón "Facturar" (manual, con el
+// receptor cargado a mano) y por la facturación automática de las ventas
+// que no son en efectivo (2026-10-19). No revalida rutas ni decide nada de
+// negocio: recibe el tipo de comprobante y los datos del receptor ya
+// resueltos por quien llama.
+async function emitirComprobante(
   ventaId: string,
   input: FacturarVentaInput,
-): Promise<{ error: string } | { ok: true }> {
+): Promise<{ error: string } | { ok: true; comprobante: ComprobanteEmitido }> {
   const supabase = await createClient();
 
   const { data: venta, error: errorVenta } = await supabase
@@ -251,16 +263,129 @@ export async function facturarVenta(
       qrData,
     });
     if (errorGuardar) return { error: errorGuardar.message };
+
+    return {
+      ok: true,
+      comprobante: {
+        tipoCbte: input.tipoCbte,
+        numeroComprobante: cbteNro,
+        cae: resultado.cae,
+        vencimientoCae: resultado.vencimientoCae,
+      },
+    };
   } catch (err) {
     const motivo = err instanceof Error ? err.message : "Error desconocido al facturar";
     const { error } = await guardar({ estado: "error", motivoRechazo: motivo });
     if (error) return { error: error.message };
     return { error: `No se pudo facturar (reintentable): ${motivo}` };
   }
+}
+
+export async function facturarVenta(
+  ventaId: string,
+  input: FacturarVentaInput,
+): Promise<{ error: string } | { ok: true }> {
+  const resultado = await emitirComprobante(ventaId, input);
+  if ("error" in resultado) return { error: resultado.error };
 
   revalidatePath(`/vender/facturar/${ventaId}`);
   revalidatePath("/vender/facturar");
   return { ok: true };
+}
+
+// =========================================================
+// Facturación automática de las ventas que no son en efectivo
+// =========================================================
+//
+// Decisión del usuario 2026-10-19, que reemplaza el "la venta no se
+// factura sola" de CLAUDE.md y el "Disparo: manual" de
+// docs/bloque_arca_facturacion.md (sección 2):
+//
+//   - Débito, crédito, transferencia y QR dejan rastro bancario, así que
+//     esas ventas se facturan legalmente sin esperar que el cliente lo
+//     pida. El efectivo sigue como estaba: ticket interno, y factura a
+//     mano desde /vender/facturar si la piden.
+//   - Pago dividido: si ALGUNO de los medios no es efectivo, se factura la
+//     venta entera -- no existe media venta facturada.
+//   - Siempre Factura B a Consumidor Final. Si ARCA la rechaza (por
+//     ejemplo por el tope de monto sin identificar al comprador), la venta
+//     queda sin facturar y se emite a mano con los datos del cliente.
+//   - Nada de esto puede voltear la venta: `confirmar_venta()` ya grabó
+//     todo antes de que se hable con ARCA, y un fallo acá deja el
+//     comprobante en `rechazado`/`error`, reintentable. Sin reintentos
+//     silenciosos (docs/bloque_arca_facturacion.md, sección 4).
+const MEDIOS_QUE_FACTURAN = ["debito", "credito", "transferencia", "qr"];
+
+export type ResultadoFacturacionAutomatica =
+  // `aviso` en null = no correspondía facturar (venta en efectivo): no es
+  // un problema, no hay nada que avisarle a la cajera.
+  { facturado: false; aviso: string | null } | { facturado: true; comprobante: ComprobanteEmitido };
+
+export async function facturarVentaAutomatica(
+  ventaId: string,
+): Promise<ResultadoFacturacionAutomatica> {
+  const supabase = await createClient();
+
+  const { data: venta } = await supabase
+    .from("ventas")
+    .select("id, sucursal_id")
+    .eq("id", ventaId)
+    .maybeSingle<{ id: string; sucursal_id: string }>();
+
+  if (!venta) return { facturado: false, aviso: "No se encontró la venta para facturar" };
+
+  const { data: pagosRaw, error: errorPagos } = await traerTodo(
+    supabase.from("venta_pagos").select("medio_pago").eq("venta_id", ventaId),
+  );
+  if (errorPagos) return { facturado: false, aviso: errorPagos.message };
+
+  const pagos = (pagosRaw ?? []) as { medio_pago: string }[];
+  if (!pagos.some((p) => MEDIOS_QUE_FACTURAN.includes(p.medio_pago))) {
+    return { facturado: false, aviso: null };
+  }
+
+  // Sin punto de venta ARCA activo no hay forma de facturar (hoy, Laprida:
+  // ver 20260917090000_arca_multisucursal.sql). La venta ya está hecha, así
+  // que esto es un aviso, no un error.
+  const { data: puntoVenta } = await supabase
+    .from("puntos_venta")
+    .select("id")
+    .eq("sucursal_id", venta.sucursal_id)
+    .eq("activo", true)
+    .maybeSingle();
+
+  if (!puntoVenta) {
+    return {
+      facturado: false,
+      aviso: "esta sucursal todavía no tiene punto de venta ARCA configurado",
+    };
+  }
+
+  const { data: condicionesRaw } = await traerTodo(
+    supabase.from("condicion_iva").select("id, nombre"),
+  );
+  const consumidorFinal = ((condicionesRaw ?? []) as { id: string; nombre: string }[]).find((c) =>
+    c.nombre.toLowerCase().includes("consumidor final"),
+  );
+
+  if (!consumidorFinal) {
+    return {
+      facturado: false,
+      aviso: "falta sincronizar el catálogo de condiciones de IVA de ARCA (Facturar → Configuración)",
+    };
+  }
+
+  const resultado = await emitirComprobante(ventaId, {
+    tipoCbte: "B",
+    condicionIvaReceptorId: consumidorFinal.id,
+    cuitReceptor: null,
+    razonSocialReceptor: null,
+  });
+
+  if ("error" in resultado) return { facturado: false, aviso: resultado.error };
+
+  revalidatePath("/vender/facturar");
+  return { facturado: true, comprobante: resultado.comprobante };
 }
 
 // Clientes frecuentes: no hay CRM todavía (docs/bloque_arca_facturacion.md,

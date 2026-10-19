@@ -21,11 +21,27 @@ dueño para generarlo cuando corresponda).
 - **Ambiente:** homologación primero. No tocar producción hasta validar el
   circuito completo con comprobantes de prueba.
 - **Comprobantes soportados:** Factura A y Factura B (no C por ahora).
-- **Disparo:** manual. La venta se confirma normalmente en el POS
-  (`confirmar_venta()`, sin cambios); la facturación es un paso aparte,
-  con un botón **"Facturar"** en el detalle de la venta. Una venta puede
-  quedar sin facturar indefinidamente sin romper nada — no es un requisito
-  para cerrar la venta.
+- **Disparo:** manual **+ automático para lo que no es efectivo
+  (actualizado 2026-10-19)**. La venta se sigue confirmando igual en el POS
+  (`confirmar_venta()`, sin cambios, y sigue sin ser requisito facturar
+  para cerrar una venta), pero el server action `confirmarVenta()` llama
+  después a `facturarVentaAutomatica()`:
+  - Si alguno de los medios de pago es **débito, crédito, transferencia o
+    QR**, se emite **Factura B a Consumidor Final** por el total de la
+    venta. En un pago dividido alcanza con que uno de los medios no sea
+    efectivo: no existe media venta facturada.
+  - Si la venta fue **toda en efectivo**, no se factura sola: ticket
+    interno, y Factura A o B a mano si el cliente la pide.
+  - El POS **espera** el CAE (tope de 15s, ver el timeout de
+    `lib/arca/wsfe.ts`) para que el ticket impreso ya lleve CAE y QR.
+  - Si ARCA rechaza, tarda o está caído, la venta **ya está grabada**: el
+    comprobante queda en `rechazado`/`error`, el POS muestra el motivo y se
+    reintenta a mano desde `/vender/facturar`. Mismo camino cuando el monto
+    pasa el tope que ARCA permite sin identificar al comprador: se emite a
+    mano cargando DNI/CUIT.
+  - El botón **"Facturar"** del detalle sigue siendo el único camino para
+    Factura A, para el efectivo y para los reintentos. Una vez autorizada
+    (A o B), la pantalla ofrece **"Imprimir ticket"** como acción primaria.
 - **Librería:** usar un wrapper de WSAA/WSFEv1 tipo `afip.js` /
   `@afipsdk/afip.js` en vez de armar el SOAP a mano. Evaluar cuál está
   mejor mantenida al momento de implementar.

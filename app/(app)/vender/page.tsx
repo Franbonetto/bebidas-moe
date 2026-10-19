@@ -5,6 +5,18 @@ import { operaSucursal, veCostos } from "@/lib/permisos";
 import { cargarDatosVenta } from "./_lib/cargar-datos-venta";
 import { PosClient } from "./_components/pos-client";
 
+// Cobrar ahora puede incluir el pedido de CAE a ARCA (facturación
+// automática de lo que no es efectivo, 2026-10-19): la llamada tiene un
+// tope propio de 15s en lib/arca/wsfe.ts, y esto le da aire a la función
+// de Vercel para que ese tope se cumpla ADENTRO del server action.
+//
+// Importa que sea así y no al revés: si la plataforma cortara la función
+// antes, la venta ya estaría grabada en la base pero el POS mostraría un
+// error, y la cajera podría cobrarla de nuevo -- una venta duplicada con
+// su descuento de stock. Con 30s, el que corta primero siempre es nuestro
+// timeout, que devuelve la venta hecha y el comprobante en `error`.
+export const maxDuration = 30;
+
 export default async function VenderPage({
   searchParams,
 }: {

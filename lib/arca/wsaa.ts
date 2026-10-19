@@ -15,6 +15,9 @@ import { configArca } from "./env";
 // una emisión.
 const MARGEN_SEGURIDAD_MS = 5 * 60 * 1000;
 
+// Cuánto se espera a WSAA antes de dar el login por perdido.
+const TIMEOUT_MS = 15_000;
+
 type TicketAcceso = { token: string; sign: string };
 
 function buildTRA(servicio: string): string {
@@ -77,14 +80,26 @@ async function loginCms(
   </soapenv:Body>
 </soapenv:Envelope>`;
 
-  const respuesta = await fetch(urls.wsaa, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/xml; charset=utf-8",
-      SOAPAction: "",
-    },
-    body: soapEnvelope,
-  });
+  // Mismo criterio que callWsfe(): tope de espera para no quedar colgado
+  // si WSAA no contesta. El login pasa una vez cada 12hs (el TA se
+  // cachea), pero cuando toca, toca en medio de una venta.
+  let respuesta: Response;
+  try {
+    respuesta = await fetch(urls.wsaa, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        SOAPAction: "",
+      },
+      body: soapEnvelope,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new Error(`WSAA no respondió en ${TIMEOUT_MS / 1000} segundos`);
+    }
+    throw err;
+  }
 
   const textoRespuesta = await respuesta.text();
 

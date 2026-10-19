@@ -285,9 +285,13 @@ export function PosClient({
   // solo (para arrancar el siguiente), así que sin esto no queda ningún
   // rastro en pantalla de que la venta anterior se guardó.
   const [ventaConfirmada, setVentaConfirmada] = useState<number | null>(null);
-  const [ultimaVenta, setUltimaVenta] = useState<{ id: string; comprobante: ComprobanteResumen | null } | null>(
-    null,
-  );
+  const [ultimaVenta, setUltimaVenta] = useState<{
+    id: string;
+    comprobante: ComprobanteResumen | null;
+    // Por qué esta venta no terminó facturada. null = no correspondía
+    // (fue en efectivo), un texto = hay algo que resolver a mano.
+    aviso: string | null;
+  } | null>(null);
   const avisoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mostrarPago, setMostrarPago] = useState(false);
   // Alta de un producto particular (picada, canasta de regalería): se pide
@@ -912,7 +916,11 @@ export function PosClient({
 
       setMostrarPago(false);
       setLineaSeleccionada(null);
-      setUltimaVenta({ id: resultado.id, comprobante: resultado.comprobante });
+      setUltimaVenta({
+        id: resultado.id,
+        comprobante: resultado.comprobante,
+        aviso: resultado.avisoFacturacion,
+      });
 
       if (avisoTimeoutRef.current) clearTimeout(avisoTimeoutRef.current);
       setVentaConfirmada(totalCobrado);
@@ -1157,6 +1165,21 @@ export function PosClient({
               Devoluciones
             </Link>
           )}
+          {/* Egresos: el mismo movimiento de caja que ya hacía F8 (salida de
+              efectivo), ahora también con botón a la vista -- pedido del
+              usuario 2026-10-19. No es una operación nueva: abre el mismo
+              modal y guarda el mismo movimiento_caja. */}
+          {!modoEnvio && (
+            <button
+              type="button"
+              onClick={() => abrirMovimientoCaja("salida")}
+              disabled={!cajaId}
+              title="Salida de efectivo de la caja (F8)"
+              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[13.5px] font-medium text-text-2 hover:bg-bg-2 disabled:opacity-50"
+            >
+              Egresos
+            </button>
+          )}
           <Link
             href="/vender/caja"
             className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[13.5px] font-medium text-text-2 hover:bg-bg-2"
@@ -1327,19 +1350,27 @@ export function PosClient({
           )}
 
           {ultimaVenta && (
-            <div className="mx-[15px] mt-[8px] flex items-center justify-between rounded-[7px] border border-border bg-bg-2 px-[12px] py-[9px] text-[13.5px]">
-              <span className="text-text-2">
+            <div className="mx-[15px] mt-[8px] flex items-start justify-between gap-3 rounded-[7px] border border-border bg-bg-2 px-[12px] py-[9px] text-[13.5px]">
+              {/* Facturación automática (2026-10-19): una venta con tarjeta,
+                  transferencia o QR sale facturada de acá. Si ARCA no la
+                  autorizó, el motivo se muestra entero -- la cajera lo
+                  necesita para saber que tiene que emitirla a mano. */}
+              <span
+                className={
+                  ultimaVenta.comprobante ? "text-ok" : ultimaVenta.aviso ? "text-warn" : "text-text-2"
+                }
+              >
                 {ultimaVenta.comprobante
                   ? `Factura ${ultimaVenta.comprobante.tipoCbte} N° ${ultimaVenta.comprobante.numeroComprobante} autorizada`
-                  : puedeFacturar
-                    ? "Sin facturar todavía (reintentar desde Facturar)"
-                    : "Ticket interno"}
+                  : ultimaVenta.aviso
+                    ? `Sin facturar: ${ultimaVenta.aviso}. Emitila a mano desde Facturar.`
+                    : "Ticket interno (venta en efectivo)"}
               </span>
               <a
                 href={`/ticket/${ultimaVenta.id}`}
                 target="_blank"
                 rel="noreferrer"
-                className="font-medium text-moe hover:underline"
+                className="shrink-0 font-medium text-moe hover:underline"
               >
                 Imprimir ticket →
               </a>
@@ -1685,9 +1716,13 @@ export function PosClient({
               onClick={pagos.length > 0 && restante === 0 ? confirmar : () => setMostrarPago(true)}
               className="w-full rounded-[7px] bg-moe px-[11px] py-[11px] text-[15.5px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
             >
-              {pagos.length > 0 && restante === 0
-                ? `Cobrar ${formatoMoneda.format(totalACobrar)}`
-                : "Cobrar (F12)"}
+              {pending
+                ? esEfectivoPuro
+                  ? "Confirmando…"
+                  : "Facturando en ARCA…"
+                : pagos.length > 0 && restante === 0
+                  ? `Cobrar ${formatoMoneda.format(totalACobrar)}`
+                  : "Cobrar (F12)"}
             </button>
           </div>
 
@@ -1700,7 +1735,7 @@ export function PosClient({
               <AtajoItem label="Cobrar" tecla="F12" />
               <AtajoItem label="Quitar" tecla="Supr" />
               <AtajoItem label="Entrada $" tecla="F7" deshabilitado={!cajaId} />
-              <AtajoItem label="Salida $" tecla="F8" deshabilitado={!cajaId} />
+              <AtajoItem label="Egresos" tecla="F8" deshabilitado={!cajaId} />
             </div>
           </div>
         </div>
@@ -1981,7 +2016,9 @@ export function PosClient({
                 className="flex-1 rounded-[7px] bg-moe px-[11px] py-[10px] text-[15.5px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
               >
                 {pending
-                  ? "Confirmando…"
+                  ? esEfectivoPuro
+                    ? "Confirmando…"
+                    : "Facturando en ARCA…"
                   : pagos.length === 0
                     ? "Elegí un medio de pago"
                     : restante !== 0

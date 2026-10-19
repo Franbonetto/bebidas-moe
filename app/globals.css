@@ -188,6 +188,20 @@ body {
     font-size: 9px !important;
   }
 
+  /* Eslogan del reparto, abajo del nombre del negocio. */
+  .ticket-print .tk-eslogan {
+    font-size: 10px !important;
+  }
+
+  /* Motomandado y direccion del envio: los lee el que reparte, con el
+     ticket en la mano y a la intemperie, asi que van mas grandes que el
+     cuerpo del ticket (10px) -- pedido del usuario 2026-10-19. 12px es lo
+     maximo que entra en los 39mm sin que una direccion larga se coma tres
+     renglones. */
+  .ticket-print .tk-envio {
+    font-size: 12px !important;
+  }
+
   /* Un nombre largo corta de línea en vez de empujar el precio fuera del
      papel: la columna de importes nunca se mueve. */
   .ticket-print .tk-desc {

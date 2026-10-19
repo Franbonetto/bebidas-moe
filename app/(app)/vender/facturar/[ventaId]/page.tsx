@@ -183,16 +183,34 @@ export default async function FacturarVentaPage({
               {comprobante.razon_social_receptor} — CUIT {comprobante.cuit_receptor}
             </p>
           )}
-          {comprobante.qr_data && (
+          <div className="mt-3 flex items-center gap-3">
+            {/* El ticket de una venta ya facturada imprime los datos
+                fiscales (tipo, N°, CAE, QR) en vez de la leyenda "no
+                válido como factura" -- ver app/ticket/[ventaId]/page.tsx.
+                Antes había que volver al POS para imprimirlo; pedido del
+                usuario 2026-10-19: tenerlo acá mismo, y como botón
+                primario -- apenas ARCA autoriza (A o B), imprimir es lo
+                único que queda por hacer: el cliente está esperando el
+                papel en el mostrador. */}
             <a
-              href={comprobante.qr_data}
+              href={`/ticket/${ventaId}`}
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-block text-[12.5px] text-moe hover:underline"
+              className="rounded-[6px] bg-moe px-[14px] py-[7px] text-[13px] font-medium text-white hover:bg-moe/90"
             >
-              Ver QR del comprobante →
+              Imprimir ticket
             </a>
-          )}
+            {comprobante.qr_data && (
+              <a
+                href={comprobante.qr_data}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[12.5px] text-moe hover:underline"
+              >
+                Ver QR del comprobante →
+              </a>
+            )}
+          </div>
           <VerificarArcaButton ventaId={ventaId} />
         </div>
       ) : (

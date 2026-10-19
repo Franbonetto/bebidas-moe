@@ -364,6 +364,13 @@ factura la emite el otro, hasta que este bloque esté validado en homologación.
 - **Disparo:** manual, con un botón **"Facturar"** separado de "Confirmar venta", en el
   detalle de la venta ya confirmada. Una venta puede quedar sin facturar indefinidamente
   sin romper nada — facturar nunca es requisito para cerrar una venta.
+  **Actualizado 2026-10-19:** las ventas que **no son en efectivo** (débito, crédito,
+  transferencia, QR, y el pago dividido donde alguno de los medios no sea efectivo) se
+  facturan **automáticamente** al cobrar, como Factura B a Consumidor Final, desde
+  `confirmarVenta()` → `facturarVentaAutomatica()`. La venta se graba primero y la
+  facturación nunca la voltea: si ARCA rechaza o no responde (tope de 15s), el
+  comprobante queda `rechazado`/`error`, el POS muestra el motivo y se reintenta a mano.
+  El efectivo sigue sin facturarse solo. Ver `docs/bloque_arca_facturacion.md` sección 2.
 - **Alcance de sucursal:** **actualizado 2026-09-17** — cualquier sucursal con un punto
   de venta ARCA activo en `puntos_venta` puede facturar (mismo CUIT/certificado para
   todas, solo cambia el número de punto de venta). El botón "Facturar" aparece según

@@ -145,10 +145,21 @@ Las promociones aplican solo pagando en efectivo.
   a ser el de ese medio y se avisa que perdió el descuento.
 - Sin stock: **permitir vender**, advertir, y marcar el SKU para revisión de inventario.
 - Caja diaria por sucursal.
-- **La venta no se factura sola.** El ticket que se imprime siempre es el interno
-  (fecha, hora, productos, total, dirección de la sucursal) con la leyenda
-  "Documento no válido como factura". Si el cliente pide factura, se emite a mano
-  desde `/vender/facturar`.
+- **Se factura solo lo que no es efectivo (2026-10-19).** Débito, crédito,
+  transferencia y QR dejan rastro bancario, así que esas ventas se facturan
+  automáticamente al cobrar: Factura B a Consumidor Final, emitida por
+  `confirmarVenta()` después de que `confirmar_venta()` ya grabó la venta. El POS
+  espera el CAE (tope de 15s) para que el ticket salga ya con CAE y QR y el cliente
+  se lleve la factura en el mismo papel. En un pago dividido alcanza con que **uno**
+  de los medios no sea efectivo para facturar la venta entera.
+  - **Nunca voltea la venta.** Si ARCA rechaza, tarda o está caído, la venta queda
+    igual y el comprobante en `rechazado`/`error`: el POS avisa el motivo y se
+    emite a mano desde `/vender/facturar`. Lo mismo si ARCA rechaza por el tope de
+    monto sin identificar al comprador: ahí se emite a mano con DNI/CUIT.
+  - **La venta en efectivo sigue sin facturarse sola.** El ticket es el interno
+    (fecha, hora, productos, total, dirección de la sucursal) con la leyenda
+    "Documento no válido como factura". Si el cliente pide factura, se emite a mano
+    desde `/vender/facturar`.
 - **Producto particular:** una línea sin SKU, con descripción y precio escritos a
   mano (picada, canasta de regalería). No descuenta stock —no hay nada que
   descontar—, no entra en promociones y va al 21% si se factura.
@@ -206,7 +217,10 @@ ya cerradas ahí (no volver a preguntarlas):
 - Ambiente de homologación primero; certificado personal de Francisco ya generado
   y vinculado al servicio WSFE.
 - Factura A y B únicamente (no C). Disparo manual desde un botón "Facturar" en el
-  detalle de la venta — nunca bloquea el cierre de la venta en sí.
+  detalle de la venta — nunca bloquea el cierre de la venta en sí. **Desde
+  2026-10-19 se suma el disparo automático** para las ventas que no son en
+  efectivo (ver la sección POS): el botón manual sigue existiendo para la Factura
+  A, para el efectivo y para reintentar lo que ARCA no autorizó.
 - Solo Olavarría factura por ahora (un único punto de venta ARCA).
 - `venta` queda desacoplada de `comprobante`: el comprobante es un registro aparte
   que referencia a la venta, nunca la modifica.

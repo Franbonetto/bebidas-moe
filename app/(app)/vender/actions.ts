@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { facturarVentaAutomatica } from "./facturar/actions";
 
 export type LineaVenta = {
   // null en un producto particular, que va con descripcion en su lugar
@@ -55,7 +56,10 @@ export async function confirmarVenta(
   pagos: PagoVenta[],
   lineas: LineaVenta[],
   envio?: DatosEnvio,
-): Promise<{ error: string } | { id: string; comprobante: ComprobanteResumen | null }> {
+): Promise<
+  | { error: string }
+  | { id: string; comprobante: ComprobanteResumen | null; avisoFacturacion: string | null }
+> {
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("confirmar_venta", {
@@ -71,19 +75,30 @@ export async function confirmarVenta(
 
   const ventaId = (data as { id: string }).id;
 
-  // No se factura sola ninguna venta (decisión del usuario 2026-10-08). La
-  // mayoría de los clientes no pide factura, y emitir una por cada venta
-  // llenaba ARCA de comprobantes que nadie se lleva. Si el cliente la pide,
-  // la vendedora va a /vender/facturar y la emite ahí.
+  // Facturación automática de lo que no es efectivo (decisión del usuario
+  // 2026-10-19, reemplaza el "no se factura sola" del 2026-10-08): débito,
+  // crédito, transferencia y QR se facturan acá mismo, como Factura B a
+  // Consumidor Final. El efectivo no.
   //
-  // El ticket que se imprime siempre es el interno (fecha, productos,
-  // total, dirección de la sucursal), con la leyenda de que no es válido
-  // como factura.
-  const comprobante: ComprobanteResumen | null = null;
+  // El orden importa y es a propósito: la venta YA está grabada por
+  // confirmar_venta() antes de que se hable con ARCA. Si ARCA rechaza,
+  // tarda o está caído, la venta sigue existiendo igual y el comprobante
+  // queda reintentable desde /vender/facturar -- la facturación nunca
+  // voltea una venta (docs/bloque_arca_facturacion.md, sección 4).
+  //
+  // El POS espera este resultado (hasta ~15s de tope, ver el timeout de
+  // lib/arca/wsfe.ts) porque el ticket que imprime la cajera tiene que
+  // salir ya con el CAE y el QR: el cliente se lleva la factura en el
+  // mismo papel, no vuelve al otro día a buscarla.
+  const facturacion = await facturarVentaAutomatica(ventaId);
+  const comprobante: ComprobanteResumen | null = facturacion.facturado
+    ? facturacion.comprobante
+    : null;
+  const avisoFacturacion = facturacion.facturado ? null : facturacion.aviso;
 
   revalidatePath("/vender");
   revalidatePath("/envios");
-  return { id: ventaId, comprobante };
+  return { id: ventaId, comprobante, avisoFacturacion };
 }
 
 // Encadena desarmar_sku() los niveles que hagan falta (x24 -> x6 -> unidad,

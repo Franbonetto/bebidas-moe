@@ -193,6 +193,9 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
 
       <div className="text-center">
         <p className="tk-nombre text-[15px] font-bold">Bebidas Moe</p>
+        {/* Eslogan del reparto, pedido del usuario 2026-10-19. Por ahora
+            solo en el ticket de un envío. */}
+        {venta.es_envio && <p className="tk-eslogan text-[12.5px] font-semibold">Te lo lleva a casa!</p>}
         {/* La dirección sale de sucursales.direccion: cada sucursal imprime
             la suya, no se hardcodea ninguna. */}
         {venta.sucursal?.direccion && (
@@ -207,8 +210,12 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
           <div className="my-3 border-t border-dashed border-border" />
           <div className="text-center">
             <p className="text-[12px] font-bold uppercase tracking-wide">Envío</p>
-            <p className="tk-chico text-[12.5px]">Motomandado: {venta.motomandado}</p>
-            <p className="tk-chico text-[12.5px]">Dirección: {venta.direccion_envio}</p>
+            {/* Letra grande: estos dos datos los lee el motomandado en la
+                calle, no la cajera en el mostrador (pedido del usuario
+                2026-10-19). Van con tk-desc para que una dirección larga
+                corte de línea en vez de salirse del papel. */}
+            <p className="tk-envio tk-desc text-[14px] font-semibold">Motomandado: {venta.motomandado}</p>
+            <p className="tk-envio tk-desc text-[14px] font-semibold">{venta.direccion_envio}</p>
           </div>
         </>
       )}

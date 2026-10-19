@@ -11,6 +11,9 @@ import { XMLParser } from "fast-xml-parser";
 import { configArca } from "./env";
 import { getTA } from "./wsaa";
 
+// Cuánto se espera a ARCA antes de dar la llamada por perdida.
+const TIMEOUT_MS = 15_000;
+
 type Auth = { token: string; sign: string; cuit: string };
 
 function authXml(auth: Auth): string {
@@ -37,14 +40,29 @@ async function callWsfe(metodo: string, cuerpoInterno: string): Promise<any> {
   </soapenv:Body>
 </soapenv:Envelope>`;
 
-  const respuesta = await fetch(urls.wsfe, {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/xml; charset=utf-8",
-      SOAPAction: `http://ar.gov.afip.dif.FEV1/${metodo}`,
-    },
-    body: soapEnvelope,
-  });
+  // Tope de espera: sin esto, un WSFEv1 que no contesta deja la llamada
+  // colgada hasta el timeout de la plataforma. Importa desde que el POS
+  // espera el CAE con el cliente en el mostrador (facturación automática,
+  // 2026-10-19): es mejor cortar a los 15s, dejar el comprobante en
+  // `error` y que la venta siga, que trabar la caja. El reintento manual
+  // desde /vender/facturar sigue estando.
+  let respuesta: Response;
+  try {
+    respuesta = await fetch(urls.wsfe, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        SOAPAction: `http://ar.gov.afip.dif.FEV1/${metodo}`,
+      },
+      body: soapEnvelope,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      throw new Error(`WSFEv1 (${metodo}) no respondió en ${TIMEOUT_MS / 1000} segundos`);
+    }
+    throw err;
+  }
 
   const texto = await respuesta.text();
   if (!respuesta.ok) {
