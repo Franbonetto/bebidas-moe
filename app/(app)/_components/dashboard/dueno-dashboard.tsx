@@ -6,6 +6,7 @@ import {
   type MotivoInventario,
 } from "@/app/(app)/inventarios/_components/estado-inventario-badge";
 import { TIPO_MOVIMIENTO_LABEL, motivoLegible } from "@/lib/movimientos";
+import { fechaOperativa, inicioDelDia, inicioDelMes } from "@/lib/fecha";
 import { MOTIVO_MERMA_LABEL, type MotivoMerma } from "@/app/(app)/mermas/_lib/motivos";
 import { formatoFecha, formatoFechaHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
@@ -204,15 +205,12 @@ function BloqueSucursal({
 export async function DuenoDashboard() {
   const supabase = await createClient();
 
-  const inicioMes = new Date();
-  inicioMes.setDate(1);
-  inicioMes.setHours(0, 0, 0, 0);
+  const inicioMes = inicioDelMes();
   const ahora = new Date().getTime();
   const cutoff30 = new Date(ahora - 30 * 86_400_000).toISOString();
   const cutoff7 = new Date(ahora - 7 * 86_400_000).toISOString();
-  const hoy = new Date().toISOString().slice(0, 10);
-  const inicioHoy = new Date();
-  inicioHoy.setHours(0, 0, 0, 0);
+  const hoy = fechaOperativa();
+  const inicioHoy = inicioDelDia();
   const inicioSemana = inicioDeSemana(new Date());
 
   const [

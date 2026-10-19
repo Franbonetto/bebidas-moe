@@ -10,6 +10,7 @@
 import { XMLParser } from "fast-xml-parser";
 import { configArca } from "./env";
 import { getTA } from "./wsaa";
+import { fechaOperativa } from "@/lib/fecha";
 
 // Cuánto se espera a ARCA antes de dar la llamada por perdida.
 const TIMEOUT_MS = 15_000;
@@ -137,11 +138,11 @@ export type ResultadoCae =
   | { ok: true; cae: string; vencimientoCae: string }
   | { ok: false; motivo: string };
 
+// AAAAMMDD del dia en ARGENTINA, no del servidor: con el servidor en UTC,
+// una factura emitida despues de las 21 salia con CbteFch del dia
+// siguiente (ver lib/fecha.ts).
 function formatoFechaArca(fecha: Date): string {
-  const y = fecha.getFullYear();
-  const m = String(fecha.getMonth() + 1).padStart(2, "0");
-  const d = String(fecha.getDate()).padStart(2, "0");
-  return `${y}${m}${d}`;
+  return fechaOperativa(fecha).replace(/-/g, "");
 }
 
 // ARCA devuelve fechas como "AAAAMMDD"; comprobantes_fiscales.vencimiento_cae

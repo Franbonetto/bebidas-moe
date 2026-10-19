@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
+import { inicioDelMes } from "@/lib/fecha";
 import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { Card, EmptyState, Kpi, KpiGrid, SectionHeader } from "../../_components/dashboard/ui";
 
@@ -53,9 +54,7 @@ export default async function ReporteParticularesPage() {
 
   const totalGeneral = filas.reduce((acc, f) => acc + f.precio_unitario * f.cantidad, 0);
 
-  const inicioMes = new Date();
-  inicioMes.setDate(1);
-  inicioMes.setHours(0, 0, 0, 0);
+  const inicioMes = inicioDelMes();
 
   const delMes = filas.filter((f) => f.venta && new Date(f.venta.fecha) >= inicioMes);
   const totalMes = delMes.reduce((acc, f) => acc + f.precio_unitario * f.cantidad, 0);

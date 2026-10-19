@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { calcularPrecioVenta, type SkuParaPrecio, type SucursalParaPrecio } from "@/lib/precios";
 import { traerTodo } from "@/lib/supabase/traer-todo";
+import { fechaOperativa } from "@/lib/fecha";
 import type { SkuPos, ComboData, PromoCantidadData } from "../_components/pos-client";
 
 // Extraído de app/(app)/vender/page.tsx para poder reusarlo en /envios
@@ -91,7 +92,7 @@ export async function cargarDatosVenta(
       .from("cajas")
       .select("id, estado, monto_apertura, cantidad_tickets")
       .eq("sucursal_id", sucursal.id)
-      .eq("fecha", new Date().toISOString().slice(0, 10))
+      .eq("fecha", fechaOperativa())
       .maybeSingle(),
     supabase
       .from("puntos_venta")
@@ -246,7 +247,7 @@ export async function cargarDatosVenta(
     return precioPromocional / cantidadRequerida < costo;
   }
 
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = fechaOperativa();
   const promocionesVigentes = (promocionesRaw ?? []).filter(
     (p) =>
       (p.vigente_desde == null || p.vigente_desde <= hoy) &&

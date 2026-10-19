@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
+import { fechaOperativa } from "@/lib/fecha";
 import { CerrarCajaForm } from "./_components/cerrar-caja-form";
 import { formatoMoneda } from "../_lib/formato";
 
@@ -59,7 +60,7 @@ export default async function CajaPage({
        empleado_cierre:empleados!cajas_empleado_cierre_id_fkey ( nombre )`,
     )
     .eq("sucursal_id", sucursal.id)
-    .eq("fecha", new Date().toISOString().slice(0, 10))
+    .eq("fecha", fechaOperativa())
     .maybeSingle();
 
   const nombreApertura = nombreEmpleado(caja?.empleado_apertura);

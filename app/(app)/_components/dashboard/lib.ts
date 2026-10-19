@@ -3,6 +3,8 @@
 // que el resto de la app, ver productos/page.tsx) y estas funciones solo
 // las reducen/derivan.
 
+import { inicioDelDia } from "@/lib/fecha";
+
 export function haceDias(fechaIso: string): string {
   const dias = Math.floor((Date.now() - new Date(fechaIso).getTime()) / 86_400_000);
   if (dias <= 0) return "hoy";
@@ -94,8 +96,7 @@ export function calcularProductosPorVencer(
   stockPorSku: Map<string, number>,
   ventanaDias = 30,
 ): ProductoPorVencer[] {
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
+  const hoy = inicioDelDia();
   const limite = hoy.getTime() + ventanaDias * 86_400_000;
 
   const restantePorSku = new Map<string, number>();
@@ -140,15 +141,12 @@ export type ResumenVentas = {
 // 2026-09-22: "lunes a domingo... al cierre hasta las 22 horas" -- el
 // local cierra a las 22, así que una semana corrida de lunes 00:00 a
 // domingo ya cubre toda venta del día sin necesidad de un corte especial
-// a las 22, esa hora nunca queda afuera de "hoy"). getDay(): 0 = domingo.
-export function inicioDeSemana(fecha: Date): Date {
-  const resultado = new Date(fecha);
-  const dia = resultado.getDay();
-  const diasDesdeLunes = dia === 0 ? 6 : dia - 1;
-  resultado.setDate(resultado.getDate() - diasDesdeLunes);
-  resultado.setHours(0, 0, 0, 0);
-  return resultado;
-}
+// a las 22, esa hora nunca queda afuera de "hoy").
+//
+// Vive en lib/fecha.ts desde el 2026-10-19: se calculaba con la hora del
+// servidor (UTC), así que un domingo a las 21:30 de Argentina ya era lunes
+// y devolvía el lunes de la semana SIGUIENTE.
+export { inicioDeSemana } from "@/lib/fecha";
 
 // Resumen de ventas de una sucursal para el panel del dueño (pedido del
 // usuario 2026-09-22: "ticket promedio, cuáles son los productos que más

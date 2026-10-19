@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { esDueno } from "@/lib/permisos";
+import { fechaOperativa } from "@/lib/fecha";
 import { UsuariosTable, type UsuarioRow } from "./_components/usuarios-table";
 import { formatoFechaHora } from "../compras/_lib/formato";
 
@@ -29,7 +30,7 @@ export default async function UsuariosPage() {
         supabase
           .from("cajas")
           .select("sucursal_id, estado, abierta_en, usuario_apertura:usuarios!cajas_usuario_apertura_id_fkey ( nombre )")
-          .eq("fecha", new Date().toISOString().slice(0, 10)),
+          .eq("fecha", fechaOperativa()),
       ),
     ]);
 

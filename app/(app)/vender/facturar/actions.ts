@@ -12,6 +12,7 @@ import {
   type ItemIva,
 } from "@/lib/arca/wsfe";
 import { construirQrUrl } from "@/lib/arca/qr";
+import { fechaOperativa } from "@/lib/fecha";
 
 // Catálogo de alícuotas de IVA de ARCA (tabla de parámetros fija de WSFEv1,
 // no una decisión de negocio nuestra — a diferencia de condicion_iva, no
@@ -244,7 +245,7 @@ async function emitirComprobante(
 
     const { cuit } = configArca();
     const qrData = construirQrUrl({
-      fecha: new Date().toISOString().slice(0, 10),
+      fecha: fechaOperativa(),
       cuitEmisor: cuit,
       ptoVta: puntoVenta.numero_arca,
       tipoCmp: cbteTipo,
