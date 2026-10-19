@@ -132,6 +132,9 @@ type Ticket = {
   // tener más de un pedido de envío en espera con su propio moto/dirección.
   motomandado: string;
   direccionEnvio: string;
+  // ¿Ya está pago? (2026-10-19) null = la cajera todavía no eligió, y sin
+  // elegir no se puede cobrar.
+  envioPagado: boolean | null;
 };
 
 function ticketVacio(id: string): Ticket {
@@ -143,6 +146,7 @@ function ticketVacio(id: string): Ticket {
     pagos: [],
     motomandado: "",
     direccionEnvio: "",
+    envioPagado: null,
   };
 }
 
@@ -316,7 +320,8 @@ export function PosClient({
   const skuPorId = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
 
   const ticketActivo = tickets.find((t) => t.id === ticketActivoId) ?? tickets[0];
-  const { lineas, particulares, envaseChecked, pagos, motomandado, direccionEnvio } = ticketActivo;
+  const { lineas, particulares, envaseChecked, pagos, motomandado, direccionEnvio, envioPagado } =
+    ticketActivo;
 
   function actualizarTicketActivo(fn: (t: Ticket) => Ticket) {
     setTickets((prev) => prev.map((t) => (t.id === ticketActivoId ? fn(t) : t)));
@@ -883,6 +888,10 @@ export function PosClient({
       setError("Completá el motomandado y la dirección antes de cobrar.");
       return;
     }
+    if (modoEnvio && envioPagado === null) {
+      setError("Marcá si el pedido ya está pago antes de cobrar.");
+      return;
+    }
     setError(null);
     const totalCobrado = totalACobrar;
     const pagosVenta: PagoVenta[] = pagos.map((p) => ({ medio_pago: p.medioPago, monto: p.monto }));
@@ -896,7 +905,13 @@ export function PosClient({
         sucursalId,
         pagosVenta,
         construirLineasVenta(esEfectivoPuro),
-        modoEnvio ? { motomandado: motomandado.trim(), direccionEnvio: direccionEnvio.trim() } : undefined,
+        modoEnvio
+          ? {
+              motomandado: motomandado.trim(),
+              direccionEnvio: direccionEnvio.trim(),
+              pagado: envioPagado,
+            }
+          : undefined,
       );
       if ("error" in resultado) {
         setError(resultado.error);
@@ -1232,6 +1247,51 @@ export function PosClient({
                 direccionEnvio.trim() ? "border-border" : "border-warn/60 bg-warn-bg/40"
               }`}
             />
+          </div>
+
+          {/* ¿Ya está pago? (pedido del usuario 2026-10-19) Obligatorio como
+              los otros dos, y en amarillo hasta que se elija. No cambia
+              nada de la caja: la venta se contabiliza igual, el dato es
+              para el que reparte (sale en el ticket) y para el historial.
+              Ver 20261019090000_envio_pagado.sql. */}
+          <div className="sm:col-span-2">
+            <label
+              className={`mb-[3px] block text-[12.5px] font-medium ${
+                envioPagado === null ? "text-warn" : "text-text-2"
+              }`}
+            >
+              ¿El pedido ya está pago? {envioPagado === null && "— obligatorio"}
+            </label>
+            <div
+              className={`flex items-center gap-2 rounded-card border p-[6px] ${
+                envioPagado === null ? "border-warn/60 bg-warn-bg/40" : "border-border bg-bg"
+              }`}
+            >
+              {[
+                { valor: true, label: "Sí, ya está pago" },
+                { valor: false, label: "No, se cobra al entregar" },
+              ].map((opcion) => (
+                <button
+                  key={String(opcion.valor)}
+                  type="button"
+                  onClick={() =>
+                    actualizarTicketActivo((t) => ({ ...t, envioPagado: opcion.valor }))
+                  }
+                  className={`rounded-[7px] border px-[14px] py-[7px] text-[14.5px] font-medium ${
+                    envioPagado === opcion.valor
+                      ? "border-moe bg-moe-soft text-moe"
+                      : "border-border bg-bg text-text-2 hover:bg-bg-2"
+                  }`}
+                >
+                  {opcion.label}
+                </button>
+              ))}
+              {envioPagado === false && (
+                <span className="text-[13px] text-text-3">
+                  El ticket sale marcado para cobrar en la puerta.
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}

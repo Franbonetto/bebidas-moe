@@ -59,7 +59,7 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
   const { data: venta } = await supabase
     .from("ventas")
     .select(
-      "id, fecha, medio_pago, subtotal, descuentos, deposito_envases, total, sucursal_id, es_envio, motomandado, direccion_envio, sucursal:sucursales ( nombre, direccion )",
+      "id, fecha, medio_pago, subtotal, descuentos, deposito_envases, total, sucursal_id, es_envio, motomandado, direccion_envio, envio_pagado, sucursal:sucursales ( nombre, direccion )",
     )
     .eq("id", ventaId)
     .maybeSingle<{
@@ -74,6 +74,9 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
       es_envio: boolean;
       motomandado: string | null;
       direccion_envio: string | null;
+      // null en los envíos anteriores al 2026-10-19, cuando no se
+      // preguntaba (ver 20261019090000_envio_pagado.sql).
+      envio_pagado: boolean | null;
       sucursal: { nombre: string; direccion: string | null } | null;
     }>();
 
@@ -216,6 +219,17 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
                 corte de línea en vez de salirse del papel. */}
             <p className="tk-envio tk-desc text-[14px] font-semibold">Motomandado: {venta.motomandado}</p>
             <p className="tk-envio tk-desc text-[14px] font-semibold">{venta.direccion_envio}</p>
+            {/* Lo primero que mira el que reparte: si tiene que cobrar o
+                no (pedido del usuario 2026-10-19). Con el monto al lado,
+                para no hacerlo buscar el total abajo. */}
+            {venta.envio_pagado === false && (
+              <p className="tk-envio mt-1 text-[14px] font-bold">
+                A COBRAR {formatoMoneda.format(venta.total)}
+              </p>
+            )}
+            {venta.envio_pagado === true && (
+              <p className="tk-envio mt-1 text-[14px] font-bold">PAGADO</p>
+            )}
           </div>
         </>
       )}

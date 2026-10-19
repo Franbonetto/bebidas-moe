@@ -42,6 +42,13 @@ export type PagoVenta = {
 export type DatosEnvio = {
   motomandado: string;
   direccionEnvio: string;
+  // ¿El pedido ya está pago? (2026-10-19) Obligatorio en un envío: el que
+  // reparte tiene que saber si vuelve con la plata. Viaja como
+  // `boolean | null` a propósito -- el POS no deja cobrar sin elegir, y si
+  // igual llegara en null, confirmar_venta() rechaza la venta en vez de
+  // registrar el envío como pago sin que nadie lo haya dicho.
+  // No toca la caja: ver 20261019090000_envio_pagado.sql.
+  pagado: boolean | null;
 };
 
 // Pago dividido (hasta 3 medios): ver 20260919100000_venta_pagos.sql.
@@ -69,6 +76,7 @@ export async function confirmarVenta(
     p_es_envio: Boolean(envio),
     p_motomandado: envio?.motomandado ?? null,
     p_direccion_envio: envio?.direccionEnvio ?? null,
+    p_envio_pagado: envio?.pagado ?? null,
   });
 
   if (error) return { error: error.message };

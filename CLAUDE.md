@@ -145,6 +145,14 @@ Las promociones aplican solo pagando en efectivo.
   a ser el de ese medio y se avisa que perdió el descuento.
 - Sin stock: **permitir vender**, advertir, y marcar el SKU para revisión de inventario.
 - Caja diaria por sucursal.
+- **Envíos (`/envios`)** son el mismo POS en modo envío, con tres datos
+  obligatorios que la cajera completa a mano: motomandado, dirección y
+  **"¿el pedido ya está pago?"** (2026-10-19). Ese último flag **no toca la
+  caja**: la venta se contabiliza igual que cualquier otra, así que el
+  arqueo del día espera esa plata aunque el motomandado todavía no haya
+  vuelto con ella. Es un dato del envío (sale en el ticket y en el
+  historial), no un estado de cobranza: nadie lo actualiza después. Ver
+  `supabase/migrations/20261019090000_envio_pagado.sql`.
 - **Se factura solo lo que no es efectivo (2026-10-19).** Débito, crédito,
   transferencia y QR dejan rastro bancario, así que esas ventas se facturan
   automáticamente al cobrar: Factura B a Consumidor Final, emitida por

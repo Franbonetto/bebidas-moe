@@ -13,6 +13,8 @@ export type EnvioRow = {
   motomandado: string;
   direccionEnvio: string;
   medioPagoLabel: string;
+  // null = envío anterior al 2026-10-19, cuando el dato no se pedía.
+  pagado: boolean | null;
 };
 
 // Panel del dueño: solo lectura (no arma envíos, no opera el mostrador),
@@ -76,6 +78,9 @@ export function EnviosHistorialTable({ envios }: { envios: EnvioRow[] }) {
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
                   Medio de pago
                 </th>
+                <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
+                  ¿Estaba pago?
+                </th>
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                   Total
                 </th>
@@ -92,6 +97,22 @@ export function EnviosHistorialTable({ envios }: { envios: EnvioRow[] }) {
                   <td className="px-[14px] py-[9px] align-middle font-medium text-text">{e.motomandado}</td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">{e.direccionEnvio}</td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">{e.medioPagoLabel}</td>
+                  <td className="px-[14px] py-[9px] align-middle">
+                    {/* Lo que marcó la cajera al cargar el envío. No es un
+                        estado de cobranza: nadie lo actualiza después (ver
+                        20261019090000_envio_pagado.sql). */}
+                    {e.pagado === null ? (
+                      <span className="text-text-3">—</span>
+                    ) : e.pagado ? (
+                      <span className="rounded-[5px] bg-ok-bg px-[7px] py-[2px] text-[11px] font-medium text-ok">
+                        Pago
+                      </span>
+                    ) : (
+                      <span className="rounded-[5px] bg-warn-bg px-[7px] py-[2px] text-[11px] font-medium text-warn">
+                        Se cobraba al entregar
+                      </span>
+                    )}
+                  </td>
                   <td className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text">
                     {formatoMoneda.format(e.total)}
                   </td>

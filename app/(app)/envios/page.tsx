@@ -37,7 +37,7 @@ export default async function EnviosPage({
       supabase
         .from("ventas")
         .select(
-          `id, fecha, total, medio_pago, motomandado, direccion_envio,
+          `id, fecha, total, medio_pago, motomandado, direccion_envio, envio_pagado,
            sucursal:sucursales ( nombre ),
            venta_pagos ( medio_pago, monto )`,
         )
@@ -63,6 +63,7 @@ export default async function EnviosPage({
       medio_pago: string;
       motomandado: string | null;
       direccion_envio: string | null;
+      envio_pagado: boolean | null;
       sucursal: { nombre: string } | null;
       venta_pagos: { medio_pago: string; monto: number }[];
     }[]).map((v) => ({
@@ -72,6 +73,7 @@ export default async function EnviosPage({
       sucursalNombre: v.sucursal?.nombre ?? "—",
       motomandado: v.motomandado ?? "—",
       direccionEnvio: v.direccion_envio ?? "—",
+      pagado: v.envio_pagado,
       medioPagoLabel:
         v.medio_pago === "mixto"
           ? v.venta_pagos.map((p) => MEDIO_LABEL[p.medio_pago] ?? p.medio_pago).join(" + ")
