@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
+import { verificarPinOperaciones } from "@/lib/pin";
 
 export type NuevoProductoInput = {
   producto: { id: string } | { nombreNuevo: string };
@@ -672,4 +673,53 @@ export async function editarSkuCompleto(
   revalidatePath("/vender");
   revalidatePath("/compras");
   return { ok: true };
+}
+
+// Ajustar el stock de un SKU desde la pantalla de editar (pedido del
+// usuario 2026-10-19). Se escribe el stock REAL contado, no la diferencia:
+// el delta lo calcula ajustar_stock_contado() con la fila bloqueada, en la
+// misma transacción que el movimiento -- ver
+// 20261019110000_ajuste_stock_contado.sql.
+//
+// No es un reemplazo del inventario (eso sigue siendo el conteo en serio
+// con su cierre inmutable): es para el SKU suelto que quedó mal.
+export async function ajustarStockSku(
+  skuId: string,
+  sucursalId: string,
+  cantidadReal: number,
+  motivo: string,
+  pin: string,
+): Promise<{ error: string } | { ok: true; stockAnterior: number; stockPosterior: number }> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
+  if (!Number.isInteger(cantidadReal) || cantidadReal < 0) {
+    return { error: "El stock contado tiene que ser un número entero, cero o más." };
+  }
+  if (!motivo.trim()) {
+    return { error: "El motivo es obligatorio: sin eso el ajuste no se puede auditar después." };
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("ajustar_stock_contado", {
+    p_sku_id: skuId,
+    p_sucursal_id: sucursalId,
+    p_cantidad_real: cantidadReal,
+    p_motivo: motivo.trim(),
+  });
+
+  if (error) return { error: error.message };
+
+  const movimiento = data as { stock_anterior: number; stock_posterior: number };
+
+  revalidatePath("/productos");
+  revalidatePath(`/productos/${skuId}/editar`);
+  revalidatePath("/vender");
+  revalidatePath("/alertas");
+  return {
+    ok: true,
+    stockAnterior: movimiento.stock_anterior,
+    stockPosterior: movimiento.stock_posterior,
+  };
 }

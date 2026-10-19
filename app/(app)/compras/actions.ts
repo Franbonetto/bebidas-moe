@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { TipoComprobante } from "./_lib/comprobante";
+import { verificarPinOperaciones } from "@/lib/pin";
 
 export type LineaCompra = {
   sku_id: string;
@@ -86,7 +87,10 @@ export async function cargarCompraDirecta(datos: {
   proveedor_id: string;
   comprobante: ComprobanteCompra;
   lineas: LineaCompra[];
-}): Promise<{ error: string } | { id: string }> {
+}, pin: string): Promise<{ error: string } | { id: string }> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   if (!datos.proveedor_id) return { error: "Elegí un proveedor." };
@@ -126,7 +130,10 @@ export async function reclasificarComprobanteCompra(datos: {
   compra_id: string;
   comprobante: ComprobanteCompra;
   motivo: string;
-}): Promise<{ error: string } | { ok: true }> {
+}, pin: string): Promise<{ error: string } | { ok: true }> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const errorComprobante = validarComprobante(datos.comprobante);

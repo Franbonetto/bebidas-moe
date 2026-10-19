@@ -14,6 +14,7 @@ import {
 } from "@/app/(app)/compras/_lib/vencimiento";
 import { datosSkuParaCarga, guardarCargaInicial, type DatosSkuCarga } from "../actions";
 import { EscanerCamara, soportaEscanerCamara } from "./escaner-camara";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 
 type Sucursal = { id: string; nombre: string };
 type Proveedor = { id: string; razon_social: string; nombre_comercial: string | null };
@@ -303,6 +304,8 @@ export function CargaInicialForm({
     );
   }
 
+  const pedirPin = usePinOperaciones();
+
   async function guardar() {
     if (!sku || !datos) return;
     const cantidadNum = Number(cantidad);
@@ -362,6 +365,10 @@ export function CargaInicialForm({
     }
 
     setError(null);
+
+    const pin = await pedirPin();
+    if (!pin) return;
+
     setGuardando(true);
     const resultado = await guardarCargaInicial({
       sku_id: sku.id,
@@ -387,7 +394,7 @@ export function CargaInicialForm({
       proveedor_id: proveedorId || null,
       stock_minimo: stockMinimo === "" ? null : Number(stockMinimo),
       stock_objetivo: stockObjetivo === "" ? null : Number(stockObjetivo),
-    });
+    }, pin);
     setGuardando(false);
 
     if ("error" in resultado) {

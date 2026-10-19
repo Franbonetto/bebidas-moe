@@ -14,6 +14,7 @@ import {
   botonPrimario,
   botonSecundario,
 } from "./hoja-modal";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 const modoBtnClass = (activo: boolean) =>
   `rounded-[6px] border px-[10px] py-[5px] text-[12.5px] font-medium ${
     activo ? "border-moe bg-moe-soft text-moe" : "border-border bg-bg text-text-2 hover:bg-bg-2"
@@ -133,7 +134,9 @@ export function PromocionForm({
     return null;
   }
 
-  function guardar() {
+  const pedirPin = usePinOperaciones();
+
+  async function guardar() {
     const errorValidacion = validar();
     if (errorValidacion) {
       setError(errorValidacion);
@@ -152,18 +155,24 @@ export function PromocionForm({
       .filter((s) => (precios[s.id] ?? "").trim() !== "")
       .map((s) => ({ sucursalId: s.id, precioTotal: Number(precios[s.id]) }));
 
+    const pin = await pedirPin();
+    if (!pin) return;
+
     startTransition(async () => {
-      const resultado = await guardarPromocion({
-        id: promocion?.id ?? null,
-        nombre: nombre.trim(),
-        tipo,
-        sucursalId: sucursalId || null,
-        vigenteDesde: vigenteDesde || null,
-        vigenteHasta: sinFechaLimite ? null : vigenteHasta || null,
-        activo,
-        items,
-        precios: preciosParaGuardar,
-      });
+      const resultado = await guardarPromocion(
+        {
+          id: promocion?.id ?? null,
+          nombre: nombre.trim(),
+          tipo,
+          sucursalId: sucursalId || null,
+          vigenteDesde: vigenteDesde || null,
+          vigenteHasta: sinFechaLimite ? null : vigenteHasta || null,
+          activo,
+          items,
+          precios: preciosParaGuardar,
+        },
+        pin,
+      );
       if ("error" in resultado) {
         setError(resultado.error);
         return;

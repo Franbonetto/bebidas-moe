@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { guardarDescuentoEfectivo, eliminarDescuentoEfectivo } from "../actions";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 import { formatoFecha } from "../_lib/formato";
 import type { Categoria, Sucursal } from "./precios-table";
 
@@ -24,13 +25,17 @@ function Fila({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function guardar() {
+  const pedirPin = usePinOperaciones();
+
+  async function guardar() {
     setError(null);
+    const pin = await pedirPin();
+    if (!pin) return;
     startTransition(async () => {
       const resultado =
         porcentaje.trim() === ""
-          ? await eliminarDescuentoEfectivo(sucursalId, categoria.id)
-          : await guardarDescuentoEfectivo(sucursalId, categoria.id, Number(porcentaje));
+          ? await eliminarDescuentoEfectivo(sucursalId, categoria.id, pin)
+          : await guardarDescuentoEfectivo(sucursalId, categoria.id, Number(porcentaje), pin);
       if ("error" in resultado) setError(resultado.error);
     });
   }

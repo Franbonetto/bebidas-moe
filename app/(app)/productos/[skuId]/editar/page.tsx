@@ -1,7 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
-import { veCostos } from "@/lib/permisos";
+import { veCostos, operaSucursal } from "@/lib/permisos";
+import { PinProvider } from "@/app/(app)/_components/pin-gate";
+import {
+  AjusteStockPanel,
+  type StockPorSucursal,
+} from "@/app/(app)/productos/_components/ajuste-stock-panel";
 import {
   ProductoSkuForm,
   type MarcaOpcion,
@@ -122,6 +127,36 @@ export default async function EditarSkuPage({ params }: { params: Promise<{ skuI
     .eq("producto_id", sku.producto_id)
     .neq("id", skuId);
 
+  // Stock de este SKU para el panel de ajuste (pedido del usuario
+  // 2026-10-19). Solo las sucursales que el usuario opera: el ajuste llama
+  // a ajustar_stock_contado(), que valida opera_sucursal() igual.
+  const [{ data: sucursalesRaw }, { data: stockRaw }] = await Promise.all([
+    traerTodo(
+      supabase.from("sucursales").select("id, nombre").eq("activo", true).order("nombre"),
+    ),
+    traerTodo(
+      supabase.from("stock_sucursal").select("sucursal_id, cantidad").eq("sku_id", skuId),
+    ),
+  ]);
+
+  const sucursalesList = (sucursalesRaw ?? []) as { id: string; nombre: string }[];
+  const operables = await Promise.all(sucursalesList.map((su) => operaSucursal(supabase, su.id)));
+  const cantidadPorSucursal = new Map(
+    ((stockRaw ?? []) as { sucursal_id: string; cantidad: number }[]).map((f) => [
+      f.sucursal_id,
+      f.cantidad,
+    ]),
+  );
+
+  const stockPorSucursal: StockPorSucursal[] = sucursalesList
+    .filter((_, i) => operables[i])
+    .map((su) => ({
+      sucursalId: su.id,
+      sucursalNombre: su.nombre,
+      // Sin fila en stock_sucursal = nunca entró a esa sucursal, o sea cero.
+      cantidad: cantidadPorSucursal.get(su.id) ?? 0,
+    }));
+
   const skuEditar: SkuParaEditar = {
     id: sku.id,
     nombre: sku.nombre,
@@ -150,14 +185,22 @@ export default async function EditarSkuPage({ params }: { params: Promise<{ skuI
   };
 
   return (
-    <ProductoSkuForm
-      marcas={(marcas ?? []) as MarcaOpcion[]}
-      categorias={(categorias ?? []) as CategoriaOpcion[]}
-      productos={(productos ?? []) as unknown as ProductoOpcion[]}
-      tiposEnvase={(tiposEnvase ?? []) as TipoEnvaseOpcion[]}
-      skus={(skus ?? []) as unknown as SkuOpcion[]}
-      proveedores={(proveedores ?? []) as ProveedorOpcion[]}
-      skuEditar={skuEditar}
-    />
+    <PinProvider>
+      <AjusteStockPanel
+        skuId={sku.id}
+        skuNombre={sku.producto?.nombre ?? sku.nombre}
+        stock={stockPorSucursal}
+      />
+
+      <ProductoSkuForm
+        marcas={(marcas ?? []) as MarcaOpcion[]}
+        categorias={(categorias ?? []) as CategoriaOpcion[]}
+        productos={(productos ?? []) as unknown as ProductoOpcion[]}
+        tiposEnvase={(tiposEnvase ?? []) as TipoEnvaseOpcion[]}
+        skus={(skus ?? []) as unknown as SkuOpcion[]}
+        proveedores={(proveedores ?? []) as ProveedorOpcion[]}
+        skuEditar={skuEditar}
+      />
+    </PinProvider>
   );
 }

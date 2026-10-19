@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { esDueno } from "@/lib/permisos";
 import { CompraDirectaForm } from "../_components/compra-directa-form";
+import { PinProvider } from "@/app/(app)/_components/pin-gate";
 import type { SkuCatalogo } from "../_components/sku-picker";
 
 export default async function CompraDirectaPage() {
@@ -53,11 +54,13 @@ export default async function CompraDirectaPage() {
     ]);
 
   return (
-    <CompraDirectaForm
-      proveedores={proveedores ?? []}
-      skus={(skus ?? []) as unknown as SkuCatalogo[]}
-      costosReferencia={costosReferencia ?? []}
-      preciosBase={preciosBase ?? []}
-    />
+    <PinProvider>
+      <CompraDirectaForm
+        proveedores={proveedores ?? []}
+        skus={(skus ?? []) as unknown as SkuCatalogo[]}
+        costosReferencia={costosReferencia ?? []}
+        preciosBase={preciosBase ?? []}
+      />
+    </PinProvider>
   );
 }

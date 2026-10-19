@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { PinProvider } from "@/app/(app)/_components/pin-gate";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { esDueno } from "@/lib/permisos";
 import {
@@ -76,13 +77,15 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
   });
 
   return (
-    <CompraDetalle
-      compra={{ ...compraRaw, items }}
-      recepciones={recepcionesList}
-      reclasificaciones={(reclasificaciones ?? []) as unknown as ReclasificacionCompra[]}
-      // Cargar la factura que llegó después es carga de mercadería, no
-      // lectura: el dueño mira, la encargada corrige.
-      puedeReclasificar={!esDuenoActual && compraRaw.estado !== "borrador"}
-    />
+    <PinProvider>
+      <CompraDetalle
+        compra={{ ...compraRaw, items }}
+        recepciones={recepcionesList}
+        reclasificaciones={(reclasificaciones ?? []) as unknown as ReclasificacionCompra[]}
+        // Cargar la factura que llegó después es carga de mercadería, no
+        // lectura: el dueño mira, la encargada corrige.
+        puedeReclasificar={!esDuenoActual && compraRaw.estado !== "borrador"}
+      />
+    </PinProvider>
   );
 }

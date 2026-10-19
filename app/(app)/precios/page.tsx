@@ -9,6 +9,7 @@ import { DescuentosEfectivoPanel } from "./_components/descuentos-efectivo-panel
 import { PromocionesPanel, type PromocionRow } from "./_components/promociones-panel";
 import type { PromocionSkuOpcion } from "./_components/promocion-form";
 import { PreciosTabs } from "./_components/precios-tabs";
+import { PinProvider } from "@/app/(app)/_components/pin-gate";
 
 type SkuFila = {
   id: string;
@@ -272,5 +273,12 @@ export default async function PreciosPage() {
     <PromocionesPanel sucursales={sucursalesList} skus={skusParaPromo} promociones={promocionesList} />
   ) : null;
 
-  return <PreciosTabs tabPrecios={tabPrecios} tabPromociones={tabPromociones} />;
+  // PIN de operaciones (2026-10-19): el provider va acá arriba, no en cada
+  // panel, para que cargar precios y promociones en tanda cueste un solo
+  // PIN por pantalla.
+  return (
+    <PinProvider>
+      <PreciosTabs tabPrecios={tabPrecios} tabPromociones={tabPromociones} />
+    </PinProvider>
+  );
 }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
+import { verificarPinOperaciones } from "@/lib/pin";
 
 type Resultado = { error: string } | { ok: true };
 
@@ -13,7 +14,10 @@ function validarMonto(valor: number, etiqueta: string): string | null {
   return null;
 }
 
-export async function guardarPrecioBase(skuId: string, precioBase: number): Promise<Resultado> {
+export async function guardarPrecioBase(skuId: string, precioBase: number, pin: string): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const errorMonto = validarMonto(precioBase, "El precio base");
@@ -33,7 +37,11 @@ export async function guardarOverride(
   sucursalId: string,
   skuId: string,
   precioOverride: number,
+  pin: string,
 ): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const errorMonto = validarMonto(precioOverride, "El precio de excepción");
@@ -52,7 +60,10 @@ export async function guardarOverride(
   return { ok: true };
 }
 
-export async function eliminarOverride(sucursalId: string, skuId: string): Promise<Resultado> {
+export async function eliminarOverride(sucursalId: string, skuId: string, pin: string): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -75,7 +86,11 @@ export async function guardarPrecioEfectivo(
   sucursalId: string,
   skuId: string,
   precioEfectivo: number,
+  pin: string,
 ): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const errorMonto = validarMonto(precioEfectivo, "El precio en efectivo");
@@ -100,7 +115,11 @@ export async function guardarPrecioEfectivo(
 export async function eliminarPrecioEfectivo(
   sucursalId: string,
   skuId: string,
+  pin: string,
 ): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -120,7 +139,11 @@ export async function guardarRecargoCategoria(
   sucursalId: string,
   categoriaId: string,
   montoFijo: number,
+  pin: string,
 ): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const errorMonto = validarMonto(montoFijo, "El recargo");
@@ -142,7 +165,11 @@ export async function guardarRecargoCategoria(
 export async function eliminarRecargoCategoria(
   sucursalId: string,
   categoriaId: string,
+  pin: string,
 ): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -161,7 +188,11 @@ export async function guardarRecargoSku(
   sucursalId: string,
   skuId: string,
   montoFijo: number,
+  pin: string,
 ): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const errorMonto = validarMonto(montoFijo, "El recargo");
@@ -180,7 +211,10 @@ export async function guardarRecargoSku(
   return { ok: true };
 }
 
-export async function eliminarRecargoSku(sucursalId: string, skuId: string): Promise<Resultado> {
+export async function eliminarRecargoSku(sucursalId: string, skuId: string, pin: string): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -199,7 +233,11 @@ export async function guardarDescuentoEfectivo(
   sucursalId: string,
   categoriaId: string,
   porcentaje: number,
+  pin: string,
 ): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   if (typeof porcentaje !== "number" || Number.isNaN(porcentaje) || porcentaje <= 0 || porcentaje > 100) {
@@ -222,7 +260,11 @@ export async function guardarDescuentoEfectivo(
 export async function eliminarDescuentoEfectivo(
   sucursalId: string,
   categoriaId: string,
+  pin: string,
 ): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -261,7 +303,10 @@ export type GuardarPromocionInput = {
 // agrupan en la funcion guardar_promocion() (SECURITY DEFINER) para que
 // queden en una sola transaccion -- ver el comentario de la migracion
 // 20260903090000_bloque_promociones_admin.sql.
-export async function guardarPromocion(input: GuardarPromocionInput): Promise<Resultado> {
+export async function guardarPromocion(input: GuardarPromocionInput, pin: string): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("guardar_promocion", {
@@ -288,7 +333,10 @@ export async function guardarPromocion(input: GuardarPromocionInput): Promise<Re
   return { ok: true };
 }
 
-export async function activarPromocion(id: string, activo: boolean): Promise<Resultado> {
+export async function activarPromocion(id: string, activo: boolean, pin: string): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const { error } = await supabase.from("promociones").update({ activo }).eq("id", id);
@@ -298,7 +346,10 @@ export async function activarPromocion(id: string, activo: boolean): Promise<Res
   return { ok: true };
 }
 
-export async function eliminarPromocion(id: string): Promise<Resultado> {
+export async function eliminarPromocion(id: string, pin: string): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const { error } = await supabase.from("promociones").delete().eq("id", id);
@@ -399,7 +450,12 @@ export async function guardarPromoCantidadSku(input: {
   // Solo se usa al crearla; si la promo ya existe se respeta el nombre que
   // tiene, que es el que sale impreso en el ticket.
   nombreSugerido: string;
-}): Promise<Resultado> {
+},
+  pin: string,
+): Promise<Resultado> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const resultado = await promosCantidadDelSku(supabase, input.skuId);
@@ -478,19 +534,24 @@ export async function guardarPromoCantidadSku(input: {
     { sucursalId: input.sucursalId, precioTotal: input.precioTotal },
   ];
 
-  return guardarPromocion({
-    id: existente?.id ?? null,
-    nombre: existente?.nombre ?? input.nombreSugerido,
-    tipo: "cantidad",
-    // null = corre donde tenga precio cargado. Es lo que permite cargar el
-    // 2x de una sucursal sin decidir nada sobre la otra.
-    sucursalId: existente?.sucursal_id ?? null,
-    vigenteDesde: existente?.vigente_desde ?? null,
-    vigenteHasta: existente?.vigente_hasta ?? null,
-    // Cargar un precio reactiva la promo: es lo que se espera al escribir el
-    // número de nuevo sobre una promo que estaba apagada.
-    activo: true,
-    items: [{ skuId: input.skuId, cantidadRequerida: input.cantidadRequerida }],
-    precios,
-  });
+  return guardarPromocion(
+    {
+      id: existente?.id ?? null,
+      nombre: existente?.nombre ?? input.nombreSugerido,
+      tipo: "cantidad",
+      // null = corre donde tenga precio cargado. Es lo que permite cargar el
+      // 2x de una sucursal sin decidir nada sobre la otra.
+      sucursalId: existente?.sucursal_id ?? null,
+      vigenteDesde: existente?.vigente_desde ?? null,
+      vigenteHasta: existente?.vigente_hasta ?? null,
+      // Cargar un precio reactiva la promo: es lo que se espera al escribir el
+      // número de nuevo sobre una promo que estaba apagada.
+      activo: true,
+      items: [{ skuId: input.skuId, cantidadRequerida: input.cantidadRequerida }],
+      precios,
+    },
+    // El PIN ya se validó al entrar a esta función; se reenvía porque
+    // guardarPromocion() lo vuelve a validar por su cuenta.
+    pin,
+  );
 }

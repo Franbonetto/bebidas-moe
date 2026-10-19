@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { verificarPinOperaciones } from "@/lib/pin";
 import {
   guardarPrecioBase,
   guardarOverride,
@@ -311,7 +312,10 @@ export async function guardarCargaInicial(datos: {
   // null = no lo tocó, se deja el que ya tenía el SKU.
   stock_minimo: number | null;
   stock_objetivo: number | null;
-}): Promise<{ error: string } | { stock: number }> {
+}, pin: string): Promise<{ error: string } | { stock: number }> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   if (!Number.isInteger(datos.cantidad) || datos.cantidad < 0)
@@ -361,7 +365,7 @@ export async function guardarCargaInicial(datos: {
   // medias. Al revés es peor -- el POS vende sin stock (advierte), pero sin
   // precio no puede vender.
   if (datos.precio !== null) {
-    const resultadoPrecio = await guardarPrecioBase(datos.sku_id, datos.precio);
+    const resultadoPrecio = await guardarPrecioBase(datos.sku_id, datos.precio, pin);
     if ("error" in resultadoPrecio) return { error: resultadoPrecio.error };
   }
 
@@ -407,8 +411,8 @@ export async function guardarCargaInicial(datos: {
 
     const resultadoLaprida =
       datos.precio_laprida === null || esElCalculado
-        ? await eliminarOverride(ctxLaprida.sucursalId, datos.sku_id)
-        : await guardarOverride(ctxLaprida.sucursalId, datos.sku_id, datos.precio_laprida);
+        ? await eliminarOverride(ctxLaprida.sucursalId, datos.sku_id, pin)
+        : await guardarOverride(ctxLaprida.sucursalId, datos.sku_id, datos.precio_laprida, pin);
 
     if ("error" in resultadoLaprida)
       return { error: `No se pudo guardar el precio de ${ctxLaprida.nombre}: ${resultadoLaprida.error}` };
@@ -441,8 +445,8 @@ export async function guardarCargaInicial(datos: {
 
   const resultadoEfectivo =
     datos.precio_efectivo === null
-      ? await eliminarPrecioEfectivo(datos.sucursal_id, datos.sku_id)
-      : await guardarPrecioEfectivo(datos.sucursal_id, datos.sku_id, datos.precio_efectivo);
+      ? await eliminarPrecioEfectivo(datos.sucursal_id, datos.sku_id, pin)
+      : await guardarPrecioEfectivo(datos.sucursal_id, datos.sku_id, datos.precio_efectivo, pin);
 
   if ("error" in resultadoEfectivo)
     return { error: `No se pudo guardar el precio en efectivo: ${resultadoEfectivo.error}` };
@@ -462,7 +466,7 @@ export async function guardarCargaInicial(datos: {
       nombreSugerido: datos.promo_cantidad
         ? await nombrePromoSugerido(supabase, datos.sku_id, datos.promo_cantidad.cantidad)
         : "",
-    });
+    }, pin);
 
     if ("error" in resultadoPromo)
       return { error: `No se pudo guardar la promo: ${resultadoPromo.error}` };

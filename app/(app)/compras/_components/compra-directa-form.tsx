@@ -21,6 +21,7 @@ import {
   formatearFechaVencimiento,
 } from "../_lib/vencimiento";
 import { SkuPicker, type SkuCatalogo } from "./sku-picker";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 
 type Proveedor = { id: string; razon_social: string; nombre_comercial: string | null };
 type CostoReferencia = { proveedor_id: string; sku_id: string; costo_referencia: number | null };
@@ -421,7 +422,9 @@ export function CompraDirectaForm({
     return null;
   }
 
-  function registrar() {
+  const pedirPin = usePinOperaciones();
+
+  async function registrar() {
     const errorValidacion = validar();
     if (errorValidacion) {
       setError(errorValidacion);
@@ -429,6 +432,10 @@ export function CompraDirectaForm({
     }
     setError(null);
     setAvisoPrecio(null);
+
+    const pin = await pedirPin();
+    if (!pin) return;
+
     startTransition(async () => {
       const resultado = await cargarCompraDirecta({
         proveedor_id: proveedorId,
@@ -454,7 +461,7 @@ export function CompraDirectaForm({
             costo_unitario: l.costoUnitario,
             fecha_vencimiento: fechaVencimientoAIso(l.fechaVencimiento),
           })),
-      });
+      }, pin);
 
       if ("error" in resultado) {
         setError(resultado.error);
@@ -465,7 +472,7 @@ export function CompraDirectaForm({
         (l): l is Linea & { precioVenta: number } => l.precioVenta !== null,
       );
       const resultadosPrecio = await Promise.all(
-        lineasConPrecio.map((l) => guardarPrecioBase(l.sku.id, l.precioVenta)),
+        lineasConPrecio.map((l) => guardarPrecioBase(l.sku.id, l.precioVenta, pin)),
       );
       const fallos = lineasConPrecio
         .map((l, i) => ({ linea: l, resultado: resultadosPrecio[i] }))

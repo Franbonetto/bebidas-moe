@@ -19,6 +19,7 @@ import {
 } from "../_lib/comprobante";
 import { reclasificarComprobanteCompra } from "../actions";
 import { ComprobanteBadge, EstadoCompraBadge, type Compra } from "./compras-table";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 
 type SkuInfo = SkuPresentacion & {
   nombre: string;
@@ -176,8 +177,14 @@ function ComprobanteForm({
   const netoMostrado = neto ?? redondearPeso(netoSugerido).toFixed(2);
   const ivaMostrado = iva ?? redondearPeso(ivaSugerido).toFixed(2);
 
-  function guardar() {
+  const pedirPin = usePinOperaciones();
+
+  async function guardar() {
     setError(null);
+
+    const pin = await pedirPin();
+    if (!pin) return;
+
     startTransition(async () => {
       const resultado = await reclasificarComprobanteCompra({
         compra_id: compra.id,
@@ -192,7 +199,7 @@ function ComprobanteForm({
           percepcion_iibb: discriminaIva && percepcionIibb !== "" ? Number(percepcionIibb) : null,
         },
         motivo,
-      });
+      }, pin);
 
       if ("error" in resultado) {
         setError(resultado.error);

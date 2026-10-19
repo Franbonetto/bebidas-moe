@@ -4,6 +4,7 @@ import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal, veCostos } from "@/lib/permisos";
 import type { SkuCatalogo } from "@/app/(app)/compras/_components/sku-picker";
 import { CargaInicialForm } from "./_components/carga-inicial-form";
+import { PinProvider } from "@/app/(app)/_components/pin-gate";
 
 // La carga inicial incluye el costo, así que la ve la misma población que ve
 // costos: el dueño (que es quien la hace) y el encargado de Olavarría.
@@ -51,10 +52,12 @@ export default async function CargaInicialPage() {
   ]);
 
   return (
-    <CargaInicialForm
-      sucursales={sucursalesOperables}
-      proveedores={proveedores ?? []}
-      skus={(skus ?? []) as unknown as SkuCatalogo[]}
-    />
+    <PinProvider>
+      <CargaInicialForm
+        sucursales={sucursalesOperables}
+        proveedores={proveedores ?? []}
+        skus={(skus ?? []) as unknown as SkuCatalogo[]}
+      />
+    </PinProvider>
   );
 }

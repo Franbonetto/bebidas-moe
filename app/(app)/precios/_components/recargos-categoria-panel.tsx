@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { guardarRecargoCategoria, eliminarRecargoCategoria } from "../actions";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 import { formatoMoneda, formatoFecha } from "../_lib/formato";
 import type { Categoria, Sucursal } from "./precios-table";
 
@@ -30,13 +31,17 @@ function Fila({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function guardar() {
+  const pedirPin = usePinOperaciones();
+
+  async function guardar() {
     setError(null);
+    const pin = await pedirPin();
+    if (!pin) return;
     startTransition(async () => {
       const resultado =
         monto.trim() === ""
-          ? await eliminarRecargoCategoria(sucursalId, categoria.id)
-          : await guardarRecargoCategoria(sucursalId, categoria.id, Number(monto));
+          ? await eliminarRecargoCategoria(sucursalId, categoria.id, pin)
+          : await guardarRecargoCategoria(sucursalId, categoria.id, Number(monto), pin);
       if ("error" in resultado) setError(resultado.error);
     });
   }

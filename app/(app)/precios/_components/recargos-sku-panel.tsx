@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { guardarRecargoSku, eliminarRecargoSku } from "../actions";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 import { formatoMoneda, formatoFecha } from "../_lib/formato";
 import { presentacionLabel, type SkuPresentacion } from "../../productos/_lib/presentacion";
 import type { Sucursal } from "./precios-table";
@@ -24,18 +25,24 @@ function FilaExistente({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function guardar() {
+  const pedirPin = usePinOperaciones();
+
+  async function guardar() {
     setError(null);
+    const pin = await pedirPin();
+    if (!pin) return;
     startTransition(async () => {
-      const resultado = await guardarRecargoSku(sucursalId, sku.id, Number(monto));
+      const resultado = await guardarRecargoSku(sucursalId, sku.id, Number(monto), pin);
       if ("error" in resultado) setError(resultado.error);
     });
   }
 
-  function quitar() {
+  async function quitar() {
     setError(null);
+    const pin = await pedirPin();
+    if (!pin) return;
     startTransition(async () => {
-      const resultado = await eliminarRecargoSku(sucursalId, sku.id);
+      const resultado = await eliminarRecargoSku(sucursalId, sku.id, pin);
       if ("error" in resultado) setError(resultado.error);
     });
   }
@@ -97,14 +104,18 @@ function FormularioNuevaExcepcion({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function agregar() {
+  const pedirPin = usePinOperaciones();
+
+  async function agregar() {
     if (!skuId) {
       setError("Elegí un SKU.");
       return;
     }
     setError(null);
+    const pin = await pedirPin();
+    if (!pin) return;
     startTransition(async () => {
-      const resultado = await guardarRecargoSku(sucursalId, skuId, Number(monto || 0));
+      const resultado = await guardarRecargoSku(sucursalId, skuId, Number(monto || 0), pin);
       if ("error" in resultado) {
         setError(resultado.error);
         return;

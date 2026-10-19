@@ -17,6 +17,7 @@ import {
   botonPrimario,
   botonSecundario,
 } from "./hoja-modal";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 
 export function PrecioSkuForm({
   sucursales,
@@ -78,7 +79,9 @@ export function PrecioSkuForm({
     return null;
   }
 
-  function guardar() {
+  const pedirPin = usePinOperaciones();
+
+  async function guardar() {
     setError(null);
 
     const errorLista = errorEfectivoSobreLista();
@@ -87,10 +90,13 @@ export function PrecioSkuForm({
       return;
     }
 
+    const pin = await pedirPin();
+    if (!pin) return;
+
     startTransition(async () => {
       const valor = precioBase.trim() === "" ? null : Number(precioBase);
       if (valor != null) {
-        const resultado = await guardarPrecioBase(fila.id, valor);
+        const resultado = await guardarPrecioBase(fila.id, valor, pin);
         if ("error" in resultado) {
           setError(resultado.error);
           return;
@@ -105,7 +111,7 @@ export function PrecioSkuForm({
 
         if (texto === "") {
           if (teniaOverride) {
-            const resultado = await eliminarOverride(s.id, fila.id);
+            const resultado = await eliminarOverride(s.id, fila.id, pin);
             if ("error" in resultado) {
               setError(resultado.error);
               return;
@@ -114,7 +120,7 @@ export function PrecioSkuForm({
           continue;
         }
 
-        const resultado = await guardarOverride(s.id, fila.id, Number(texto));
+        const resultado = await guardarOverride(s.id, fila.id, Number(texto), pin);
         if ("error" in resultado) {
           setError(resultado.error);
           return;
@@ -130,7 +136,7 @@ export function PrecioSkuForm({
 
         if (texto === "") {
           if (teniaPropio) {
-            const resultado = await eliminarPrecioEfectivo(s.id, fila.id);
+            const resultado = await eliminarPrecioEfectivo(s.id, fila.id, pin);
             if ("error" in resultado) {
               setError(resultado.error);
               return;
@@ -139,7 +145,7 @@ export function PrecioSkuForm({
           continue;
         }
 
-        const resultado = await guardarPrecioEfectivo(s.id, fila.id, Number(texto));
+        const resultado = await guardarPrecioEfectivo(s.id, fila.id, Number(texto), pin);
         if ("error" in resultado) {
           setError(resultado.error);
           return;

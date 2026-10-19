@@ -291,6 +291,45 @@ compila, solo imprime el warning del binario bloqueado). El script `build`
 de package.json se deja como está: Vercel compila en Linux, donde el
 binario nativo carga bien.
 
+**El día del negocio es el día de Argentina, nunca el del servidor.**
+Vercel y Supabase corren en UTC, así que `current_date` y `new Date()`
+cambian de día a las 21:00 de acá y el local cierra a las 22. Eso rompía la
+caja (no se podía vender entre las 21 y las 00), el "vendido hoy", la
+vigencia de las promos y el `CbteFch` de las facturas. Desde 2026-10-19:
+
+- en la base, `fecha_operativa()` en lugar de `current_date` para todo lo
+  que define el día del negocio (ver
+  `20261019100000_fecha_operativa.sql`);
+- en la app, `fechaOperativa()` / `inicioDelDia()` / `inicioDelMes()` /
+  `inicioDeSemana()` de `lib/fecha.ts`, nunca `new Date().toISOString()` ni
+  `setHours(0,0,0,0)`.
+
+Argentina no tiene horario de verano: es UTC-3 todo el año, y eso está
+asumido en los dos lados.
+
+**PIN de operaciones (`PIN_OPERACIONES`).** Entrada de mercadería, ajuste
+de stock desde productos, precios, promociones y carga inicial piden un PIN
+antes de confirmar (pedido del usuario 2026-10-19). No es un permiso —los
+permisos siguen siendo los roles y la RLS—, es un freno para que nadie
+cambie un precio o el stock de paso con la sesión de la encargada abierta
+en el mostrador.
+
+- El PIN vive en la variable de entorno `PIN_OPERACIONES` (Vercel y
+  `.env.local`), nunca en el repo. **Si falta, esas pantallas no dejan
+  confirmar**: falla cerrada a propósito.
+- Se valida **siempre en el servidor**, en cada acción (`lib/pin.ts`). El
+  desbloqueo es por pantalla (`PinProvider` + `usePinOperaciones()`, ver
+  `app/(app)/_components/pin-gate.tsx`): se pide una vez y el PIN viaja en
+  cada acción de esa pantalla.
+- Una acción nueva en esas pantallas lleva `pin: string` como último
+  parámetro y empieza con `verificarPinOperaciones(pin)`.
+
+**Ajustar stock de un SKU suelto** (`/productos` → editar) va por
+`ajustar_stock_contado()`: se escribe el stock **real contado**, no la
+diferencia, y la función calcula el delta con la fila bloqueada y genera el
+movimiento de ajuste. El motivo es obligatorio. No reemplaza a Inventarios,
+que sigue siendo el conteo en serio con cierre inmutable.
+
 **Toda tabla nueva necesita permisos explícitos.** El proyecto de Supabase
 se creó con "Automatically expose new tables" desactivado, así que las
 tablas nuevas no reciben ningún privilegio para el rol `authenticated` y

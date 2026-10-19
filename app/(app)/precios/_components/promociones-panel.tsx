@@ -5,6 +5,7 @@ import { activarPromocion, eliminarPromocion } from "../actions";
 import { presentacionLabel } from "../../productos/_lib/presentacion";
 import { formatoMoneda, formatoFecha } from "../_lib/formato";
 import { PromocionForm, type PromocionSkuOpcion } from "./promocion-form";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 
 export type Sucursal = { id: string; nombre: string; es_central: boolean };
 
@@ -67,19 +68,25 @@ export function PromocionesPanel({
 
   const skuPorId = new Map(skus.map((s) => [s.id, s]));
 
-  function toggleActivo(promocion: PromocionRow) {
+  const pedirPin = usePinOperaciones();
+
+  async function toggleActivo(promocion: PromocionRow) {
     setError(null);
+    const pin = await pedirPin();
+    if (!pin) return;
     startTransition(async () => {
-      const resultado = await activarPromocion(promocion.id, !promocion.activo);
+      const resultado = await activarPromocion(promocion.id, !promocion.activo, pin);
       if ("error" in resultado) setError(resultado.error);
     });
   }
 
-  function eliminar(promocion: PromocionRow) {
+  async function eliminar(promocion: PromocionRow) {
     if (!window.confirm(`¿Eliminar la promoción "${promocion.nombre}"? Esta acción no se puede deshacer.`)) return;
     setError(null);
+    const pin = await pedirPin();
+    if (!pin) return;
     startTransition(async () => {
-      const resultado = await eliminarPromocion(promocion.id);
+      const resultado = await eliminarPromocion(promocion.id, pin);
       if ("error" in resultado) setError(resultado.error);
     });
   }
