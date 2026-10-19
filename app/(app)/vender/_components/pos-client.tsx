@@ -317,6 +317,48 @@ export function PosClient({
     if (mostrarPago) primerMedioRef.current?.focus();
   }, [mostrarPago]);
 
+  // La pistola escribe donde esté el foco, y cualquier cosa se lo lleva:
+  // cobrar, tocar una línea del ticket, apretar "+", cerrar un modal. A
+  // partir de ahí el escaneo siguiente se pierde en el aire y hay que
+  // volver a hacer click en el buscador (pedido del usuario 2026-10-19:
+  // "que la pistola una vez que escanee siempre permanezca en el buscador
+  // de código de barra").
+  //
+  // Entonces el buscador se reclama el foco apenas nadie más lo necesita:
+  // cuando se cierra un modal, y después de cada click que no haya caído
+  // dentro de un campo de texto.
+  const hayFocoAjeno =
+    mostrarPago ||
+    verPrecioAbierto ||
+    mostrarParticular ||
+    movimientoTipo !== null ||
+    ajusteSkuId !== null ||
+    editandoCantidadSkuId !== null;
+
+  useEffect(() => {
+    // Mientras hay un modal abierto el teclado es de él: el monto del pago,
+    // el precio del lápiz, el motivo de la salida de caja.
+    if (hayFocoAjeno) return;
+
+    // Se acaba de cerrar uno (o de cobrar): el foco vuelve solo.
+    searchInputRef.current?.focus();
+
+    // Solo con mouse. En una tablet, robarle el foco a cada toque haría
+    // aparecer el teclado en pantalla todo el tiempo.
+    if (!window.matchMedia("(pointer: fine)").matches) return;
+
+    function volverAlBuscador(e: MouseEvent) {
+      const destino = e.target as HTMLElement | null;
+      // Si el click cayó en un campo, es porque alguien quiere escribir
+      // ahí (el motomandado, la dirección, la cantidad de una línea).
+      if (destino?.closest("input, textarea, select, [contenteditable='true']")) return;
+      searchInputRef.current?.focus();
+    }
+
+    document.addEventListener("click", volverAlBuscador);
+    return () => document.removeEventListener("click", volverAlBuscador);
+  }, [hayFocoAjeno]);
+
   const skuPorId = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
 
   const ticketActivo = tickets.find((t) => t.id === ticketActivoId) ?? tickets[0];
@@ -543,6 +585,9 @@ export function PosClient({
     });
     setLineaSeleccionada(sku.id);
     setQuery("");
+    // Si el producto entró por click en la lista de resultados, el foco se
+    // quedó en el resultado: sin esto, el escaneo siguiente se pierde.
+    searchInputRef.current?.focus();
   }
 
   function ajustarCantidad(skuId: string, delta: number) {
@@ -940,6 +985,11 @@ export function PosClient({
       if (avisoTimeoutRef.current) clearTimeout(avisoTimeoutRef.current);
       setVentaConfirmada(totalCobrado);
       avisoTimeoutRef.current = setTimeout(() => setVentaConfirmada(null), 5000);
+
+      // Cobrando desde el panel no se cierra ningún modal, así que el
+      // efecto de arriba no se entera: el foco se devuelve a mano para que
+      // el primer escaneo de la venta siguiente no se pierda.
+      searchInputRef.current?.focus();
 
       router.refresh();
     });
