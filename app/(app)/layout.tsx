@@ -18,18 +18,20 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // Segundo chequeo, ahora contra la tabla `usuarios` (RLS via
   // usuario_activo()): cubre al usuario que tenía sesión abierta y fue
   // desactivado después de loguearse.
-  const { data: usuario } = await supabase
-    .from("usuarios")
-    .select("nombre, rol")
-    .eq("id", user.id)
-    .maybeSingle();
+  //
+  // Va junto con ve_costos() en un solo Promise.all y no una después de la
+  // otra: este layout corre en cada navegación, y cada consulta suelta es
+  // un viaje de ida y vuelta a Supabase que la cajera espera mirando la
+  // pantalla vieja (2026-10-19, junto con el loading.tsx de al lado).
+  const [{ data: usuario }, puedeVerCostos] = await Promise.all([
+    supabase.from("usuarios").select("nombre, rol").eq("id", user.id).maybeSingle(),
+    veCostos(supabase),
+  ]);
 
   if (!usuario) {
     await supabase.auth.signOut();
     redirect("/login");
   }
-
-  const puedeVerCostos = await veCostos(supabase);
 
   // Badge rojo en "Pedidos" para el dueño: pedidos de compra pendientes
   // que todavía no abrió (pedido del usuario 2026-09-22).
