@@ -4,6 +4,7 @@ import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { formatoMoneda } from "@/app/(app)/vender/_lib/formato";
 import { formatoFecha, formatoFechaHora, formatoHora } from "@/app/(app)/compras/_lib/formato";
+import { linkWhatsapp, telefonoWhatsapp } from "@/lib/whatsapp";
 import { ImprimirBoton } from "../../_components/imprimir-boton";
 import { ImprimirAlAbrir } from "../../_components/imprimir-al-abrir";
 
@@ -28,6 +29,71 @@ const MEDIO_LABEL: Record<string, string> = {
   transferencia: "Transferencia",
   qr: "QR",
 };
+
+// El cierre como texto para mandárselo al dueño por WhatsApp (pedido del
+// usuario 2026-10-19). Los asteriscos son el negrita de WhatsApp. Es el
+// mismo contenido que el ticket de papel y en el mismo orden, para que el
+// dueño lea lo mismo que tiene la encargada en la mano.
+function mensajeCierre(datos: {
+  sucursal: string;
+  fecha: string;
+  abrio: string;
+  cerro: string;
+  tickets: number;
+  ventasTotal: number;
+  porMedio: [string, number][];
+  envios: { cantidad: number; total: number };
+  devolucionesEfectivo: number;
+  entradas: number;
+  salidas: number;
+  apertura: number;
+  sistema: number;
+  contado: number;
+  diferencia: number;
+}): string {
+  const plata = (n: number) => formatoMoneda.format(n);
+  const lineas: string[] = [
+    `*Cierre de caja — ${datos.sucursal}*`,
+    datos.fecha,
+    "",
+    `Abrió: ${datos.abrio}`,
+    `Cerró: ${datos.cerro}`,
+    "",
+    `*Ventas: ${plata(datos.ventasTotal)}* — ${datos.tickets} ticket${datos.tickets === 1 ? "" : "s"}`,
+  ];
+
+  for (const [medio, monto] of datos.porMedio) {
+    if (monto > 0) lineas.push(`  ${MEDIO_LABEL[medio] ?? medio}: ${plata(monto)}`);
+  }
+
+  if (datos.envios.cantidad > 0) {
+    lineas.push(
+      `  (de eso, ${datos.envios.cantidad} envío${datos.envios.cantidad === 1 ? "" : "s"} por ${plata(datos.envios.total)})`,
+    );
+  }
+
+  lineas.push("");
+  lineas.push(`Apertura: ${plata(datos.apertura)}`);
+  if (datos.entradas > 0) lineas.push(`Entradas de caja: +${plata(datos.entradas)}`);
+  if (datos.salidas > 0) lineas.push(`Salidas de caja: −${plata(datos.salidas)}`);
+  if (datos.devolucionesEfectivo > 0) {
+    lineas.push(`Devoluciones en efectivo: −${plata(datos.devolucionesEfectivo)}`);
+  }
+
+  lineas.push("");
+  lineas.push(`Efectivo según sistema: ${plata(datos.sistema)}`);
+  lineas.push(`Efectivo contado: ${plata(datos.contado)}`);
+  lineas.push(
+    `*Diferencia: ${plata(datos.diferencia)}*` +
+      (datos.diferencia === 0
+        ? " — cerró justa"
+        : datos.diferencia > 0
+          ? " — sobra plata en el cajón"
+          : " — falta plata en el cajón"),
+  );
+
+  return lineas.join("\n");
+}
 
 type CajaFila = {
   id: string;
@@ -105,7 +171,10 @@ export default async function TicketCajaPage({
         .from("devoluciones")
         .select("monto_reembolsado")
         .eq("caja_id", caja.id)
-        .eq("resolucion", "dinero"),
+        .eq("resolucion", "dinero")
+        // Solo el efectivo sale del cajon (ver cerrar_caja en
+        // 20261019110000_devolucion_medio_reembolso.sql).
+        .eq("medio_reembolso", "efectivo"),
     ),
   ]);
 
@@ -133,11 +202,48 @@ export default async function TicketCajaPage({
   const cerrada = caja.estado === "cerrada";
   const diferencia = caja.diferencia ?? 0;
 
+  // El número del dueño vive en WHATSAPP_DUENO (Vercel y .env.local), no en
+  // el repo. Si falta, no hay botón.
+  const telefonoDueno = telefonoWhatsapp(process.env.WHATSAPP_DUENO);
+  const linkCierre =
+    cerrada && telefonoDueno
+      ? linkWhatsapp(
+          telefonoDueno,
+          mensajeCierre({
+            sucursal: caja.sucursal?.nombre ?? "",
+            fecha: formatoFecha.format(new Date(caja.fecha + "T12:00:00")),
+            abrio: `${caja.empleado_apertura?.nombre ?? "—"} (${formatoHora.format(new Date(caja.abierta_en))})`,
+            cerro: `${caja.empleado_cierre?.nombre ?? "—"}${caja.cerrada_en ? ` (${formatoHora.format(new Date(caja.cerrada_en))})` : ""}`,
+            tickets: caja.cantidad_tickets ?? ventas.length,
+            ventasTotal: totalGeneral,
+            porMedio: [...totalPorMedio.entries()],
+            envios: { cantidad: envios.length, total: enviosTotal },
+            devolucionesEfectivo: devolucionesTotal,
+            entradas: entradasTotal,
+            salidas: salidasTotal,
+            apertura: caja.monto_apertura ?? 0,
+            sistema: caja.efectivo_sistema ?? 0,
+            contado: caja.efectivo_declarado ?? 0,
+            diferencia,
+          }),
+        )
+      : null;
+
   return (
     <div className="ticket-print mx-auto max-w-[380px] p-4 text-[13px] text-text">
       {imprimir === "1" && <ImprimirAlAbrir />}
 
-      <div className="no-print mb-4 flex justify-end">
+      <div className="no-print mb-4 flex flex-wrap justify-end gap-2">
+        {linkCierre && (
+          <a
+            href={linkCierre}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-[7px] border border-border bg-bg px-[16px] py-[9px] text-[13px] font-medium text-text-2 hover:bg-bg-2"
+          >
+            Enviar al dueño por WhatsApp
+          </a>
+        )}
         <ImprimirBoton />
       </div>
 
@@ -226,7 +332,7 @@ export default async function TicketCajaPage({
           <div className="flex flex-col gap-[3px]">
             {devolucionesTotal > 0 && (
               <div className="flex justify-between">
-                <span className="text-text-2">Devoluciones en dinero</span>
+                <span className="text-text-2">Devoluciones en efectivo</span>
                 <span className="tabular-nums">−{formatoMoneda.format(devolucionesTotal)}</span>
               </div>
             )}
