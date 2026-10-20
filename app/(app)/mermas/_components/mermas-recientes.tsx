@@ -1,7 +1,10 @@
-import {
-  presentacionLabel,
-  type SkuPresentacion,
-} from "@/app/(app)/productos/_components/productos-table";
+// Desde el módulo neutro, no desde productos-table.tsx: ese archivo es
+// "use client" y lo reexporta, así que lo que llega acá no es la función
+// sino una referencia al cliente -- este componente se renderiza en el
+// SERVIDOR y al llamarla reventaba la pantalla entera ("Attempted to call
+// presentacionLabel() from the server"). Ver el comentario de
+// productos/_lib/presentacion.ts.
+import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { formatoFechaHora } from "@/app/(app)/compras/_lib/formato";
 import { fechaVencimientoDesdeIso } from "@/app/(app)/compras/_lib/vencimiento";
 import { EmptyState } from "@/app/(app)/_components/dashboard/ui";
