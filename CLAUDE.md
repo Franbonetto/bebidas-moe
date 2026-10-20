@@ -245,8 +245,14 @@ ya cerradas ahí (no volver a preguntarlas):
 
 ## FUERA DE ALCANCE (por ahora)
 
-- CRM de clientes (etapa posterior) — con la excepción mínima del formulario de
-  CUIT/razón social para Factura A que pide `bloque_arca_facturacion.md`.
+- CRM de clientes (etapa posterior), **salvo la libreta de clientes** que se
+  adelantó el 2026-10-20 a pedido del usuario: una tabla `clientes` con CUIT,
+  razón social y condición de IVA, que la vendedora busca por nombre o CUIT al
+  facturar y que se llena sola con cada comprobante a receptor identificado
+  (`supabase/migrations/20261020120000_clientes.sql`). Es solo lo necesario
+  para emitir: **no** hay historial de compras por cliente, ni cuenta
+  corriente, ni datos de contacto, ni pantalla de administración — todo eso
+  sigue siendo etapa posterior.
 - Costeo FIFO (el historial por lote ya se guarda, para migrar después).
 
 ---

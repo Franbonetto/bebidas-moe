@@ -8,7 +8,7 @@ import { formatoMoneda } from "../../_lib/formato";
 import { formatoFechaHora } from "@/app/(app)/compras/_lib/formato";
 import { FacturarForm, type CondicionIvaOption } from "./_components/facturar-form";
 import { VerificarArcaButton } from "./_components/verificar-arca-button";
-import { obtenerClientesFrecuentes } from "../actions";
+import { obtenerClientes } from "../actions";
 import { devolucionesPorVenta } from "../../_lib/devoluciones-por-venta";
 
 type SkuInfo = SkuPresentacion & {
@@ -82,7 +82,7 @@ export default async function FacturarVentaPage({
     );
   }
 
-  const [{ data: itemsRaw }, { data: comprobante }, { data: condicionesRaw }, clientesFrecuentes] =
+  const [{ data: itemsRaw }, { data: comprobante }, { data: condicionesRaw }, clientes] =
     await Promise.all([
       traerTodo(
         supabase
@@ -102,7 +102,7 @@ export default async function FacturarVentaPage({
         .eq("venta_id", ventaId)
         .maybeSingle<Comprobante>(),
       traerTodo(supabase.from("condicion_iva").select("id, nombre").order("nombre")),
-      obtenerClientesFrecuentes(),
+      obtenerClientes(),
     ]);
 
   const items = ((itemsRaw ?? []) as unknown as VentaItemFila[]).filter(
@@ -243,7 +243,7 @@ export default async function FacturarVentaPage({
               antes de facturar.
             </p>
           ) : (
-            <FacturarForm ventaId={ventaId} condiciones={condiciones} clientesFrecuentes={clientesFrecuentes} />
+            <FacturarForm ventaId={ventaId} condiciones={condiciones} clientes={clientes} />
           )}
         </div>
       )}

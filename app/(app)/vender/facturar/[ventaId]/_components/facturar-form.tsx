@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { facturarVenta, type ClienteFrecuente } from "../../actions";
+import { facturarVenta, guardarCliente, type Cliente } from "../../actions";
+import { errorDeCuit, formatearCuit, soloDigitos } from "@/lib/cuit";
 
 export type CondicionIvaOption = { id: string; nombre: string };
 
@@ -33,11 +34,11 @@ function condicionesParaTipo(condiciones: CondicionIvaOption[], tipoCbte: "A" | 
 export function FacturarForm({
   ventaId,
   condiciones,
-  clientesFrecuentes,
+  clientes,
 }: {
   ventaId: string;
   condiciones: CondicionIvaOption[];
-  clientesFrecuentes: ClienteFrecuente[];
+  clientes: Cliente[];
 }) {
   const router = useRouter();
   const [tipoCbte, setTipoCbte] = useState<"A" | "B">("B");
@@ -47,18 +48,62 @@ export function FacturarForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // Libreta de clientes (2026-10-20). La vendedora tipea parte del nombre
+  // o del CUIT y elige; antes había que acertar el CUIT completo de
+  // memoria para que se autocompletara algo.
+  const [busqueda, setBusqueda] = useState("");
+  const [mensajeCliente, setMensajeCliente] = useState<string | null>(null);
+  const [pendingCliente, startTransitionCliente] = useTransition();
+
   const condicionesDisponibles = condicionesParaTipo(condiciones, tipoCbte);
 
-  // Autocompletar: si el CUIT tipeado coincide con uno ya facturado antes,
-  // se completa la razón social sola -- así la vendedora no tiene que
-  // volver a escribirla para un cliente habitual. No pisa un valor que la
-  // vendedora ya haya escrito a mano para ese mismo CUIT.
-  function cambiarCuit(valor: string) {
-    setCuitReceptor(valor);
-    const conocido = clientesFrecuentes.find((c) => c.cuit === valor.trim());
-    if (conocido && !razonSocialReceptor.trim()) {
-      setRazonSocialReceptor(conocido.razonSocial);
+  const coincidencias = useMemo(() => {
+    const texto = busqueda.trim().toLowerCase();
+    if (!texto) return [];
+    const digitos = soloDigitos(texto);
+    return clientes
+      .filter(
+        (c) =>
+          c.razonSocial.toLowerCase().includes(texto) ||
+          (digitos.length > 0 && c.cuit.includes(digitos)),
+      )
+      .slice(0, 6);
+  }, [busqueda, clientes]);
+
+  function elegirCliente(cliente: Cliente) {
+    setCuitReceptor(cliente.cuit);
+    setRazonSocialReceptor(cliente.razonSocial);
+    // La condición guardada del cliente solo se aplica si es válida para
+    // el tipo de comprobante elegido: un cliente con "Consumidor Final"
+    // no puede usar esa condición en una Factura A (ARCA la rechaza).
+    if (condicionesParaTipo(condiciones, tipoCbte).some((c) => c.id === cliente.condicionIvaId)) {
+      setCondicionIvaReceptorId(cliente.condicionIvaId);
     }
+    setBusqueda("");
+    setMensajeCliente(null);
+    setError(null);
+  }
+
+  function guardarEnLibreta() {
+    const problema = errorDeCuit(cuitReceptor);
+    if (problema) {
+      setMensajeCliente(problema);
+      return;
+    }
+    if (!razonSocialReceptor.trim()) {
+      setMensajeCliente("Falta la razón social.");
+      return;
+    }
+
+    startTransitionCliente(async () => {
+      const resultado = await guardarCliente({
+        cuit: cuitReceptor,
+        razonSocial: razonSocialReceptor,
+        condicionIvaId: condicionIvaReceptorId,
+      });
+      setMensajeCliente("error" in resultado ? resultado.error : "Cliente guardado.");
+      if (!("error" in resultado)) router.refresh();
+    });
   }
 
   function elegirTipo(nuevoTipo: "A" | "B") {
@@ -124,23 +169,57 @@ export function FacturarForm({
         </select>
       </div>
 
-      <datalist id="clientes-frecuentes-cuit">
-        {clientesFrecuentes.map((c) => (
-          <option key={c.cuit} value={c.cuit}>
-            {c.razonSocial}
-          </option>
-        ))}
-      </datalist>
+      <div className="rounded-[7px] border border-border bg-bg-2 p-[11px]">
+        <div className="mb-[7px] flex items-baseline justify-between gap-2">
+          <span className="text-[12px] font-medium text-text-2">
+            {tipoCbte === "A" ? "Cliente" : "Cliente (opcional)"}
+          </span>
+          {tipoCbte === "B" && (
+            <span className="text-[11.5px] text-text-3">
+              Si no lo pide, dejalo vacío: va como Consumidor Final
+            </span>
+          )}
+        </div>
 
-      {tipoCbte === "A" ? (
-        <>
+        <input
+          type="text"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Buscar por nombre o CUIT…"
+          className={inputClass}
+        />
+
+        {busqueda.trim() !== "" && (
+          <div className="mt-[6px] overflow-hidden rounded-[6px] border border-border bg-bg">
+            {coincidencias.length > 0 ? (
+              coincidencias.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => elegirCliente(c)}
+                  className="flex w-full items-baseline justify-between gap-3 border-b border-border px-[10px] py-[7px] text-left last:border-b-0 hover:bg-bg-2"
+                >
+                  <span className="text-[13px] text-text">{c.razonSocial}</span>
+                  <span className="text-[12px] tabular-nums text-text-3">{formatearCuit(c.cuit)}</span>
+                </button>
+              ))
+            ) : (
+              <p className="px-[10px] py-[7px] text-[12.5px] text-text-2">
+                No hay ningún cliente guardado con ese nombre o CUIT. Cargalo abajo y queda guardado
+                al facturar.
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="mt-[9px] flex flex-col gap-[7px]">
           <div>
-            <label className="mb-1 block text-[12px] font-medium text-text-2">CUIT del receptor</label>
+            <label className="mb-1 block text-[12px] font-medium text-text-2">CUIT</label>
             <input
               type="text"
-              list="clientes-frecuentes-cuit"
+              inputMode="numeric"
               value={cuitReceptor}
-              onChange={(e) => cambiarCuit(e.target.value)}
+              onChange={(e) => setCuitReceptor(e.target.value)}
               placeholder="Ej. 20304050607"
               className={inputClass}
             />
@@ -154,20 +233,25 @@ export function FacturarForm({
               className={inputClass}
             />
           </div>
-        </>
-      ) : (
-        <div>
-          <label className="mb-1 block text-[12px] font-medium text-text-2">CUIT del receptor (opcional)</label>
-          <input
-            type="text"
-            list="clientes-frecuentes-cuit"
-            value={cuitReceptor}
-            onChange={(e) => cambiarCuit(e.target.value)}
-            placeholder="Consumidor Final — dejar vacío si no lo pide"
-            className={inputClass}
-          />
         </div>
-      )}
+
+        {/* Guardar a mano sirve para corregir un dato mal escrito de un
+            cliente que ya está en la libreta -- al facturar se guarda
+            solo, así que para un cliente nuevo este botón no hace falta. */}
+        {(cuitReceptor.trim() !== "" || razonSocialReceptor.trim() !== "") && (
+          <div className="mt-[8px] flex items-center justify-between gap-2">
+            <span className="text-[12px] text-text-2">{mensajeCliente}</span>
+            <button
+              type="button"
+              onClick={guardarEnLibreta}
+              disabled={pendingCliente}
+              className="shrink-0 rounded-[6px] border border-border bg-bg px-[10px] py-[5px] text-[12.5px] font-medium text-text-2 hover:bg-bg-2 disabled:opacity-60"
+            >
+              {pendingCliente ? "Guardando…" : "Guardar en la libreta"}
+            </button>
+          </div>
+        )}
+      </div>
 
       {error && <p className="text-[12.5px] text-err">{error}</p>}
 

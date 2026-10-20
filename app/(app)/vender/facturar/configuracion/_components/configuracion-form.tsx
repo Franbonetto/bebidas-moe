@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { guardarPuntoVenta, sincronizarCondicionesIva } from "../../actions";
+import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 
 const inputClass =
   "w-full rounded-[6px] border border-border bg-bg px-[10px] py-[6px] text-[13px] text-text outline-none focus:border-moe";
@@ -29,6 +30,7 @@ export function ConfiguracionForm({
   const [mensajeSync, setMensajeSync] = useState<{ tipo: "ok" | "error"; texto: string } | null>(null);
   const [pendingPunto, startTransitionPunto] = useTransition();
   const [pendingSync, startTransitionSync] = useTransition();
+  const pedirPin = usePinOperaciones();
 
   function guardar() {
     const numero = Number(numeroArca);
@@ -38,7 +40,12 @@ export function ConfiguracionForm({
     }
 
     startTransitionPunto(async () => {
-      const resultado = await guardarPuntoVenta(sucursalId, numero);
+      // El PIN se pide una vez por pantalla; si la cancelan, no se hace
+      // nada y tampoco se muestra un error (cancelar no es equivocarse).
+      const pin = await pedirPin();
+      if (!pin) return;
+
+      const resultado = await guardarPuntoVenta(sucursalId, numero, pin);
       setMensajePunto(
         "error" in resultado ? { tipo: "error", texto: resultado.error } : { tipo: "ok", texto: "Guardado." },
       );
@@ -47,7 +54,10 @@ export function ConfiguracionForm({
 
   function sincronizar() {
     startTransitionSync(async () => {
-      const resultado = await sincronizarCondicionesIva();
+      const pin = await pedirPin();
+      if (!pin) return;
+
+      const resultado = await sincronizarCondicionesIva(pin);
       setMensajeSync(
         "error" in resultado
           ? { tipo: "error", texto: resultado.error }

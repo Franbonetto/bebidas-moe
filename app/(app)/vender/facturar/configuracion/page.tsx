@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { veCostos } from "@/lib/permisos";
 import { configArca, type EntornoArca } from "@/lib/arca/env";
+import { PinProvider } from "@/app/(app)/_components/pin-gate";
 import { ConfiguracionForm } from "./_components/configuracion-form";
 
 // Contra qué ARCA está hablando el sistema. Antes no se podía saber desde
@@ -94,18 +95,22 @@ export default async function ConfiguracionFacturacionPage() {
       )}
 
       {sucursalesList.length > 0 ? (
-        <div className="flex flex-col gap-4">
-          {sucursalesList.map((s, i) => (
-            <ConfiguracionForm
-              key={s.id}
-              sucursalId={s.id}
-              sucursalNombre={s.nombre}
-              numeroArcaActual={numeroArcaPorSucursal.get(s.id) ?? null}
-              condiciones={condiciones ?? []}
-              mostrarCondicionesIva={i === sucursalesList.length - 1}
-            />
-          ))}
-        </div>
+        // Un solo PinProvider para toda la pantalla: cambiar los dos
+        // puntos de venta y sincronizar no puede costar tres PIN.
+        <PinProvider>
+          <div className="flex flex-col gap-4">
+            {sucursalesList.map((s, i) => (
+              <ConfiguracionForm
+                key={s.id}
+                sucursalId={s.id}
+                sucursalNombre={s.nombre}
+                numeroArcaActual={numeroArcaPorSucursal.get(s.id) ?? null}
+                condiciones={condiciones ?? []}
+                mostrarCondicionesIva={i === sucursalesList.length - 1}
+              />
+            ))}
+          </div>
+        </PinProvider>
       ) : (
         <p className="text-[13px] text-text-2">No se encontraron sucursales activas.</p>
       )}

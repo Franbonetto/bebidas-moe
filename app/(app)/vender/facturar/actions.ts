@@ -13,6 +13,8 @@ import {
 } from "@/lib/arca/wsfe";
 import { construirQrUrl } from "@/lib/arca/qr";
 import { fechaOperativa } from "@/lib/fecha";
+import { errorDeCuit, soloDigitos } from "@/lib/cuit";
+import { verificarPinOperaciones } from "@/lib/pin";
 
 // Catálogo de alícuotas de IVA de ARCA (tabla de parámetros fija de WSFEv1,
 // no una decisión de negocio nuestra — a diferencia de condicion_iva, no
@@ -265,6 +267,18 @@ async function emitirComprobante(
     });
     if (errorGuardar) return { error: errorGuardar.message };
 
+    // El cliente queda en la libreta solo, sin paso extra para la
+    // vendedora (pedido del usuario 2026-10-20). Solo si el receptor
+    // está identificado: una Factura B a Consumidor Final no tiene
+    // cliente que guardar.
+    if (input.cuitReceptor && input.razonSocialReceptor) {
+      await registrarClienteDeComprobante({
+        cuit: input.cuitReceptor,
+        razonSocial: input.razonSocialReceptor,
+        condicionIvaId: input.condicionIvaReceptorId,
+      });
+    }
+
     return {
       ok: true,
       comprobante: {
@@ -389,41 +403,89 @@ export async function facturarVentaAutomatica(
   return { facturado: true, comprobante: resultado.comprobante };
 }
 
-// Clientes frecuentes: no hay CRM todavía (docs/bloque_arca_facturacion.md,
-// sección 3, gap conocido) -- en vez de armar una tabla nueva, se reusa el
-// historial que YA existe en comprobantes_fiscales (cuit_receptor +
-// razon_social_receptor de facturas ya emitidas) para autocompletar el
-// formulario y que la vendedora no tenga que volver a tipear los mismos
-// datos de un cliente habitual. Es global a las dos sucursales (un cliente
-// puede facturar en cualquiera) -- RLS de comprobantes_fiscales ya filtra
-// por sucursal, así que esto respeta lo mismo que ve el usuario.
-export type ClienteFrecuente = { cuit: string; razonSocial: string; vecesFacturado: number };
+// Libreta de clientes (pedido del usuario 2026-10-20). Reemplaza al
+// autocompletado que leía el historial de comprobantes_fiscales: ese no
+// dejaba buscar por nombre, no guardaba la condición de IVA, no se podía
+// corregir un dato mal escrito y se evaporaba al limpiar comprobantes.
+// Ver supabase/migrations/20261020120000_clientes.sql para el alcance:
+// es la parte del CRM que hace falta para emitir, nada más.
+export type Cliente = {
+  id: string;
+  cuit: string;
+  razonSocial: string;
+  condicionIvaId: string;
+};
 
-export async function obtenerClientesFrecuentes(): Promise<ClienteFrecuente[]> {
+export async function obtenerClientes(): Promise<Cliente[]> {
   const supabase = await createClient();
 
   const { data } = await traerTodo(
-    supabase
-      .from("comprobantes_fiscales")
-      .select("cuit_receptor, razon_social_receptor")
-      .not("cuit_receptor", "is", null)
-      .not("razon_social_receptor", "is", null)
-      .eq("estado", "autorizado"),
+    supabase.from("clientes").select("id, cuit, razon_social, condicion_iva_id").order("razon_social"),
   );
 
-  const porCuit = new Map<string, { razonSocial: string; veces: number }>();
-  for (const fila of (data ?? []) as { cuit_receptor: string; razon_social_receptor: string }[]) {
-    const actual = porCuit.get(fila.cuit_receptor);
-    porCuit.set(fila.cuit_receptor, {
-      razonSocial: fila.razon_social_receptor,
-      veces: (actual?.veces ?? 0) + 1,
-    });
-  }
+  type Fila = { id: string; cuit: string; razon_social: string; condicion_iva_id: string };
+  return ((data ?? []) as Fila[]).map((c) => ({
+    id: c.id,
+    cuit: c.cuit,
+    razonSocial: c.razon_social,
+    condicionIvaId: c.condicion_iva_id,
+  }));
+}
 
-  return [...porCuit.entries()]
-    .map(([cuit, v]) => ({ cuit, razonSocial: v.razonSocial, vecesFacturado: v.veces }))
-    .sort((a, b) => b.vecesFacturado - a.vecesFacturado)
-    .slice(0, 100);
+type DatosCliente = { cuit: string; razonSocial: string; condicionIvaId: string };
+
+// Alta o corrección de un cliente, por CUIT. La usan el botón "Guardar
+// cliente" del formulario y también la emisión, que guarda solo al
+// cliente nuevo que se acaba de facturar (ver registrarClienteDeComprobante).
+export async function guardarCliente(
+  datos: DatosCliente,
+): Promise<{ error: string } | { ok: true; cliente: Cliente }> {
+  const cuit = soloDigitos(datos.cuit);
+  const errorCuit = errorDeCuit(cuit);
+  if (errorCuit) return { error: errorCuit };
+
+  const razonSocial = datos.razonSocial.trim();
+  if (!razonSocial) return { error: "Falta la razón social." };
+  if (!datos.condicionIvaId) return { error: "Falta la condición de IVA del cliente." };
+
+  const supabase = await createClient();
+
+  const { data: existente } = await supabase
+    .from("clientes")
+    .select("id")
+    .eq("cuit", cuit)
+    .maybeSingle<{ id: string }>();
+
+  // Upsert a mano en vez de .upsert(): el insert necesita que
+  // `creado_por` lo ponga el default auth.uid() (la política de RLS exige
+  // que coincida), y en el update no hay que tocar ni creado_por ni
+  // creado_en -- marcan el alta, no la última corrección.
+  const fila = { cuit, razon_social: razonSocial, condicion_iva_id: datos.condicionIvaId };
+
+  const { data, error } = existente
+    ? await supabase.from("clientes").update(fila).eq("id", existente.id).select("id").single()
+    : await supabase.from("clientes").insert(fila).select("id").single();
+
+  if (error) return { error: error.message };
+
+  return {
+    ok: true,
+    cliente: { id: data.id, cuit, razonSocial, condicionIvaId: datos.condicionIvaId },
+  };
+}
+
+// Después de emitir un comprobante con receptor identificado, el cliente
+// queda en la libreta sin que la vendedora haga ningún paso extra. Es
+// "mejor esfuerzo" a propósito: si falla, NO se devuelve error ni se
+// toca el comprobante -- la factura ya está emitida y ARCA ya la
+// autorizó, sería absurdo mostrar un error por no haber podido guardar
+// una agenda.
+async function registrarClienteDeComprobante(datos: DatosCliente): Promise<void> {
+  try {
+    await guardarCliente(datos);
+  } catch {
+    // Silencio deliberado: ver el comentario de arriba.
+  }
 }
 
 // El punto de venta ARCA es config fiscal: la edita el dueño o la
@@ -434,7 +496,15 @@ export async function obtenerClientesFrecuentes(): Promise<ClienteFrecuente[]> {
 export async function guardarPuntoVenta(
   sucursalId: string,
   numeroArca: number,
+  pin: string,
 ): Promise<{ error: string } | { ok: true }> {
+  // PIN de operaciones (pedido del usuario 2026-10-20). Cambiar el número
+  // de punto de venta sin querer manda las facturas al punto de venta
+  // equivocado -- que puede ser el de otro sistema que también factura
+  // con este CUIT (ver scripts/paso-arca-produccion-2026-10-20/).
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   const { data: existente, error: errorLectura } = await supabase
@@ -458,9 +528,12 @@ export async function guardarPuntoVenta(
 // Sincroniza el catálogo de condición de IVA del receptor desde ARCA
 // (FEParamGetCondicionIvaReceptor) — botón manual, no automático
 // (docs/arquitectura.md 1.8: "no se hardcodea, se sincroniza aparte").
-export async function sincronizarCondicionesIva(): Promise<
-  { error: string } | { ok: true; cantidad: number }
-> {
+export async function sincronizarCondicionesIva(
+  pin: string,
+): Promise<{ error: string } | { ok: true; cantidad: number }> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
   const supabase = await createClient();
 
   let condiciones;
