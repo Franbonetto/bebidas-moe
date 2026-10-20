@@ -36,6 +36,9 @@ const MEDIO_LABEL: Record<string, string> = {
 // dueño lea lo mismo que tiene la encargada en la mano.
 function mensajeCierre(datos: {
   sucursal: string;
+  // Primer nombre del dueño, para que el mensaje llegue como lo mandaría
+  // una persona y no como una notificación. null si no se pudo leer.
+  nombreDueno: string | null;
   fecha: string;
   abrio: string;
   cerro: string;
@@ -52,8 +55,12 @@ function mensajeCierre(datos: {
   diferencia: number;
 }): string {
   const plata = (n: number) => formatoMoneda.format(n);
+  // La sucursal va en mayúscula y en negrita: es lo primero que el dueño
+  // necesita distinguir cuando le entran los dos cierres la misma noche
+  // (pedido del usuario 2026-10-19).
   const lineas: string[] = [
-    `*Cierre de caja — ${datos.sucursal}*`,
+    `Hola${datos.nombreDueno ? ` ${datos.nombreDueno}` : ""}, este es el cierre de caja de ` +
+      `*${datos.sucursal.toLocaleUpperCase("es-AR")}*`,
     datos.fecha,
     "",
     `Abrió: ${datos.abrio}`,
@@ -196,6 +203,18 @@ export default async function TicketCajaPage({
     0,
   );
 
+  // A quién va dirigido el mensaje de WhatsApp. Sale de `usuarios`, igual
+  // que el saludo del inicio: no está escrito en el código. Cualquier
+  // usuario activo puede leer la tabla (política usuarios_select), así que
+  // la cajera que cierra la caja lo ve.
+  const { data: duenoRaw } = await supabase
+    .from("usuarios")
+    .select("nombre")
+    .eq("rol", "dueno")
+    .limit(1)
+    .maybeSingle();
+  const nombreDueno = (duenoRaw?.nombre ?? "").trim().split(/\s+/)[0] || null;
+
   const envios = ventas.filter((v) => v.es_envio);
   const enviosTotal = envios.reduce((acc, v) => acc + v.total, 0);
 
@@ -211,6 +230,7 @@ export default async function TicketCajaPage({
           telefonoDueno,
           mensajeCierre({
             sucursal: caja.sucursal?.nombre ?? "",
+            nombreDueno: nombreDueno,
             fecha: formatoFecha.format(new Date(caja.fecha + "T12:00:00")),
             abrio: `${caja.empleado_apertura?.nombre ?? "—"} (${formatoHora.format(new Date(caja.abierta_en))})`,
             cerro: `${caja.empleado_cierre?.nombre ?? "—"}${caja.cerrada_en ? ` (${formatoHora.format(new Date(caja.cerrada_en))})` : ""}`,
