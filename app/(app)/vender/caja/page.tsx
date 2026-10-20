@@ -110,7 +110,12 @@ export default async function CajaPage({
           .from("devoluciones")
           .select("monto_reembolsado")
           .eq("caja_id", caja.id)
-          .eq("resolucion", "dinero"),
+          .eq("resolucion", "dinero")
+          // Solo las devueltas EN EFECTIVO salieron del cajon: una
+          // devolucion por posnet le vuelve a la tarjeta del cliente y el
+          // arqueo no la tiene que esperar (mismo filtro que cerrar_caja,
+          // ver 20261019110000_devolucion_medio_reembolso.sql).
+          .eq("medio_reembolso", "efectivo"),
       )
     : { data: [] };
 
@@ -264,7 +269,7 @@ export default async function CajaPage({
                 )}
                 {devolucionesDineroTotal > 0 && (
                   <div className="flex justify-between border-b border-[#F1F1F3] px-[12px] py-[7px] text-[13px]">
-                    <span className="text-text-2">Devoluciones en dinero</span>
+                    <span className="text-text-2">Devoluciones en efectivo</span>
                     <span className="tabular-nums text-err">
                       −{formatoMoneda.format(devolucionesDineroTotal)}
                     </span>

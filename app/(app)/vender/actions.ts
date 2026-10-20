@@ -147,12 +147,19 @@ export type CambioItemInput = {
   cantidad: number;
 };
 
+// Los mismos medios que una venta (venta_pagos): si pago con tarjeta, la
+// plata se le devuelve por el posnet y no sale del cajon (decision del
+// usuario 2026-10-19, ver
+// supabase/migrations/20261019110000_devolucion_medio_reembolso.sql).
+export type MedioReembolso = "efectivo" | "debito" | "credito" | "transferencia" | "qr";
+
 export async function confirmarDevolucion(input: {
   ventaId: string;
   items: DevolucionItemInput[];
   resolucion: "dinero" | "cambio";
   cambioItems: CambioItemInput[];
   observaciones: string | null;
+  medioReembolso: MedioReembolso;
 }): Promise<{ error: string } | { id: string }> {
   const supabase = await createClient();
 
@@ -169,6 +176,8 @@ export async function confirmarDevolucion(input: {
         ? input.cambioItems.map((c) => ({ sku_id: c.skuId, cantidad: c.cantidad }))
         : null,
     p_observaciones: input.observaciones,
+    // En un cambio por otro producto no hay plata: la funcion lo ignora.
+    p_medio_reembolso: input.resolucion === "dinero" ? input.medioReembolso : null,
   });
 
   if (error) return { error: error.message };
@@ -176,6 +185,7 @@ export async function confirmarDevolucion(input: {
   revalidatePath("/vender");
   revalidatePath("/vender/caja");
   revalidatePath("/vender/devoluciones");
+  revalidatePath("/reportes/caja");
   return { id: (data as { id: string }).id };
 }
 

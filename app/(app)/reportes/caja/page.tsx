@@ -64,9 +64,11 @@ type DevolucionFila = {
   fecha: string;
   sucursal_id: string;
   resolucion: string;
+  // Con qué se le devolvió la plata. null en un cambio por otro producto.
+  medio_reembolso: string | null;
   monto_reembolsado: number | null;
   venta_id: string;
-  usuario: { nombre: string } | null;
+  usuario: { nombre: string }[] | { nombre: string } | null;
 };
 
 type ParticularFila = {
@@ -160,7 +162,7 @@ export default async function ReporteCajaPage({
       supabase
         .from("devoluciones")
         .select(
-          "id, fecha, sucursal_id, resolucion, monto_reembolsado, venta_id, usuario:usuarios ( nombre )",
+          "id, fecha, sucursal_id, resolucion, medio_reembolso, monto_reembolsado, venta_id, usuario:usuarios ( nombre )",
         )
         .gte("fecha", desde.toISOString())
         .order("fecha", { ascending: false }),
@@ -254,6 +256,12 @@ export default async function ReporteCajaPage({
     (acc, d) => acc + Number(d.monto_reembolsado ?? 0),
     0,
   );
+  // Lo que realmente salió del cajón: una devolución por posnet le vuelve
+  // a la tarjeta del cliente y no toca el efectivo (ver
+  // 20261019110000_devolucion_medio_reembolso.sql).
+  const devolucionesEfectivo = devolucionesDinero
+    .filter((d) => d.medio_reembolso === "efectivo")
+    .reduce((acc, d) => acc + Number(d.monto_reembolsado ?? 0), 0);
 
   const movimientos = [...(movimientosRaw ?? [])].sort((a, b) =>
     a.creado_en < b.creado_en ? 1 : -1,
@@ -293,7 +301,7 @@ export default async function ReporteCajaPage({
         <Kpi
           label="Devoluciones de dinero"
           value={formatoMoneda.format(devolucionesMonto)}
-          sub={`${devoluciones.length} devolución${devoluciones.length === 1 ? "" : "es"} en total`}
+          sub={`${formatoMoneda.format(devolucionesEfectivo)} salieron del cajón · ${devoluciones.length} devolución${devoluciones.length === 1 ? "" : "es"} en total`}
         />
         <Kpi
           label="Salidas de caja"
@@ -546,7 +554,7 @@ export default async function ReporteCajaPage({
       <div>
         <SectionHeader
           title="Devoluciones"
-          meta="La devolución de dinero sale siempre del efectivo del día"
+          meta="Solo la devuelta en efectivo descuenta del arqueo del día"
         />
         <Card title={`${devoluciones.length} devolución${devoluciones.length === 1 ? "" : "es"}`}>
           {devoluciones.length === 0 ? (
@@ -558,6 +566,7 @@ export default async function ReporteCajaPage({
                   <Th>Fecha</Th>
                   <Th>Sucursal</Th>
                   <Th>Resolución</Th>
+                  <Th>Se devolvió con</Th>
                   <Th>Quién</Th>
                   <Th align="right">Reembolsado</Th>
                   <Th />
@@ -573,7 +582,19 @@ export default async function ReporteCajaPage({
                         {RESOLUCION_LABEL[d.resolucion] ?? d.resolucion}
                       </span>
                     </Td>
-                    <Td>{d.usuario?.nombre ?? "—"}</Td>
+                    <Td>
+                      {d.medio_reembolso == null ? (
+                        <span className="text-text-3">—</span>
+                      ) : (
+                        <>
+                          {MEDIO_LABEL[d.medio_reembolso] ?? d.medio_reembolso}
+                          {d.medio_reembolso !== "efectivo" && (
+                            <span className="text-text-3"> · no sale del cajón</span>
+                          )}
+                        </>
+                      )}
+                    </Td>
+                    <Td>{nombreRel(d.usuario) ?? "—"}</Td>
                     <Td align="right" numero mute={d.monto_reembolsado == null}>
                       {d.monto_reembolsado == null
                         ? "sin dinero"

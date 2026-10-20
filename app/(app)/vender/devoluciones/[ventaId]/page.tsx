@@ -6,6 +6,7 @@ import { operaSucursal } from "@/lib/permisos";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import type { SkuCatalogo } from "@/app/(app)/compras/_components/sku-picker";
 import { devolucionesPorVenta } from "../../_lib/devoluciones-por-venta";
+import type { MedioReembolso } from "../../actions";
 import { DevolucionForm, type VentaItemRow } from "./_components/devolucion-form";
 
 type SkuInfo = SkuPresentacion & {
@@ -46,7 +47,7 @@ export default async function DevolucionVentaPage({
     );
   }
 
-  const [{ data: ventaItemsRaw }, { data: skusRaw }] = await Promise.all([
+  const [{ data: ventaItemsRaw }, { data: skusRaw }, { data: pagosRaw }] = await Promise.all([
     traerTodo(
       supabase
         .from("venta_items")
@@ -66,6 +67,9 @@ export default async function DevolucionVentaPage({
         )
         .eq("activo", true),
     ),
+    // Con qué se cobró: el formulario arranca con ese medio para la
+    // devolución, porque la plata vuelve por donde entró.
+    traerTodo(supabase.from("venta_pagos").select("medio_pago").eq("venta_id", ventaId)),
   ]);
 
   // Acotado a los items de esta venta: antes se traia devolucion_items
@@ -124,6 +128,7 @@ export default async function DevolucionVentaPage({
         ventaId={venta.id}
         items={ventaItems}
         skus={(skusRaw ?? []) as unknown as SkuCatalogo[]}
+        mediosDeLaVenta={(pagosRaw ?? []).map((p) => p.medio_pago as MedioReembolso)}
       />
     </div>
   );

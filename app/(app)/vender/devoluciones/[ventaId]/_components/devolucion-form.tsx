@@ -2,7 +2,11 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { confirmarDevolucion, type CambioItemInput } from "../../../actions";
+import {
+  confirmarDevolucion,
+  type CambioItemInput,
+  type MedioReembolso,
+} from "../../../actions";
 import { SkuPicker, type SkuCatalogo } from "@/app/(app)/compras/_components/sku-picker";
 import { presentacionLabel } from "@/app/(app)/productos/_lib/presentacion";
 import { formatoMoneda } from "../../../_lib/formato";
@@ -27,6 +31,25 @@ const modoBtnClass = (activo: boolean) =>
     activo ? "border-moe bg-moe-soft text-moe" : "border-border bg-bg text-text-2 hover:bg-bg-2"
   }`;
 
+// Con qué se le devuelve la plata. Los mismos medios que una venta: si
+// pagó con tarjeta, la devolución se hace por el posnet y no sale del
+// cajón (pedido del usuario 2026-10-19).
+const MEDIOS: { id: MedioReembolso; label: string }[] = [
+  { id: "efectivo", label: "Efectivo" },
+  { id: "debito", label: "Posnet débito" },
+  { id: "credito", label: "Posnet crédito" },
+  { id: "transferencia", label: "Transferencia" },
+  { id: "qr", label: "QR" },
+];
+
+const MEDIO_LABEL: Record<string, string> = {
+  efectivo: "efectivo",
+  debito: "débito",
+  credito: "crédito",
+  transferencia: "transferencia",
+  qr: "QR",
+};
+
 type FilaEstado = { cantidad: string; destino: "stock" | "merma" };
 type CambioFila = { sku: SkuCatalogo; cantidad: string };
 
@@ -34,16 +57,25 @@ export function DevolucionForm({
   ventaId,
   items,
   skus,
+  mediosDeLaVenta,
 }: {
   ventaId: string;
   items: VentaItemRow[];
   skus: SkuCatalogo[];
+  // Con qué se cobró esta venta (venta_pagos). Se usa para preseleccionar
+  // el medio de la devolución: la plata vuelve por donde entró.
+  mediosDeLaVenta: MedioReembolso[];
 }) {
   const router = useRouter();
   const [estados, setEstados] = useState<Record<string, FilaEstado>>(() =>
     Object.fromEntries(items.map((it) => [it.id, { cantidad: "0", destino: "stock" as const }])),
   );
   const [resolucion, setResolucion] = useState<"dinero" | "cambio">("dinero");
+  // Si la venta se cobró con un solo medio, se arranca con ese; si fue un
+  // pago dividido, la cajera elige (no hay una respuesta obvia).
+  const [medioReembolso, setMedioReembolso] = useState<MedioReembolso>(
+    mediosDeLaVenta.length === 1 ? mediosDeLaVenta[0] : "efectivo",
+  );
   const [cambioFilas, setCambioFilas] = useState<CambioFila[]>([]);
   const [observaciones, setObservaciones] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +154,7 @@ export function DevolucionForm({
         resolucion,
         cambioItems,
         observaciones: observaciones.trim() || null,
+        medioReembolso,
       });
 
       if ("error" in resultado) {
@@ -202,14 +235,42 @@ export function DevolucionForm({
         </div>
 
         {resolucion === "dinero" ? (
-          <p className="text-[13px] text-text-2">
-            Monto a reembolsar en efectivo:{" "}
-            <span className="font-medium tabular-nums text-text">{formatoMoneda.format(montoAReembolsar)}</span>
-            <br />
-            <span className="text-[11.5px] text-text-3">
-              Se descuenta de la caja de hoy de esta sucursal — hace falta tenerla abierta.
-            </span>
-          </p>
+          <div>
+            <p className="mb-[8px] text-[13px] text-text-2">
+              Monto a reembolsar:{" "}
+              <span className="font-medium tabular-nums text-text">
+                {formatoMoneda.format(montoAReembolsar)}
+              </span>
+            </p>
+
+            <p className="mb-[6px] text-[12px] font-medium text-text-2">¿Cómo se le devuelve?</p>
+            <div className="mb-[8px] flex flex-wrap gap-2">
+              {MEDIOS.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={modoBtnClass(medioReembolso === m.id)}
+                  onClick={() => setMedioReembolso(m.id)}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {mediosDeLaVenta.length > 0 && (
+              <p className="mb-[6px] text-[11.5px] text-text-3">
+                Esta venta se cobró con{" "}
+                {mediosDeLaVenta.map((m) => MEDIO_LABEL[m] ?? m).join(" + ")}.
+              </p>
+            )}
+
+            <p className="text-[11.5px] text-text-3">
+              {medioReembolso === "efectivo"
+                ? "Sale del cajón: se descuenta de la caja de hoy de esta sucursal."
+                : "No sale del cajón: la devolución se hace por el posnet y queda registrada, pero el arqueo de hoy no la descuenta."}{" "}
+              Hace falta tener la caja de hoy abierta.
+            </p>
+          </div>
         ) : (
           <div className="space-y-2">
             {cambioFilas.map((f, index) => (
