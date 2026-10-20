@@ -47,6 +47,12 @@ export function CerrarCajaForm({
         setError(resultado.error);
         return;
       }
+      // Cerrar e imprimir son el mismo gesto (pedido del usuario
+      // 2026-10-19): la pantalla salta al ticket de cierre, que abre el
+      // diálogo de impresión solo. El ?imprimir=1 es lo que lo dispara --
+      // entrar después a la misma URL para reimprimir no molesta con el
+      // diálogo.
+      router.push(`/ticket/caja/${cajaId}?imprimir=1`);
       router.refresh();
     });
   }

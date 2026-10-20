@@ -21,7 +21,12 @@
 // El equivalente en la base es fecha_operativa() -- ver
 // supabase/migrations/20261019100000_fecha_operativa.sql.
 
-const ZONA = "America/Argentina/Buenos_Aires";
+// Exportada para los formateadores de pantalla (ver
+// app/(app)/compras/_lib/formato.ts): la zona del negocio se decide en un
+// solo lugar.
+export const ZONA_ARGENTINA = "America/Argentina/Buenos_Aires";
+
+const ZONA = ZONA_ARGENTINA;
 const OFFSET = "-03:00";
 
 // "AAAA-MM-DD" del día en Argentina. Es el formato de `cajas.fecha` y de

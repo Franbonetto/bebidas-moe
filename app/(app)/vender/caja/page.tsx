@@ -273,7 +273,7 @@ export default async function CajaPage({
                     {formatoMoneda.format(caja.efectivo_declarado ?? 0)}
                   </span>
                 </p>
-                <p className="flex justify-between font-medium">
+                <p className="mb-2 flex justify-between font-medium">
                   <span className="text-text-2">Diferencia</span>
                   <span
                     className={`tabular-nums ${
@@ -287,6 +287,18 @@ export default async function CajaPage({
                     {formatoMoneda.format(caja.diferencia ?? 0)}
                   </span>
                 </p>
+
+                {/* Reimprimir el cierre: al cerrar la caja el ticket sale
+                    solo, esto es para cuando se trabó la impresora o hace
+                    falta otra copia (2026-10-19). */}
+                <a
+                  href={`/ticket/caja/${caja.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block rounded-[6px] bg-moe px-[12px] py-[6px] text-[12.5px] font-medium text-white hover:bg-moe/90"
+                >
+                  Imprimir cierre
+                </a>
               </div>
             )}
           </>
