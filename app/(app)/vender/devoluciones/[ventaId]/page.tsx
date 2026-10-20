@@ -5,6 +5,7 @@ import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import type { SkuCatalogo } from "@/app/(app)/compras/_components/sku-picker";
+import { devolucionesPorVenta } from "../../_lib/devoluciones-por-venta";
 import { DevolucionForm, type VentaItemRow } from "./_components/devolucion-form";
 
 type SkuInfo = SkuPresentacion & {
@@ -97,6 +98,8 @@ export default async function DevolucionVentaPage({
     }))
     .filter((it) => it.cantidadVendida - it.cantidadYaDevuelta > 0);
 
+  const estadoDevolucion = (await devolucionesPorVenta(supabase, [venta.id])).get(venta.id) ?? null;
+
   return (
     <div className="mx-auto max-w-[720px]">
       <div className="mb-3 flex items-center justify-between">
@@ -107,6 +110,15 @@ export default async function DevolucionVentaPage({
           ← Buscar otra venta
         </Link>
       </div>
+
+      {estadoDevolucion && (
+        <div className="mb-3 rounded-card border border-err/40 bg-err-bg px-[14px] py-[10px] text-[13px] font-medium text-err">
+          {estadoDevolucion === "total"
+            ? "Venta devuelta — toda la mercadería de esta venta ya volvió."
+            : "Venta devuelta en parte — parte de la mercadería de esta venta ya volvió."}
+        </div>
+      )}
+
 
       <DevolucionForm
         ventaId={venta.id}

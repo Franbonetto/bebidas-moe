@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
+import { devolucionesPorVenta } from "../_lib/devoluciones-por-venta";
 import { BuscarVentaFacturarList, type VentaFacturarRow } from "./_components/buscar-venta-facturar-list";
 
 type SkuInfo = SkuPresentacion & {
@@ -78,8 +79,18 @@ export default async function FacturarPage({
     estadoPorVenta.set(c.venta_id, c.estado);
   }
 
-  const ventas: VentaFacturarRow[] = ((ventasRaw ?? []) as unknown as VentaFila[]).map((v) => ({
+  // Una venta devuelta se marca en rojo también acá: facturar algo que ya
+  // volvió es justo lo que no hay que hacer (la nota de crédito no está en
+  // este bloque, ver docs/bloque_arca_facturacion.md).
+  const ventasFilas = (ventasRaw ?? []) as unknown as VentaFila[];
+  const estadosDevolucion = await devolucionesPorVenta(
+    supabase,
+    ventasFilas.map((v) => v.id),
+  );
+
+  const ventas: VentaFacturarRow[] = ventasFilas.map((v) => ({
     id: v.id,
+    estadoDevolucion: estadosDevolucion.get(v.id) ?? null,
     fecha: v.fecha,
     medioPago: v.medio_pago,
     total: v.total,

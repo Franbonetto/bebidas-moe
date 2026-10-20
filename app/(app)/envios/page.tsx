@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal, esDueno, veCostos } from "@/lib/permisos";
 import { cargarDatosVenta } from "../vender/_lib/cargar-datos-venta";
+import { devolucionesPorVenta } from "../vender/_lib/devoluciones-por-venta";
 import { PosClient } from "../vender/_components/pos-client";
 import { EnviosHistorialTable, type EnvioRow } from "./_components/envios-historial-table";
 
@@ -56,7 +57,7 @@ export default async function EnviosPage({
       mixto: "Pago combinado",
     };
 
-    const envios: EnvioRow[] = ((enviosRaw ?? []) as unknown as {
+    const enviosFilas = (enviosRaw ?? []) as unknown as {
       id: string;
       fecha: string;
       total: number;
@@ -66,8 +67,16 @@ export default async function EnviosPage({
       envio_pagado: boolean | null;
       sucursal: { nombre: string } | null;
       venta_pagos: { medio_pago: string; monto: number }[];
-    }[]).map((v) => ({
+    }[];
+
+    const estadosDevolucion = await devolucionesPorVenta(
+      supabase,
+      enviosFilas.map((v) => v.id),
+    );
+
+    const envios: EnvioRow[] = enviosFilas.map((v) => ({
       id: v.id,
+      estadoDevolucion: estadosDevolucion.get(v.id) ?? null,
       fecha: v.fecha,
       total: v.total,
       sucursalNombre: v.sucursal?.nombre ?? "—",

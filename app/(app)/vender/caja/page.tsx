@@ -146,6 +146,18 @@ export default async function CajaPage({
     else salidasTotal += m.monto;
   }
 
+  // Lo que tiene que haber en el cajón ahora mismo. Es la MISMA fórmula que
+  // cerrar_caja() en la base (ver 20261008090000_empleado_caja.sql):
+  // apertura + ventas en efectivo − devoluciones en dinero + entradas −
+  // salidas. Se calcula una sola vez acá para que la pantalla y el cierre
+  // no puedan decir números distintos.
+  const efectivoEsperado =
+    (caja?.monto_apertura ?? 0) +
+    (totalPorMedio.get("efectivo") ?? 0) -
+    devolucionesDineroTotal +
+    entradasTotal -
+    salidasTotal;
+
   return (
     <div className="mx-auto max-w-[560px]">
       {sucursalesOperables.length > 1 && (
@@ -184,10 +196,12 @@ export default async function CajaPage({
           </p>
         ) : (
           <>
-            <div className="mb-3 flex justify-between rounded-[6px] bg-bg-2 px-[12px] py-[7px] text-[13px]">
-              <span className="text-text-2">Monto de apertura</span>
-              <span className="tabular-nums text-text">{formatoMoneda.format(caja.monto_apertura ?? 0)}</span>
-            </div>
+            {caja.estado === "cerrada" && (
+              <div className="mb-3 flex justify-between rounded-[6px] bg-bg-2 px-[12px] py-[7px] text-[13px]">
+                <span className="text-text-2">Monto de apertura</span>
+                <span className="tabular-nums text-text">{formatoMoneda.format(caja.monto_apertura ?? 0)}</span>
+              </div>
+            )}
 
             <div className="mb-4 overflow-hidden rounded-[6px] border border-border">
               {Object.entries(MEDIO_LABEL).map(([id, label]) => (
@@ -217,27 +231,51 @@ export default async function CajaPage({
               </div>
             )}
 
-            {devolucionesDineroTotal > 0 && (
-              <div className="mb-2 flex justify-between rounded-[6px] bg-warn-bg px-[12px] py-[7px] text-[13px] text-warn">
-                <span>Devoluciones en dinero</span>
-                <span className="tabular-nums">−{formatoMoneda.format(devolucionesDineroTotal)}</span>
-              </div>
-            )}
-
-            {(entradasTotal > 0 || salidasTotal > 0) && (
-              <div className="mb-2 flex flex-col gap-1 rounded-[6px] bg-bg-2 px-[12px] py-[7px] text-[13px]">
+            {/* El efectivo, aparte del resto de los medios: es el único que
+                se cuenta a mano al cerrar, así que la pantalla muestra el
+                desglose completo y, abajo, cuánto tiene que haber en el
+                cajón (pedido del usuario 2026-10-19). Los otros medios no
+                tienen arqueo: quedan arriba, en el total del día. */}
+            {caja.estado === "abierta" && (
+              <div className="mb-4 overflow-hidden rounded-[6px] border border-border">
+                <div className="flex justify-between border-b border-[#F1F1F3] px-[12px] py-[7px] text-[13px]">
+                  <span className="text-text-2">Apertura</span>
+                  <span className="tabular-nums text-text">
+                    {formatoMoneda.format(caja.monto_apertura ?? 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between border-b border-[#F1F1F3] px-[12px] py-[7px] text-[13px]">
+                  <span className="text-text-2">Ventas en efectivo</span>
+                  <span className="tabular-nums text-text">
+                    +{formatoMoneda.format(totalPorMedio.get("efectivo") ?? 0)}
+                  </span>
+                </div>
                 {entradasTotal > 0 && (
-                  <div className="flex justify-between text-text-2">
-                    <span>Entradas de efectivo</span>
+                  <div className="flex justify-between border-b border-[#F1F1F3] px-[12px] py-[7px] text-[13px]">
+                    <span className="text-text-2">Entradas de efectivo</span>
                     <span className="tabular-nums text-ok">+{formatoMoneda.format(entradasTotal)}</span>
                   </div>
                 )}
                 {salidasTotal > 0 && (
-                  <div className="flex justify-between text-text-2">
-                    <span>Salidas de efectivo</span>
+                  <div className="flex justify-between border-b border-[#F1F1F3] px-[12px] py-[7px] text-[13px]">
+                    <span className="text-text-2">Salidas de efectivo</span>
                     <span className="tabular-nums text-err">−{formatoMoneda.format(salidasTotal)}</span>
                   </div>
                 )}
+                {devolucionesDineroTotal > 0 && (
+                  <div className="flex justify-between border-b border-[#F1F1F3] px-[12px] py-[7px] text-[13px]">
+                    <span className="text-text-2">Devoluciones en dinero</span>
+                    <span className="tabular-nums text-err">
+                      −{formatoMoneda.format(devolucionesDineroTotal)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-baseline justify-between bg-bg-2 px-[12px] py-[9px]">
+                  <span className="text-[13px] font-semibold text-text">Debe haber en caja</span>
+                  <span className="tabular-nums text-[17px] font-semibold text-text">
+                    {formatoMoneda.format(efectivoEsperado)}
+                  </span>
+                </div>
               </div>
             )}
 
@@ -251,13 +289,7 @@ export default async function CajaPage({
               <CerrarCajaForm
                 cajaId={caja.id}
                 empleados={empleados ?? []}
-                efectivoEsperado={
-                  (caja.monto_apertura ?? 0) +
-                  (totalPorMedio.get("efectivo") ?? 0) -
-                  devolucionesDineroTotal +
-                  entradasTotal -
-                  salidasTotal
-                }
+                efectivoEsperado={efectivoEsperado}
               />
             ) : (
               <div className="rounded-[6px] bg-bg-2 p-[12px] text-[13px]">

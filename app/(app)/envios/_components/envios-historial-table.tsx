@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { formatoMoneda } from "../../vender/_lib/formato";
 import { formatoFechaHora } from "@/app/(app)/compras/_lib/formato";
+import { BADGE_DEVOLUCION, type EstadoDevolucion } from "../../vender/_lib/devolucion-estado";
 
 export type EnvioRow = {
   id: string;
@@ -15,6 +16,8 @@ export type EnvioRow = {
   medioPagoLabel: string;
   // null = envío anterior al 2026-10-19, cuando el dato no se pedía.
   pagado: boolean | null;
+  // null = sin devoluciones.
+  estadoDevolucion: EstadoDevolucion | null;
 };
 
 // Panel del dueño: solo lectura (no arma envíos, no opera el mostrador),
@@ -94,7 +97,18 @@ export function EnviosHistorialTable({ envios }: { envios: EnvioRow[] }) {
                     {formatoFechaHora.format(new Date(e.fecha))}
                   </td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">{e.sucursalNombre}</td>
-                  <td className="px-[14px] py-[9px] align-middle font-medium text-text">{e.motomandado}</td>
+                  <td className="px-[14px] py-[9px] align-middle font-medium text-text">
+                    <span className="flex flex-wrap items-center gap-2">
+                      {e.motomandado}
+                      {e.estadoDevolucion && (
+                        <span
+                          className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${BADGE_DEVOLUCION[e.estadoDevolucion].className}`}
+                        >
+                          {BADGE_DEVOLUCION[e.estadoDevolucion].label}
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">{e.direccionEnvio}</td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">{e.medioPagoLabel}</td>
                   <td className="px-[14px] py-[9px] align-middle">

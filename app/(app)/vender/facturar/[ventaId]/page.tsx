@@ -9,6 +9,7 @@ import { formatoFechaHora } from "@/app/(app)/compras/_lib/formato";
 import { FacturarForm, type CondicionIvaOption } from "./_components/facturar-form";
 import { VerificarArcaButton } from "./_components/verificar-arca-button";
 import { obtenerClientesFrecuentes } from "../actions";
+import { devolucionesPorVenta } from "../../_lib/devoluciones-por-venta";
 
 type SkuInfo = SkuPresentacion & {
   producto: { nombre: string; marca: { nombre: string } | null } | null;
@@ -110,6 +111,8 @@ export default async function FacturarVentaPage({
   const importeFacturable = venta.subtotal - venta.descuentos;
   const condiciones: CondicionIvaOption[] = (condicionesRaw ?? []) as CondicionIvaOption[];
 
+  const estadoDevolucion = (await devolucionesPorVenta(supabase, [venta.id])).get(venta.id) ?? null;
+
   return (
     <div className="mx-auto max-w-[720px]">
       <div className="mb-3 flex items-center justify-between">
@@ -118,6 +121,15 @@ export default async function FacturarVentaPage({
           ← Buscar otra venta
         </Link>
       </div>
+
+      {estadoDevolucion && (
+        <div className="mb-3 rounded-card border border-err/40 bg-err-bg px-[14px] py-[10px] text-[13px] font-medium text-err">
+          {estadoDevolucion === "total"
+            ? "Venta devuelta — toda la mercadería de esta venta ya volvió."
+            : "Venta devuelta en parte — parte de la mercadería de esta venta ya volvió."}
+        </div>
+      )}
+
 
       <div className="mb-4 rounded-card border border-border bg-bg p-4">
         <p className="mb-3 text-[12px] text-text-3">

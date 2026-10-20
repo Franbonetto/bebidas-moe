@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { formatoMoneda } from "../../_lib/formato";
 import { formatoFechaHora } from "@/app/(app)/compras/_lib/formato";
+import { BADGE_DEVOLUCION, type EstadoDevolucion } from "../../_lib/devolucion-estado";
 
 export type VentaRow = {
   id: string;
@@ -12,6 +13,8 @@ export type VentaRow = {
   total: number;
   resumen: string;
   textoBusqueda: string;
+  // null = sin devoluciones.
+  estadoDevolucion: EstadoDevolucion | null;
 };
 
 const MEDIO_LABEL: Record<string, string> = {
@@ -55,23 +58,33 @@ export function BuscarVentaList({ ventas }: { ventas: VentaRow[] }) {
         </div>
       ) : (
         <div className="flex flex-col">
-          {filtradas.map((v) => (
-            <Link
-              key={v.id}
-              href={`/vender/devoluciones/${v.id}`}
-              className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[11px] last:border-b-0 hover:bg-bg-2"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-[13px] font-medium text-text">{v.resumen || "Sin productos"}</p>
-                <p className="text-[11.5px] text-text-3">
-                  {formatoFechaHora.format(new Date(v.fecha))} · {MEDIO_LABEL[v.medioPago] ?? v.medioPago}
-                </p>
-              </div>
-              <span className="shrink-0 tabular-nums text-[13px] font-medium text-text">
-                {formatoMoneda.format(v.total)}
-              </span>
-            </Link>
-          ))}
+          {filtradas.map((v) => {
+            const badge = v.estadoDevolucion ? BADGE_DEVOLUCION[v.estadoDevolucion] : null;
+            return (
+              <Link
+                key={v.id}
+                href={`/vender/devoluciones/${v.id}`}
+                className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[11px] last:border-b-0 hover:bg-bg-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-medium text-text">{v.resumen || "Sin productos"}</p>
+                  <p className="text-[11.5px] text-text-3">
+                    {formatoFechaHora.format(new Date(v.fecha))} · {MEDIO_LABEL[v.medioPago] ?? v.medioPago}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {badge && (
+                    <span className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${badge.className}`}>
+                      {badge.label}
+                    </span>
+                  )}
+                  <span className="tabular-nums text-[13px] font-medium text-text">
+                    {formatoMoneda.format(v.total)}
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

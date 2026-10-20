@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { formatoMoneda } from "../../_lib/formato";
 import { formatoFechaHora } from "@/app/(app)/compras/_lib/formato";
+import { BADGE_DEVOLUCION, type EstadoDevolucion } from "../../_lib/devolucion-estado";
 
 export type VentaFacturarRow = {
   id: string;
@@ -13,6 +14,8 @@ export type VentaFacturarRow = {
   estadoComprobante: string | null;
   resumen: string;
   textoBusqueda: string;
+  // null = sin devoluciones.
+  estadoDevolucion: EstadoDevolucion | null;
 };
 
 const MEDIO_LABEL: Record<string, string> = {
@@ -68,6 +71,7 @@ export function BuscarVentaFacturarList({
         <div className="flex flex-col">
           {filtradas.map((v) => {
             const badge = v.estadoComprobante ? ESTADO_BADGE[v.estadoComprobante] : null;
+            const badgeDevolucion = v.estadoDevolucion ? BADGE_DEVOLUCION[v.estadoDevolucion] : null;
             return (
               <Link
                 key={v.id}
@@ -81,6 +85,13 @@ export function BuscarVentaFacturarList({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  {badgeDevolucion && (
+                    <span
+                      className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${badgeDevolucion.className}`}
+                    >
+                      {badgeDevolucion.label}
+                    </span>
+                  )}
                   {badge && (
                     <span className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${badge.className}`}>
                       {badge.label}

@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
+import { devolucionesPorVenta } from "../_lib/devoluciones-por-venta";
 import { BuscarVentaList, type VentaRow } from "./_components/buscar-venta-list";
 
 type SkuInfo = SkuPresentacion & {
@@ -71,8 +72,18 @@ export default async function DevolucionesPage({
       .order("fecha", { ascending: false }),
   );
 
-  const ventas: VentaRow[] = ((ventasRaw ?? []) as unknown as VentaFila[]).map((v) => ({
+  // Cuáles de estas ventas ya tuvieron devolución: la lista las marca en
+  // rojo para que la cajera no vuelva a devolver algo ya devuelto (la
+  // base igual lo frena, ver confirmar_devolucion()).
+  const ventasFilas = (ventasRaw ?? []) as unknown as VentaFila[];
+  const estadosDevolucion = await devolucionesPorVenta(
+    supabase,
+    ventasFilas.map((v) => v.id),
+  );
+
+  const ventas: VentaRow[] = ventasFilas.map((v) => ({
     id: v.id,
+    estadoDevolucion: estadosDevolucion.get(v.id) ?? null,
     fecha: v.fecha,
     medioPago: v.medio_pago,
     total: v.total,
