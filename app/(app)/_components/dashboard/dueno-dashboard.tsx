@@ -1,316 +1,84 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
-import {
-  MOTIVO_INVENTARIO_LABEL,
-  type MotivoInventario,
-} from "@/app/(app)/inventarios/_components/estado-inventario-badge";
-import { TIPO_MOVIMIENTO_LABEL, motivoLegible } from "@/lib/movimientos";
-import { fechaOperativa, inicioDelDia, inicioDelMes } from "@/lib/fecha";
-import { MOTIVO_MERMA_LABEL, type MotivoMerma } from "@/app/(app)/mermas/_lib/motivos";
-import { formatoFecha, formatoFechaHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
-import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
-import {
-  calcularCostosQueSubieron,
-  calcularMercaderiaInmovilizada,
-  calcularProductosPorVencer,
-  calcularResumenVentas,
-  inicioDeSemana,
-  topProductosVendidos,
-  type ProductoPorVencer,
-  type ProductoVendido,
-  type ResumenVentas,
-} from "./lib";
+import { traerTodo } from "@/lib/supabase/traer-todo";
+import { fechaOperativa, inicioDelDia } from "@/lib/fecha";
+import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { AutoRefresh } from "../auto-refresh";
-import { AlertRow, Badge, BarRow, Card, EmptyState, Kpi, KpiGrid, SectionHeader, StatRow } from "./ui";
+import { AlertRow, Card, EmptyState, Kpi, KpiGrid, QuickAction, QuickActions, SectionHeader } from "./ui";
 
-type Sucursal = { id: string; nombre: string; es_central: boolean };
+// Inicio del dueño: el estado de hoy y nada más.
+//
+// Hasta el 2026-10-19 esta pantalla era todo el panel -- ventas del día, de
+// la semana y del mes, más vendidos, stock, vencimientos, mermas,
+// diferencias de inventario, precios cargados, particulares y los últimos
+// movimientos, las dos sucursales, todo en una sola página. Era
+// información buena mal ordenada: para encontrar un dato había que
+// recorrer la pantalla entera.
+//
+// Ahora el inicio contesta una sola pregunta -- "¿cómo viene el día y hay
+// algo que necesite que yo haga?" -- y todo lo que es analizar vive en
+// Reportes (Caja y dinero / Productos y stock / Alertas / Balance de IVA).
+// De paso, el inicio dejó de leer movimientos_stock e historial_costos
+// enteros, que es lo que lo hacía lento en el celular.
 
-type SkuInfo = {
-  id: string;
-  nombre: string;
-  stock_minimo: number;
-  costo_actual: number | null;
-  tipo_presentacion: SkuPresentacion["tipo_presentacion"];
-  volumen: number;
-  unidad_volumen: string;
-  unidades_contenidas: number;
-  producto: { nombre: string; marca: { nombre: string } | null; categoria: { nombre: string } | null } | null;
-};
+type Sucursal = { id: string; nombre: string };
 
-type PrecioBaseFila = {
-  sku_id: string;
-  precio_base: number;
-  actualizado_en: string;
-  usuario: { nombre: string } | null;
-};
-
-type PrecioSucursalFila = {
-  sku_id: string;
+type CajaFila = {
   sucursal_id: string;
-  precio_override: number;
-  actualizado_en: string;
-  usuario: { nombre: string } | null;
+  estado: "abierta" | "cerrada";
+  cantidad_tickets: number | null;
 };
 
-type PrecioCargado = {
-  key: string;
-  skuId: string;
-  sucursalNombre: string;
-  tipo: "base" | "excepción";
-  precio: number;
-  margenPct: number | null;
-  actualizadoEn: string;
-  usuarioNombre: string;
-};
-
-type MovimientoReciente = {
+type PedidoCompraReciente = {
   id: string;
-  tipo: string;
-  cantidad: number;
-  fecha: string;
-  motivo: string | null;
-  usuario: { nombre: string } | null;
-  sucursal: { nombre: string } | null;
-  sku: { nombre: string; producto: { nombre: string } | null } | null;
+  numero: string;
+  creador: { nombre: string } | null;
+  pedidos_compra_items: { id: string }[];
 };
-
-function nombreSku(sku: SkuInfo | undefined) {
-  return sku?.producto?.nombre ?? sku?.nombre ?? "SKU eliminado";
-}
-
-// Bloque por sucursal: ventas, top vendidos, stock y vencimientos. Es lo
-// que reemplaza al panel "igual que el del encargado con algunos datos
-// más" (pedido del usuario 2026-09-22) -- acá el dueño ve cada sucursal
-// por separado, sin accesos a tareas operativas (eso vive en los paneles
-// de cada encargado).
-function BloqueSucursal({
-  nombre,
-  caja,
-  resumenVentas,
-  topVendidos,
-  skuPorId,
-  stockTotal,
-  sinStock,
-  bajoMinimo,
-  porVencer,
-}: {
-  nombre: string;
-  caja: { estado: "abierta" | "cerrada" } | undefined;
-  resumenVentas: ResumenVentas;
-  topVendidos: ProductoVendido[];
-  skuPorId: Map<string, SkuInfo>;
-  stockTotal: number;
-  sinStock: number;
-  bajoMinimo: number;
-  porVencer: ProductoPorVencer[];
-}) {
-  return (
-    <div className="flex flex-col gap-[14px]">
-      <div className="flex items-center justify-between">
-        <h3 className="text-[14px] font-semibold text-text">{nombre}</h3>
-        <span
-          className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${
-            caja?.estado === "abierta" ? "bg-ok-bg text-ok" : "bg-bg-2 text-text-2"
-          }`}
-        >
-          Caja {caja ? (caja.estado === "abierta" ? "abierta" : "cerrada") : "sin abrir"}
-        </span>
-      </div>
-
-      <Card title="Ventas">
-        <div className="flex flex-col divide-y divide-[#F1F1F3]">
-          <StatRow label="Vendido hoy" value={formatoMoneda.format(resumenVentas.vendidoHoy)} />
-          <StatRow
-            label="Vendido esta semana"
-            value={formatoMoneda.format(resumenVentas.vendidoSemana)}
-            sub="Lunes a hoy"
-          />
-          <StatRow label="Vendido este mes" value={formatoMoneda.format(resumenVentas.vendidoMes)} />
-          <StatRow
-            label="Ticket promedio"
-            value={formatoMoneda.format(resumenVentas.ticketPromedio)}
-            sub={`${resumenVentas.cantidadTickets} ticket${resumenVentas.cantidadTickets === 1 ? "" : "s"} · últimos 30 días`}
-          />
-        </div>
-      </Card>
-
-      <Card title="Más vendidos · últimos 30 días">
-        {topVendidos.length === 0 ? (
-          <EmptyState title="Sin ventas registradas" sub="Todavía no hay ventas en los últimos 30 días." />
-        ) : (
-          <div className="flex flex-col">
-            {topVendidos.map((p, i) => {
-              const sku = skuPorId.get(p.sku_id);
-              return (
-                <div
-                  key={p.sku_id}
-                  className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[9px] last:border-b-0"
-                >
-                  <div className="flex min-w-0 items-center gap-[9px]">
-                    <span className="w-[16px] shrink-0 text-[11.5px] tabular-nums text-text-3">{i + 1}</span>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-text">{nombreSku(sku)}</p>
-                      <p className="truncate text-[11.5px] text-text-3">
-                        {sku ? [sku.producto?.marca?.nombre, presentacionLabel(sku)].filter(Boolean).join(" — ") : ""}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="shrink-0 text-[13px] font-medium tabular-nums text-text">{p.unidades} u.</p>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
-      <div className="grid grid-cols-1 gap-[14px] sm:grid-cols-2">
-        <Card title="Stock">
-          <div className="flex flex-col divide-y divide-[#F1F1F3]">
-            <StatRow label="Total" value={`${stockTotal} u.`} />
-            <StatRow label="Sin stock" value={sinStock} />
-            <StatRow label="Bajo mínimo" value={bajoMinimo} />
-          </div>
-        </Card>
-
-        <Card title="Próximos a vencer · 30 días">
-          {porVencer.length === 0 ? (
-            <EmptyState title="Sin vencimientos" sub="Nada vence en los próximos 30 días." />
-          ) : (
-            <div className="flex flex-col">
-              {porVencer.slice(0, 6).map((v) => {
-                const sku = skuPorId.get(v.sku_id);
-                return (
-                  <div
-                    key={`${v.sku_id}:${v.fecha_vencimiento}`}
-                    className="flex items-center justify-between gap-3 border-b border-[#F1F1F3] px-[14px] py-[8px] last:border-b-0"
-                  >
-                    <p className="min-w-0 truncate text-[12.5px] text-text">
-                      {nombreSku(sku)} <span className="text-text-3">· {v.unidades} u.</span>
-                    </p>
-                    <Badge color={v.dias_restantes < 0 ? "err" : v.dias_restantes <= 7 ? "warn" : "info"}>
-                      {v.dias_restantes < 0 ? "Vencido" : v.dias_restantes === 0 ? "Hoy" : `${v.dias_restantes} d.`}
-                    </Badge>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      </div>
-    </div>
-  );
-}
 
 export async function DuenoDashboard() {
   const supabase = await createClient();
 
-  const inicioMes = inicioDelMes();
-  const ahora = new Date().getTime();
-  const cutoff30 = new Date(ahora - 30 * 86_400_000).toISOString();
-  const cutoff7 = new Date(ahora - 7 * 86_400_000).toISOString();
   const hoy = fechaOperativa();
   const inicioHoy = inicioDelDia();
-  const inicioSemana = inicioDeSemana(new Date());
 
   const [
     { data: sucursales },
+    { data: cajasHoy },
+    { data: ventasHoy },
     { data: skus },
     { data: stock },
-    { data: movimientos },
-    { data: historial },
-    { data: compras },
-    { data: recepcionesCompra },
     { data: transferenciasEnTransito },
-    { data: pedidosAbiertos },
-    { data: inventariosCerrados30d },
-    { data: cajasHoy },
-    { data: preciosRecientes },
-    { data: preciosSucursalRecientes },
-    { data: ventasHoy },
-    { data: ventasSemana },
-    { data: ventasMes },
-    { data: ventas30 },
     { data: pedidoCompraReciente },
   ] = await Promise.all([
     traerTodo(
-      supabase.from("sucursales").select("id, nombre, es_central").eq("activo", true).order("es_central", { ascending: false }),
+      supabase
+        .from("sucursales")
+        .select("id, nombre")
+        .eq("activo", true)
+        .order("es_central", { ascending: false }),
+    ),
+    traerTodo(
+      supabase.from("cajas").select("sucursal_id, estado, cantidad_tickets").eq("fecha", hoy),
+      ["sucursal_id", "fecha"],
     ),
     traerTodo(
       supabase
-        .from("skus")
-        .select(
-          `id, nombre, stock_minimo, costo_actual, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
-        )
-        .eq("activo", true),
+        .from("ventas")
+        .select("sucursal_id, total")
+        .eq("estado", "confirmada")
+        .gte("fecha", inicioHoy.toISOString()),
     ),
+    traerTodo(supabase.from("skus").select("id, stock_minimo").eq("activo", true)),
     traerTodo(supabase.from("stock_sucursal").select("sku_id, sucursal_id, cantidad"), [
       "sku_id",
       "sucursal_id",
     ]),
-    traerTodo(
-      supabase
-        .from("movimientos_stock")
-        .select(
-          `id, tipo, cantidad, fecha, motivo, sku_id,
-           usuario:usuarios ( nombre ), sucursal:sucursales ( nombre ),
-           sku:skus ( nombre, producto:productos ( nombre ) )`,
-        )
-        .order("fecha", { ascending: false }),
-    ),
-    traerTodo(
-      supabase
-        .from("historial_costos")
-        .select("sku_id, costo_unitario, cantidad, fecha, fecha_vencimiento")
-        .order("fecha", { ascending: false }),
-    ),
-    // Sin filtro de fecha acá: fecha_factura es opcional (compra-form.tsx la
-    // manda null si no se cargó) y un gte() contra una columna null la
-    // descarta en silencio. El recorte por mes se hace después, en JS, con
-    // fallback a la primera recepción cuando no hay fecha_factura.
-    traerTodo(supabase.from("compras").select("id, total, estado, fecha_factura").neq("estado", "borrador")),
-    traerTodo(supabase.from("recepciones_compra").select("compra_id, fecha")),
     traerTodo(supabase.from("transferencias").select("id").eq("estado", "en_transito")),
-    traerTodo(supabase.from("pedidos").select("id").not("estado", "in", "(borrador,cerrado)")),
-    traerTodo(supabase.from("inventarios").select("id").eq("estado", "cerrado").gte("fecha_fin", cutoff30)),
-    traerTodo(
-      supabase
-        .from("cajas")
-        .select("sucursal_id, estado, monto_apertura, cantidad_tickets, ventas ( total )")
-        .eq("fecha", hoy),
-    ),
-    traerTodo(
-      supabase
-        .from("precios")
-        .select("sku_id, precio_base, actualizado_en, usuario:usuarios ( nombre )")
-        .gte("actualizado_en", cutoff7)
-        .order("actualizado_en", { ascending: false }),
-      "sku_id",
-    ),
-    traerTodo(
-      supabase
-        .from("precios_sucursal")
-        .select("sku_id, sucursal_id, precio_override, actualizado_en, usuario:usuarios ( nombre )")
-        .gte("actualizado_en", cutoff7)
-        .order("actualizado_en", { ascending: false }),
-      ["sucursal_id", "sku_id"],
-    ),
-    traerTodo(
-      supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioHoy.toISOString()),
-    ),
-    traerTodo(
-      supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioSemana.toISOString()),
-    ),
-    traerTodo(
-      supabase.from("ventas").select("sucursal_id, total").eq("estado", "confirmada").gte("fecha", inicioMes.toISOString()),
-    ),
-    traerTodo(supabase.from("ventas").select("id, sucursal_id, total").eq("estado", "confirmada").gte("fecha", cutoff30)),
     // "Pedido de la semana": lo que la encargada de Olavarría arma para que
-    // el dueño sepa qué pedirle a cada proveedor (pedidos_compra, bloque 9
-    // de pedidos.md) -- pedido del usuario 2026-09-22, no confundir con
-    // "pedidos" (el flujo interno Laprida -> Olavarría) ni con "compras"
-    // (lo que ya llegó). Se muestra el más reciente que sigue pendiente.
+    // el dueño sepa qué pedirle a cada proveedor (pedidos_compra). No
+    // confundir con "pedidos" (el flujo interno Laprida -> Olavarría) ni
+    // con "compras" (lo que ya llegó).
     supabase
       .from("pedidos_compra")
       .select(
@@ -325,291 +93,50 @@ export async function DuenoDashboard() {
   ]);
 
   const sucursalesList = (sucursales ?? []) as Sucursal[];
-  const skusList = (skus ?? []) as unknown as SkuInfo[];
-  const movimientosList = (movimientos ?? []) as unknown as (MovimientoReciente & { sku_id: string })[];
+  const cajas = (cajasHoy ?? []) as unknown as CajaFila[];
+  const ventas = (ventasHoy ?? []) as { sucursal_id: string; total: number }[];
+  const skusList = (skus ?? []) as { id: string; stock_minimo: number }[];
+  const stockList = (stock ?? []) as { sku_id: string; sucursal_id: string; cantidad: number }[];
+  const pedidoCompra = pedidoCompraReciente as unknown as PedidoCompraReciente | null;
 
-  const skuPorId = new Map(skusList.map((s) => [s.id, s]));
-  const sucursalNombrePorId = new Map(sucursalesList.map((s) => [s.id, s.nombre]));
-  const sucursalCentral = sucursalesList.find((s) => s.es_central);
+  const cajaPorSucursal = new Map(cajas.map((c) => [c.sucursal_id, c]));
 
-  // Items vendidos en los últimos 30 días, para "más vendidos" por
-  // sucursal -- se busca aparte porque depende de los ids de ventas30.
-  const ventas30List = (ventas30 ?? []) as { id: string; sucursal_id: string; total: number }[];
-  const ventaIds = ventas30List.map((v) => v.id);
-  // Por lotes: 30 dias de ventas son miles de ids y un .in() con todos
-  // ellos se pasa del largo maximo de la URL (la request falla entera).
-  const { data: itemsVendidos } = ventaIds.length
-    ? await traerTodoPorLotes(ventaIds, (lote) =>
-        supabase.from("venta_items").select("venta_id, sku_id, cantidad").in("venta_id", lote),
-      )
-    : { data: [] as { venta_id: string; sku_id: string; cantidad: number }[] };
+  const porSucursal = sucursalesList.map((s) => {
+    const suyas = ventas.filter((v) => v.sucursal_id === s.id);
+    return {
+      ...s,
+      caja: cajaPorSucursal.get(s.id),
+      vendido: suyas.reduce((acc, v) => acc + Number(v.total), 0),
+      tickets: suyas.length,
+    };
+  });
 
-  const sucursalPorVentaId = new Map(ventas30List.map((v) => [v.id, v.sucursal_id]));
-  // Los productos particulares (sku_id null) quedan fuera de los rankings por
-  // SKU: no son un producto del catálogo. Se muestran en su propio bloque.
-  const itemsVendidosList = (
-    (itemsVendidos ?? []) as { venta_id: string; sku_id: string | null; cantidad: number }[]
-  ).filter((it): it is { venta_id: string; sku_id: string; cantidad: number } => it.sku_id != null);
+  const vendidoHoy = ventas.reduce((acc, v) => acc + Number(v.total), 0);
+  const ticketsHoy = ventas.length;
+  const ticketPromedio = ticketsHoy > 0 ? vendidoHoy / ticketsHoy : 0;
 
-  // Caja del día + vendido hoy/mes/ticket promedio, por sucursal.
-  type CajaFila = {
-    sucursal_id: string;
-    estado: "abierta" | "cerrada";
-    monto_apertura: number;
-    cantidad_tickets: number | null;
-    ventas: { total: number }[];
-  };
-  const cajaPorSucursal = new Map(
-    ((cajasHoy ?? []) as unknown as CajaFila[]).map((c) => [c.sucursal_id, { estado: c.estado }]),
-  );
-
-  const ventasHoyList = (ventasHoy ?? []) as { sucursal_id: string; total: number }[];
-  const ventasSemanaList = (ventasSemana ?? []) as { sucursal_id: string; total: number }[];
-  const ventasMesList = (ventasMes ?? []) as { sucursal_id: string; total: number }[];
-
-  // Precios cargados en los últimos 7 días: base (Olavarría) + excepciones
-  // por sucursal, en una sola lista ordenada por fecha. Control detectivo
-  // (CLAUDE.md, arquitectura.md 1.11): el encargado de Olavarría carga
-  // precios sin aprobación previa, esto es lo que reemplaza esa aprobación.
-  const margenPct = (precio: number, costo: number | null) =>
-    costo == null || precio <= 0 ? null : ((precio - costo) / precio) * 100;
-
-  const preciosCargados: PrecioCargado[] = [
-    ...((preciosRecientes ?? []) as unknown as PrecioBaseFila[]).map((p) => {
-      const sku = skuPorId.get(p.sku_id);
-      return {
-        key: `base:${p.sku_id}:${p.actualizado_en}`,
-        skuId: p.sku_id,
-        sucursalNombre: sucursalCentral?.nombre ?? "Olavarría",
-        tipo: "base" as const,
-        precio: p.precio_base,
-        margenPct: sku ? margenPct(p.precio_base, sku.costo_actual) : null,
-        actualizadoEn: p.actualizado_en,
-        usuarioNombre: p.usuario?.nombre ?? "—",
-      };
-    }),
-    ...((preciosSucursalRecientes ?? []) as unknown as PrecioSucursalFila[]).map((p) => {
-      const sku = skuPorId.get(p.sku_id);
-      return {
-        key: `excepcion:${p.sucursal_id}:${p.sku_id}:${p.actualizado_en}`,
-        skuId: p.sku_id,
-        sucursalNombre: sucursalNombrePorId.get(p.sucursal_id) ?? "—",
-        tipo: "excepción" as const,
-        precio: p.precio_override,
-        margenPct: sku ? margenPct(p.precio_override, sku.costo_actual) : null,
-        actualizadoEn: p.actualizado_en,
-        usuarioNombre: p.usuario?.nombre ?? "—",
-      };
-    }),
-  ].sort((a, b) => (a.actualizadoEn < b.actualizadoEn ? 1 : -1));
-
+  // Sin stock y bajo mínimo: se cuentan sobre el stock de cada sucursal, no
+  // sobre el total de la empresa -- un SKU que está en cero en Laprida es
+  // un faltante aunque Olavarría tenga el depósito lleno.
   const stockPorSku = new Map<string, Record<string, number>>();
-  for (const fila of (stock ?? []) as { sku_id: string; sucursal_id: string; cantidad: number }[]) {
+  for (const fila of stockList) {
     const porSucursal = stockPorSku.get(fila.sku_id) ?? {};
     porSucursal[fila.sucursal_id] = fila.cantidad;
     stockPorSku.set(fila.sku_id, porSucursal);
   }
-
-  // Stock total por sucursal (solo SKU activos).
-  const stockTotalPorSucursal: Record<string, number> = {};
-  for (const sucursal of sucursalesList) stockTotalPorSucursal[sucursal.id] = 0;
-  for (const sku of skusList) {
-    const porSucursal = stockPorSku.get(sku.id) ?? {};
-    for (const sucursal of sucursalesList) {
-      stockTotalPorSucursal[sucursal.id] += porSucursal[sucursal.id] ?? 0;
-    }
-  }
-  const stockTotal = Object.values(stockTotalPorSucursal).reduce((a, b) => a + b, 0);
-
-  // Bajo mínimo / sin stock, con desglose por sucursal.
-  const bajoMinimoPorSucursal: Record<string, number> = {};
-  const sinStockPorSucursal: Record<string, number> = {};
   const skusSinStock = new Set<string>();
-  for (const sucursal of sucursalesList) {
-    bajoMinimoPorSucursal[sucursal.id] = 0;
-    sinStockPorSucursal[sucursal.id] = 0;
-  }
+  let bajoMinimo = 0;
   for (const sku of skusList) {
     const porSucursal = stockPorSku.get(sku.id) ?? {};
-    for (const sucursal of sucursalesList) {
-      const cantidad = porSucursal[sucursal.id] ?? 0;
-      if (cantidad <= 0) {
-        sinStockPorSucursal[sucursal.id] += 1;
-        skusSinStock.add(sku.id);
-      }
-      if (sku.stock_minimo > 0 && cantidad < sku.stock_minimo) {
-        bajoMinimoPorSucursal[sucursal.id] += 1;
-      }
+    for (const s of sucursalesList) {
+      const cantidad = porSucursal[s.id] ?? 0;
+      if (cantidad <= 0) skusSinStock.add(sku.id);
+      if (sku.stock_minimo > 0 && cantidad < sku.stock_minimo) bajoMinimo += 1;
     }
   }
 
-  // Mercadería inmovilizada: SKU con stock hoy y hace cuánto no se venden
-  // (no "último movimiento" en general -- ver lib.ts, pedido del usuario
-  // 2026-09-22). 90+ días sin venta (o nunca vendido) es el umbral para el
-  // KPI resumen; la lista completa (30-40 productos) se muestra abajo.
-  const ventasParaInmovilizado = movimientosList.filter((m) => m.tipo === "venta");
-  const stockTotalPorSkuList = skusList.map((sku) => {
-    const porSucursal = stockPorSku.get(sku.id) ?? {};
-    return { sku_id: sku.id, stock: Object.values(porSucursal).reduce((a, b) => a + b, 0) };
-  });
-  const mercaderiaInmovilizada = calcularMercaderiaInmovilizada(stockTotalPorSkuList, ventasParaInmovilizado);
-  const inmovilizados90d = mercaderiaInmovilizada.filter((p) => p.dias_sin_venta == null || p.dias_sin_venta >= 90);
-  const inmovilizadosCount = inmovilizados90d.length;
-  const inmovilizadosUnidades = inmovilizados90d.reduce((acc, p) => acc + p.stock, 0);
-
-  // Stock a costo de compra, por categoría (no es precio de venta).
-  const costoPorCategoria = new Map<string, number>();
-  for (const sku of skusList) {
-    if (sku.costo_actual == null) continue;
-    const porSucursal = stockPorSku.get(sku.id) ?? {};
-    const total = Object.values(porSucursal).reduce((a, b) => a + b, 0);
-    if (total <= 0) continue;
-    const categoria = sku.producto?.categoria?.nombre ?? "Sin categoría";
-    costoPorCategoria.set(categoria, (costoPorCategoria.get(categoria) ?? 0) + total * sku.costo_actual);
-  }
-  const barsCategorias = [...costoPorCategoria.entries()].sort((a, b) => b[1] - a[1]);
-  const maxCategoria = barsCategorias[0]?.[1] ?? 0;
-
-  const costosSubieron = calcularCostosQueSubieron(
-    (historial ?? []) as { sku_id: string; costo_unitario: number | null; fecha: string }[],
-  );
-
-  const historialConVencimiento = (historial ?? []) as {
-    sku_id: string;
-    fecha_vencimiento: string | null;
-    fecha: string;
-    cantidad: number;
-  }[];
-  // Stock sumado de las dos sucursales: los lotes de historial_costos no
-  // guardan sucursal (nacen de una recepción, que siempre es la central, o
-  // de una carga inicial), así que acá se estima contra el total de la
-  // empresa. Para el dueño es lo correcto: le importa si algo va a vencer,
-  // no en qué estante está.
-  const stockTotalParaVencimientos = new Map<string, number>(
-    skusList.map((sku) => {
-      const porSucursal = stockPorSku.get(sku.id) ?? {};
-      return [sku.id, Object.values(porSucursal).reduce((acc, c) => acc + c, 0)];
-    }),
-  );
-  const porVencerGlobal = calcularProductosPorVencer(
-    historialConVencimiento,
-    stockTotalParaVencimientos,
-  );
-
-  // "Compras del mes": confirmadas + cerradas cuya fecha efectiva cae en el
-  // mes en curso. fecha_factura manda cuando está cargada; si no, se usa la
-  // fecha de la primera recepción (siempre tiene valor, es default now()).
-  const primeraRecepcionPorCompra = new Map<string, string>();
-  for (const r of (recepcionesCompra ?? []) as { compra_id: string; fecha: string }[]) {
-    const actual = primeraRecepcionPorCompra.get(r.compra_id);
-    if (!actual || r.fecha < actual) primeraRecepcionPorCompra.set(r.compra_id, r.fecha);
-  }
-  const inicioMesTime = inicioMes.getTime();
-  let comprasMesTotal = 0;
-  let comprasMesCount = 0;
-  for (const c of (compras ?? []) as { id: string; total: number; fecha_factura: string | null }[]) {
-    const fechaEfectiva = c.fecha_factura
-      ? new Date(c.fecha_factura).getTime()
-      : primeraRecepcionPorCompra.has(c.id)
-        ? new Date(primeraRecepcionPorCompra.get(c.id)!).getTime()
-        : null;
-    if (fechaEfectiva == null || fechaEfectiva < inicioMesTime) continue;
-    comprasMesTotal += Number(c.total);
-    comprasMesCount += 1;
-  }
-
-  type PedidoCompraReciente = {
-    id: string;
-    numero: string;
-    estado: "pendiente" | "resuelto";
-    creador: { nombre: string } | null;
-    pedidos_compra_items: { id: string }[];
-  };
-  const pedidoCompra = pedidoCompraReciente as unknown as PedidoCompraReciente | null;
-
-  // Diferencias de inventario por motivo, últimos 30 días.
-  const idsInventariosCerrados = (inventariosCerrados30d ?? []).map((i) => i.id);
-  const { data: itemsConDiferencia } = idsInventariosCerrados.length
-    ? await traerTodoPorLotes(idsInventariosCerrados, (lote) =>
-        supabase
-          .from("inventario_items")
-          .select("motivo, diferencia")
-          .in("inventario_id", lote)
-          .neq("diferencia", 0),
-      )
-    : { data: [] as { motivo: MotivoInventario | null; diferencia: number }[] };
-
-  const porMotivo = new Map<string, { count: number; unidades: number }>();
-  for (const item of (itemsConDiferencia ?? []) as { motivo: MotivoInventario | null; diferencia: number }[]) {
-    const motivo = item.motivo ?? "desconocido";
-    const actual = porMotivo.get(motivo) ?? { count: 0, unidades: 0 };
-    actual.count += 1;
-    actual.unidades += Math.abs(item.diferencia);
-    porMotivo.set(motivo, actual);
-  }
-  const barsMotivos = [...porMotivo.entries()].sort((a, b) => b[1].unidades - a[1].unidades);
-  const maxMotivo = barsMotivos[0]?.[1].unidades ?? 0;
-
-  // Mermas por motivo, últimos 30 días (pedido del usuario 2026-09-28). La
-  // merma se carga a mano y es justamente donde se puede esconder un
-  // faltante, así que el dueño tiene que verla sin ir a buscarla: si
-  // aparecen seis roturas de la misma marca cara, se nota acá.
-  const { data: mermas30 } = await traerTodo(
-    supabase.from("mermas").select("cantidad, motivo, sku_id").gte("fecha", cutoff30),
-  );
-
-  const porMotivoMerma = new Map<string, { unidades: number; valor: number }>();
-  for (const merma of (mermas30 ?? []) as {
-    cantidad: number;
-    motivo: MotivoMerma;
-    sku_id: string;
-  }[]) {
-    const actual = porMotivoMerma.get(merma.motivo) ?? { unidades: 0, valor: 0 };
-    actual.unidades += merma.cantidad;
-    // Valuada al costo actual del SKU: es una aproximación (el costo pudo
-    // cambiar desde que se rompió), pero alcanza para dimensionar la
-    // pérdida, que es de lo que se trata la tarjeta.
-    actual.valor += merma.cantidad * (skuPorId.get(merma.sku_id)?.costo_actual ?? 0);
-    porMotivoMerma.set(merma.motivo, actual);
-  }
-  const barsMermas = [...porMotivoMerma.entries()].sort((a, b) => b[1].unidades - a[1].unidades);
-  const maxMerma = barsMermas[0]?.[1].unidades ?? 0;
-  const mermaUnidades = barsMermas.reduce((acc, [, d]) => acc + d.unidades, 0);
-  const mermaValor = barsMermas.reduce((acc, [, d]) => acc + d.valor, 0);
-
-  // Productos particulares vendidos en los ultimos 30 dias (pedido del
-  // usuario 2026-10-07). No tienen SKU, asi que no aparecen en ningun
-  // ranking de productos ni mueven stock: si no se muestran acá, es plata
-  // que entró y no figura en ninguna parte del panel.
-  // Sin tope de filas: con .limit(500) se perdian ventas de particulares y
-  // el total de la tarjeta quedaba por debajo de lo que realmente entro.
-  const { data: particulares30 } = await traerTodo(
-    supabase
-      .from("venta_items")
-      .select("descripcion, cantidad, precio_unitario, venta:ventas ( fecha, estado, sucursal_id )")
-      .is("sku_id", null),
-  );
-
-  const particularesList = (
-    (particulares30 ?? []) as unknown as {
-      descripcion: string | null;
-      cantidad: number;
-      precio_unitario: number;
-      venta: { fecha: string; estado: string; sucursal_id: string } | null;
-    }[]
-  ).filter((p) => p.venta?.estado === "confirmada" && p.venta.fecha >= cutoff30);
-
-  const particularesTotal = particularesList.reduce(
-    (acc, p) => acc + p.precio_unitario * p.cantidad,
-    0,
-  );
-  const particularesUltimos = [...particularesList]
-    .sort((a, b) => (b.venta?.fecha ?? "").localeCompare(a.venta?.fecha ?? ""))
-    .slice(0, 6);
-
-  const movimientosRecientes = movimientosList.slice(0, 8);
-
-  const vendidoHoyTotal = ventasHoyList.reduce((acc, v) => acc + v.total, 0);
+  const enTransito = (transferenciasEnTransito ?? []).length;
+  const sinAbrir = porSucursal.filter((s) => !s.caja);
 
   return (
     <div className="flex flex-col gap-6">
@@ -633,316 +160,100 @@ export async function DuenoDashboard() {
       </Link>
 
       <div>
-        <SectionHeader title="Resumen" />
+        <SectionHeader title="Hoy" meta="Las dos sucursales juntas" />
         <KpiGrid>
-          <Kpi label="Vendido hoy" value={formatoMoneda.format(vendidoHoyTotal)} />
-          <Kpi
-            label="Stock total (unidades)"
-            value={stockTotal}
-            sub={sucursalesList.map((s) => `${s.nombre} ${stockTotalPorSucursal[s.id] ?? 0}`).join(" · ")}
-          />
+          <Kpi label="Vendido hoy" value={formatoMoneda.format(vendidoHoy)} />
+          <Kpi label="Tickets" value={ticketsHoy} />
+          <Kpi label="Ticket promedio" value={formatoMoneda.format(ticketPromedio)} />
           <Kpi
             label="Productos sin stock"
             value={skusSinStock.size}
-            sub={sucursalesList.map((s) => `${s.nombre} ${sinStockPorSucursal[s.id] ?? 0}`).join(" · ")}
-          />
-          <Kpi
-            label="Mercadería inmovilizada"
-            value={inmovilizadosCount}
-            sub={`${inmovilizadosUnidades} unidades · 90+ días sin venderse`}
+            sub={`${bajoMinimo} bajo mínimo`}
           />
         </KpiGrid>
-
-        {((transferenciasEnTransito ?? []).length > 0 || costosSubieron.length > 0) && (
-          <div className="mt-3 flex flex-col gap-[8px]">
-            {(transferenciasEnTransito ?? []).length > 0 && (
-              <AlertRow
-                color="info"
-                title={`${(transferenciasEnTransito ?? []).length} transferencia${(transferenciasEnTransito ?? []).length === 1 ? "" : "s"} en tránsito`}
-                href="/pedidos"
-              />
-            )}
-            {costosSubieron.length > 0 && (
-              <AlertRow
-                color="orange"
-                title={`${costosSubieron.length} costo${costosSubieron.length === 1 ? "" : "s"} aumentaron`}
-                sub="Últimos 30 días — revisar precios de venta"
-              />
-            )}
-          </div>
-        )}
       </div>
 
       <div>
-        <SectionHeader title="Mercadería inmovilizada" meta="Ordenado por hace cuánto no se vende" />
-        <Card title={`${mercaderiaInmovilizada.length} productos con stock`}>
-          {mercaderiaInmovilizada.length === 0 ? (
-            <EmptyState title="Sin productos inmovilizados" sub="Todo el stock activo tuvo ventas recientes." />
+        <SectionHeader title="Caja de hoy" />
+        <Card
+          title="Por sucursal"
+          action={
+            <Link href="/reportes/caja" className="whitespace-nowrap text-[12.5px] font-medium text-moe hover:underline">
+              Ver el reporte →
+            </Link>
+          }
+        >
+          {porSucursal.length === 0 ? (
+            <EmptyState title="Sin sucursales activas" sub="No hay ninguna sucursal para mostrar." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-[13px]">
-                <thead>
-                  <tr>
-                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
-                      Producto
-                    </th>
-                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
-                      Stock
-                    </th>
-                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium text-text-2">
-                      Última venta
-                    </th>
-                    <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
-                      Sin venderse
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mercaderiaInmovilizada.map((p) => {
-                    const sku = skuPorId.get(p.sku_id);
-                    return (
-                      <tr key={p.sku_id} className="border-b border-[#F1F1F3] last:border-b-0">
-                        <td className="px-[14px] py-[8px] align-middle">
-                          <p className="font-medium text-text">{nombreSku(sku)}</p>
-                          <p className="text-[11.5px] text-text-3">
-                            {sku
-                              ? [sku.producto?.marca?.nombre, presentacionLabel(sku)].filter(Boolean).join(" — ")
-                              : ""}
-                          </p>
-                        </td>
-                        <td className="px-[14px] py-[8px] text-right align-middle tabular-nums text-text-2">
-                          {p.stock}
-                        </td>
-                        <td className="px-[14px] py-[8px] align-middle text-text-2">
-                          {p.ultima_venta ? formatoFecha.format(new Date(p.ultima_venta)) : "Nunca se vendió"}
-                        </td>
-                        <td className="px-[14px] py-[8px] text-right align-middle">
-                          <Badge color={p.dias_sin_venta == null || p.dias_sin_venta >= 90 ? "err" : "warn"}>
-                            {p.dias_sin_venta == null ? "—" : `${p.dias_sin_venta} días`}
-                          </Badge>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="flex flex-col divide-y divide-[#F1F1F3]">
+              {porSucursal.map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-3 px-[14px] py-[11px]">
+                  <div className="min-w-0">
+                    <p className="text-[13.5px] font-medium text-text">{s.nombre}</p>
+                    <p className="text-[11.5px] text-text-3">
+                      {s.tickets} ticket{s.tickets === 1 ? "" : "s"} hoy
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <span
+                      className={`rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${
+                        s.caja?.estado === "abierta" ? "bg-ok-bg text-ok" : "bg-bg-2 text-text-2"
+                      }`}
+                    >
+                      Caja {s.caja ? (s.caja.estado === "abierta" ? "abierta" : "cerrada") : "sin abrir"}
+                    </span>
+                    <span className="text-[14px] font-medium tabular-nums text-text">
+                      {formatoMoneda.format(s.vendido)}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </Card>
       </div>
 
-      <div>
-        <SectionHeader title="Por sucursal" />
-        <div className="grid grid-cols-1 gap-[20px] lg:grid-cols-2">
-          {sucursalesList.map((s) => {
-            const itemsSucursal = itemsVendidosList.filter((it) => sucursalPorVentaId.get(it.venta_id) === s.id);
-            return (
-              <BloqueSucursal
-                key={s.id}
-                nombre={s.nombre}
-                caja={cajaPorSucursal.get(s.id)}
-                resumenVentas={calcularResumenVentas(
-                  ventasHoyList.filter((v) => v.sucursal_id === s.id),
-                  ventasSemanaList.filter((v) => v.sucursal_id === s.id),
-                  ventasMesList.filter((v) => v.sucursal_id === s.id),
-                  ventas30List.filter((v) => v.sucursal_id === s.id),
-                )}
-                topVendidos={topProductosVendidos(itemsSucursal)}
-                skuPorId={skuPorId}
-                stockTotal={stockTotalPorSucursal[s.id] ?? 0}
-                sinStock={sinStockPorSucursal[s.id] ?? 0}
-                bajoMinimo={bajoMinimoPorSucursal[s.id] ?? 0}
-                porVencer={porVencerGlobal.filter((v) => (stockPorSku.get(v.sku_id)?.[s.id] ?? 0) > 0)}
+      {(enTransito > 0 || sinAbrir.length > 0) && (
+        <div>
+          <SectionHeader title="Para mirar" meta="Lo urgente del día; el resto está en Alertas" />
+          <div className="flex flex-col gap-[8px]">
+            {sinAbrir.length > 0 && (
+              <AlertRow
+                color="warn"
+                title={`${sinAbrir.length === 1 ? "Una sucursal" : `${sinAbrir.length} sucursales`} todavía no abrió la caja`}
+                sub={sinAbrir.map((s) => s.nombre).join(" · ")}
+                href="/reportes/caja"
               />
-            );
-          })}
+            )}
+            {enTransito > 0 && (
+              <AlertRow
+                color="info"
+                title={`${enTransito} transferencia${enTransito === 1 ? "" : "s"} en tránsito`}
+                sub="Mercadería que salió de Olavarría y Laprida todavía no recibió"
+                href="/pedidos"
+              />
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div>
-        <SectionHeader title="Auditoría y costos" meta="Solo vos ves esta sección" />
-
-        <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-[1.55fr_1fr]">
-          <Card title="Dónde está la plata · a costo de compra">
-            {barsCategorias.length === 0 ? (
-              <EmptyState
-                title="Todavía no hay costos cargados"
-                sub="Se completa a medida que se reciben compras y se carga costo_actual por SKU."
-              />
-            ) : (
-              <div className="flex flex-col gap-[9px] p-[14px]">
-                {barsCategorias.map(([categoria, valor]) => (
-                  <BarRow
-                    key={categoria}
-                    label={categoria}
-                    value={valor}
-                    max={maxCategoria}
-                    display={formatoMoneda.format(valor)}
-                  />
-                ))}
-                <p className="pt-[4px] text-[11.5px] text-text-3">
-                  Costo de compra (costo_actual × stock), no precio de venta.
-                </p>
-              </div>
-            )}
-          </Card>
-
-          <Card title="Actividad">
-            <div className="flex flex-col divide-y divide-[#F1F1F3]">
-              <StatRow
-                label="Compras del mes"
-                value={formatoMoneda.format(comprasMesTotal)}
-                sub={`${comprasMesCount} compra${comprasMesCount === 1 ? "" : "s"}`}
-              />
-              <StatRow label="Pedidos abiertos" value={(pedidosAbiertos ?? []).length} />
-              <StatRow label="Transferencias en tránsito" value={(transferenciasEnTransito ?? []).length} />
-            </div>
-          </Card>
-        </div>
-
-        <div className="mt-[14px] grid grid-cols-1 gap-[14px] lg:grid-cols-2">
-          <Card title="Diferencias de inventario por motivo · últimos 30 días">
-            {barsMotivos.length === 0 ? (
-              <EmptyState
-                title="Sin diferencias en los últimos 30 días"
-                sub="Los inventarios cerrados en este período no encontraron faltantes ni sobrantes."
-              />
-            ) : (
-              <div className="flex flex-col gap-[9px] p-[14px]">
-                {barsMotivos.map(([motivo, datos]) => (
-                  <BarRow
-                    key={motivo}
-                    tone="loss"
-                    label={MOTIVO_INVENTARIO_LABEL[motivo as MotivoInventario] ?? motivo}
-                    value={datos.unidades}
-                    max={maxMotivo}
-                    display={`${datos.unidades} u. · ${datos.count} ajuste${datos.count === 1 ? "" : "s"}`}
-                  />
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card title="Mermas por motivo · últimos 30 días">
-            {barsMermas.length === 0 ? (
-              <EmptyState
-                title="Sin mermas registradas en los últimos 30 días"
-                sub="Acá aparece lo que se rompió, se venció o se consumió adentro del local, y cuánto pesó cada motivo."
-              />
-            ) : (
-              <div className="flex flex-col gap-[9px] p-[14px]">
-                {barsMermas.map(([motivo, datos]) => (
-                  <BarRow
-                    key={motivo}
-                    tone="loss"
-                    label={MOTIVO_MERMA_LABEL[motivo as MotivoMerma] ?? motivo}
-                    value={datos.unidades}
-                    max={maxMerma}
-                    display={`${datos.unidades} u. · ${formatoMoneda.format(datos.valor)}`}
-                  />
-                ))}
-                <p className="mt-[3px] border-t border-border pt-[8px] text-[12.5px] text-text-2">
-                  Total:{" "}
-                  <b className="font-medium tabular-nums text-text">{mermaUnidades} unidades</b> ·{" "}
-                  {formatoMoneda.format(mermaValor)} a costo.{" "}
-                  <Link href="/mermas" className="font-medium text-moe hover:underline">
-                    Ver el detalle
-                  </Link>
-                </p>
-              </div>
-            )}
-          </Card>
-
-          <Card title="Productos particulares · últimos 30 días">
-            {particularesList.length === 0 ? (
-              <EmptyState
-                title="Sin productos particulares vendidos"
-                sub="Acá aparece lo que se cobró sin estar en el catálogo: picadas, canastas, cosas mixtas."
-              />
-            ) : (
-              <div className="flex flex-col gap-[7px] p-[14px]">
-                {particularesUltimos.map((p, i) => (
-                  <div key={i} className="flex items-baseline justify-between gap-3 text-[13px]">
-                    <span className="min-w-0 truncate text-text-2">
-                      {p.cantidad > 1 && <span className="tabular-nums">{p.cantidad}× </span>}
-                      {p.descripcion}
-                    </span>
-                    <span className="shrink-0 tabular-nums text-text">
-                      {formatoMoneda.format(p.precio_unitario * p.cantidad)}
-                    </span>
-                  </div>
-                ))}
-                <p className="mt-[3px] border-t border-border pt-[8px] text-[12.5px] text-text-2">
-                  Total:{" "}
-                  <b className="font-medium tabular-nums text-text">
-                    {formatoMoneda.format(particularesTotal)}
-                  </b>{" "}
-                  en {particularesList.length}{" "}
-                  {particularesList.length === 1 ? "venta" : "ventas"}.{" "}
-                  <Link href="/reportes/particulares" className="font-medium text-moe hover:underline">
-                    Ver el detalle
-                  </Link>
-                </p>
-              </div>
-            )}
-          </Card>
-
-          <Card title="Precios cargados · últimos 7 días">
-            {preciosCargados.length === 0 ? (
-              <EmptyState
-                title="Sin precios cargados en los últimos 7 días"
-                sub="Control detectivo: acá aparece quién cargó cada precio, para revisar sin tener que aprobar antes."
-              />
-            ) : (
-              <div className="flex flex-col divide-y divide-[#F1F1F3]">
-                {preciosCargados.slice(0, 8).map((p) => {
-                  const sku = skuPorId.get(p.skuId);
-                  return (
-                    <div key={p.key} className="flex flex-col gap-[3px] px-[14px] py-[9px]">
-                      <div className="flex items-baseline justify-between gap-2">
-                        <p className="min-w-0 truncate text-[13px] font-medium text-text">{nombreSku(sku)}</p>
-                        <p className="shrink-0 tabular-nums text-text">{formatoMoneda.format(p.precio)}</p>
-                      </div>
-                      <p className="text-[11.5px] text-text-3">
-                        {p.sucursalNombre}
-                        {p.tipo === "excepción" ? " · excepción manual" : ""} · Margen{" "}
-                        {p.margenPct == null ? "—" : `${p.margenPct.toFixed(0)}%`} · {p.usuarioNombre}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
-        </div>
-
-        <div className="mt-[14px]">
-          <Card title="Últimos movimientos del sistema">
-            {movimientosRecientes.length === 0 ? (
-              <EmptyState title="Todavía no hay movimientos" sub="Van a aparecer acá a medida que se opere el sistema." />
-            ) : (
-              <div className="flex flex-col divide-y divide-[#F1F1F3]">
-                {movimientosRecientes.map((m) => (
-                  <div key={m.id} className="flex flex-col gap-[3px] px-[14px] py-[9px] sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-medium text-text">{TIPO_MOVIMIENTO_LABEL[m.tipo] ?? m.tipo}</p>
-                      <p className="truncate text-[11.5px] text-text-3">
-                        {m.sku?.producto?.nombre ?? m.sku?.nombre}
-                        {" · "}
-                        {m.cantidad > 0 ? "+" : ""}
-                        {m.cantidad}
-                        {motivoLegible(m.motivo, m.tipo) ? ` — ${motivoLegible(m.motivo, m.tipo)}` : ""}
-                        {" · "}
-                        {m.sucursal?.nombre} · {m.usuario?.nombre}
-                      </p>
-                    </div>
-                    <p className="shrink-0 text-[11.5px] text-text-3">{formatoFechaHora.format(new Date(m.fecha))}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
+        <SectionHeader title="Reportes" meta="Todo lo que antes estaba en esta pantalla" />
+        <QuickActions>
+          <QuickAction
+            href="/reportes/caja"
+            label="Caja y dinero"
+            sub="Ventas, medios de pago, cierres, egresos, devoluciones y particulares"
+          />
+          <QuickAction
+            href="/reportes/stock"
+            label="Productos y stock"
+            sub="Más vendidos, vencimientos, inmovilizado, mermas, costos y precios"
+          />
+          <QuickAction href="/reportes/alertas" label="Alertas" sub="Lo que necesita una decisión" />
+          <QuickAction href="/reportes/iva" label="Balance de IVA" sub="Ventas y compras del mes" />
+        </QuickActions>
       </div>
     </div>
   );

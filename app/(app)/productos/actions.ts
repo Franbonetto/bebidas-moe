@@ -716,7 +716,7 @@ export async function ajustarStockSku(
   revalidatePath("/productos");
   revalidatePath(`/productos/${skuId}/editar`);
   revalidatePath("/vender");
-  revalidatePath("/alertas");
+  revalidatePath("/reportes/alertas");
   return {
     ok: true,
     stockAnterior: movimiento.stock_anterior,

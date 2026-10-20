@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogoutButton } from "./logout-button";
 
-type Seccion = "operacion" | "catalogo" | "personas";
+type Seccion = "reportes" | "operacion" | "catalogo" | "personas";
 
 type NavItem = {
   label: string;
@@ -19,6 +19,7 @@ type NavItem = {
 };
 
 const SECCION_LABEL: Record<Seccion, string> = {
+  reportes: "REPORTES",
   operacion: "OPERACIÓN",
   catalogo: "CATÁLOGO",
   personas: "PERSONAS",
@@ -34,7 +35,12 @@ const SECCION_LABEL: Record<Seccion, string> = {
 // encargado Olavarría, CLAUDE.md), y ni siquiera se muestran inertes para
 // el resto -- no deben saber que existen.
 // Agrupación pedida por el usuario (ref. Tiqora/Minimercado Abigail):
-// Inicio suelto arriba, después Operación, Catálogo y Personas.
+// Inicio suelto arriba, después Reportes, Operación, Catálogo y Personas.
+// Reportes quedó segundo el 2026-10-19, cuando todo lo que era "mirar" se
+// separó de lo que es "operar": antes el inicio del dueño era una sola
+// pantalla con todos los datos y las pantallas de análisis estaban
+// repartidas en Catálogo ("Reportes" apuntaba a /alertas, y Balance de IVA
+// y Particulares colgaban al lado de Productos y Precios).
 // Orden y nombres de Operación pedidos por el usuario 2026-09-28: punto de
 // venta, envíos, merma, pedido semanal, entrada de mercadería -- es el
 // orden en que se usan en el mostrador, de lo más frecuente a lo más
@@ -42,6 +48,39 @@ const SECCION_LABEL: Record<Seccion, string> = {
 // "Entrada de mercadería", que es como lo nombran ellos.
 const NAV: NavItem[] = [
   { label: "Inicio", href: "/", icon: "M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" },
+  {
+    label: "Caja y dinero",
+    href: "/reportes/caja",
+    seccion: "reportes",
+    // Ventas, medios de pago, cierres de caja, egresos, devoluciones y
+    // particulares. Rentabilidad y plata de la empresa: solo el dueño.
+    soloDueno: true,
+    icon: "M2 8h20v9a2 2 0 01-2 2H4a2 2 0 01-2-2zM2 8l2.5-4h15L22 8M15.5 13.5h3",
+  },
+  {
+    label: "Productos y stock",
+    href: "/reportes/stock",
+    seccion: "reportes",
+    soloDueno: true,
+    icon: "M9 11H3v10h6zM15 3H9v18h6zM21 7h-6v14h6z",
+  },
+  {
+    label: "Alertas",
+    href: "/reportes/alertas",
+    seccion: "reportes",
+    // La única de Reportes que ven los tres roles: cada uno ve las alertas
+    // que le tocan (arquitectura.md 1.12).
+    icon: "M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0",
+  },
+  {
+    label: "Balance de IVA",
+    href: "/reportes/iva",
+    seccion: "reportes",
+    // Rentabilidad global: solo el dueño (CLAUDE.md, matriz de roles). El
+    // encargado de Olavarría ve costos y márgenes, no el resultado fiscal.
+    soloDueno: true,
+    icon: "M19 5L5 19M6.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM17.5 20a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
+  },
   {
     label: "Punto de venta",
     href: "/vender",
@@ -118,30 +157,6 @@ const NAV: NavItem[] = [
     icon: "M8 21h8M12 17v4M4 4h16v10a4 4 0 01-4 4H8a4 4 0 01-4-4z",
   },
   {
-    label: "Reportes",
-    href: "/alertas",
-    seccion: "catalogo",
-    icon: "M9 11H3v10h6zM15 3H9v18h6zM21 7h-6v14h6z",
-  },
-  {
-    label: "Balance de IVA",
-    href: "/reportes/iva",
-    seccion: "catalogo",
-    // Rentabilidad global: solo el dueño (CLAUDE.md, matriz de roles). El
-    // encargado de Olavarría ve costos y márgenes, no el resultado fiscal.
-    soloDueno: true,
-    icon: "M19 5L5 19M6.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM17.5 20a2.5 2.5 0 100-5 2.5 2.5 0 000 5z",
-  },
-  {
-    label: "Particulares",
-    href: "/reportes/particulares",
-    seccion: "catalogo",
-    // Lo que se cobró sin estar en el catálogo. Vive bajo /reportes, que es
-    // solo del dueño (ver reportes/layout.tsx).
-    soloDueno: true,
-    icon: "M12 2l2.4 7.4H22l-6 4.4 2.3 7.2-6.3-4.6-6.3 4.6L7.9 13.8 2 9.4h7.6z",
-  },
-  {
     label: "Usuarios",
     href: "/usuarios",
     seccion: "catalogo",
@@ -173,7 +188,9 @@ const ROL_LABEL: Record<string, string> = {
 const STORAGE_SECCIONES = "moe:menu-secciones";
 
 function esSeccion(valor: unknown): valor is Seccion {
-  return valor === "operacion" || valor === "catalogo" || valor === "personas";
+  return (
+    valor === "reportes" || valor === "operacion" || valor === "catalogo" || valor === "personas"
+  );
 }
 
 const oyentes = new Set<() => void>();
@@ -320,7 +337,7 @@ export function Sidebar({
       (!item.soloDueno || rol === "dueno"),
   );
   const inicio = nav.filter((item) => !item.seccion);
-  const secciones = (["operacion", "catalogo", "personas"] as const)
+  const secciones = (["reportes", "operacion", "catalogo", "personas"] as const)
     .map((seccion) => ({ seccion, items: nav.filter((item) => item.seccion === seccion) }))
     .filter((s) => s.items.length > 0);
 

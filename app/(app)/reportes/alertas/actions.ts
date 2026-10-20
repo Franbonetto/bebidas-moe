@@ -20,6 +20,6 @@ export async function guardarPreferenciaAlerta(
 
   if (error) return { error: error.message };
 
-  revalidatePath("/alertas");
+  revalidatePath("/reportes/alertas");
   return { ok: true };
 }

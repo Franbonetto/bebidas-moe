@@ -1,20 +1,14 @@
 import type { ReactNode } from "react";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { esDueno } from "@/lib/permisos";
 
-// Todo /reportes es del dueño. El balance de IVA es rentabilidad global
-// (CLAUDE.md, matriz de roles: "Rentabilidad global: sí / no / no"), así que
-// ni el encargado de Olavarría entra -- él ve costos y márgenes, no el
-// resultado fiscal de la empresa. La base lo vuelve a chequear adentro de
-// cada función (ve_rentabilidad_global()): esto es solo para no mostrar una
-// pantalla que después va a fallar.
-export default async function ReportesLayout({ children }: { children: ReactNode }) {
-  const supabase = await createClient();
-
-  if (!(await esDueno(supabase))) {
-    redirect("/");
-  }
-
+// Reportes es la categoría de todo lo que se mira sin operar: caja y
+// dinero, productos y stock, alertas y el balance de IVA
+// (reorganización pedida por el usuario 2026-10-19).
+//
+// El permiso NO se decide acá. Antes este layout redirigía a cualquiera
+// que no fuera el dueño, porque /reportes solo tenía el balance de IVA
+// (rentabilidad global, CLAUDE.md). Ahora /reportes/alertas vive adentro y
+// esa pantalla es de los tres roles, así que cada página pide lo que
+// necesita con exigirDueno() -- ver _lib/permiso.ts.
+export default function ReportesLayout({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }

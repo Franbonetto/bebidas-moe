@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { TIPO_COMPROBANTE_LABEL, type TipoComprobante } from "@/app/(app)/compras/_lib/comprobante";
 import { BarRow, Card, EmptyState, Kpi, KpiGrid, SectionHeader } from "../../_components/dashboard/ui";
+import { exigirDueno } from "../_lib/permiso";
 
 // Una fila por mes, tal como la devuelve reporte_iva_mensual()
 // (20260928090000_iva_compras_balance.sql).
@@ -98,6 +99,9 @@ export default async function BalanceIvaPage({
 }) {
   const { mes: mesParam } = await searchParams;
   const supabase = await createClient();
+  // El layout de /reportes ya no filtra por rol (ahí vive también Alertas,
+  // que es de los tres roles): el balance de IVA pide el permiso acá.
+  await exigirDueno(supabase);
 
   const hoy = new Date();
   const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
