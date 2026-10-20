@@ -9,6 +9,7 @@ import forge from "node-forge";
 import { XMLParser } from "fast-xml-parser";
 import { createClient } from "@/lib/supabase/server";
 import { configArca } from "./env";
+import { postSoap } from "./http";
 
 // Margen de seguridad: si al TA cacheado le quedan menos de 5 minutos de
 // vida, se pide uno nuevo en vez de arriesgarse a que expire a mitad de
@@ -83,25 +84,18 @@ async function loginCms(
   // Mismo criterio que callWsfe(): tope de espera para no quedar colgado
   // si WSAA no contesta. El login pasa una vez cada 12hs (el TA se
   // cachea), pero cuando toca, toca en medio de una venta.
-  let respuesta: Response;
-  try {
-    respuesta = await fetch(urls.wsaa, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/xml; charset=utf-8",
-        SOAPAction: "",
-      },
-      body: soapEnvelope,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch (err) {
-    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
-      throw new Error(`WSAA no respondió en ${TIMEOUT_MS / 1000} segundos`);
-    }
-    throw err;
-  }
+  //
+  // Va por postSoap() y no por fetch() para poder acotar los cifrados
+  // del handshake TLS -- ver lib/arca/http.ts para el por qué.
+  const respuesta = await postSoap({
+    url: urls.wsaa,
+    cuerpo: soapEnvelope,
+    soapAction: "",
+    timeoutMs: TIMEOUT_MS,
+    nombre: "WSAA",
+  });
 
-  const textoRespuesta = await respuesta.text();
+  const textoRespuesta = respuesta.texto;
 
   if (!respuesta.ok) {
     throw new Error(`WSAA respondió ${respuesta.status}: ${textoRespuesta}`);

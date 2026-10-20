@@ -9,6 +9,7 @@
 
 import { XMLParser } from "fast-xml-parser";
 import { configArca } from "./env";
+import { postSoap } from "./http";
 import { getTA } from "./wsaa";
 import { fechaOperativa } from "@/lib/fecha";
 
@@ -47,25 +48,20 @@ async function callWsfe(metodo: string, cuerpoInterno: string): Promise<any> {
   // 2026-10-19): es mejor cortar a los 15s, dejar el comprobante en
   // `error` y que la venta siga, que trabar la caja. El reintento manual
   // desde /vender/facturar sigue estando.
-  let respuesta: Response;
-  try {
-    respuesta = await fetch(urls.wsfe, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/xml; charset=utf-8",
-        SOAPAction: `http://ar.gov.afip.dif.FEV1/${metodo}`,
-      },
-      body: soapEnvelope,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch (err) {
-    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
-      throw new Error(`WSFEv1 (${metodo}) no respondió en ${TIMEOUT_MS / 1000} segundos`);
-    }
-    throw err;
-  }
+  //
+  // Va por postSoap() y no por fetch() para poder acotar los cifrados del
+  // handshake TLS: servicios1.afip.gov.ar (producción) elige un cifrado
+  // con clave DH chica si uno lo deja, y el handshake muere. Ver
+  // lib/arca/http.ts.
+  const respuesta = await postSoap({
+    url: urls.wsfe,
+    cuerpo: soapEnvelope,
+    soapAction: `http://ar.gov.afip.dif.FEV1/${metodo}`,
+    timeoutMs: TIMEOUT_MS,
+    nombre: `WSFEv1 (${metodo})`,
+  });
 
-  const texto = await respuesta.text();
+  const texto = respuesta.texto;
   if (!respuesta.ok) {
     throw new Error(`WSFEv1 (${metodo}) respondió ${respuesta.status}: ${texto}`);
   }
