@@ -2,8 +2,8 @@
 // como CMS/PKCS#7 con node-forge (la clave privada nunca sale de este
 // proceso, CLAUDE.md regla ARCA) y hace loginCms directo contra ARCA.
 // El Token+Sign resultante se cachea 12hs en arca_ta_cache (bloque
-// arca_leer_ta/arca_guardar_ta de la migración) para no re-firmar en
-// cada venta.
+// arca_leer_ta/arca_guardar_ta de la migración), por ambiente, para no
+// re-firmar en cada venta.
 
 import forge from "node-forge";
 import { XMLParser } from "fast-xml-parser";
@@ -141,8 +141,14 @@ async function loginCms(
 // pidiendo uno nuevo (TRA + firma local + loginCms) si no.
 export async function getTA(servicio: string): Promise<TicketAcceso> {
   const supabase = await createClient();
+  // El TA es de un ambiente, no del servicio nada más: el token de
+  // homologación no sirve contra los servidores reales de ARCA. Por eso
+  // el cache se indexa por (entorno, servicio) desde el paso a
+  // producción -- ver 20261020090000_arca_ta_cache_entorno.sql.
+  const { entorno } = configArca();
 
   const { data: cacheRows, error: errorLectura } = await supabase.rpc("arca_leer_ta", {
+    p_entorno: entorno,
     p_servicio: servicio,
   });
   if (errorLectura) {
@@ -159,6 +165,7 @@ export async function getTA(servicio: string): Promise<TicketAcceso> {
   const { token, sign, expirationTime } = await loginCms(cms);
 
   const { error: errorGuardado } = await supabase.rpc("arca_guardar_ta", {
+    p_entorno: entorno,
     p_servicio: servicio,
     p_token: token,
     p_sign: sign,

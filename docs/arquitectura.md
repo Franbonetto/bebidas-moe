@@ -353,13 +353,21 @@ para el detalle completo). Mientras dure la convivencia de ambos sistemas puede 
 **doble carga** en las ventas que requieran factura: el stock lo lleva este sistema, la
 factura la emite el otro, hasta que este bloque esté validado en homologación.
 
+**Desde el 2026-10-20 este sistema factura en producción.** El circuito se validó en
+homologación el 2026-09-19 y el cruce de ambiente está documentado en
+`scripts/paso-arca-produccion-2026-10-20/README.md`. Toda factura que emite el sistema
+es real: no se borra un comprobante, se lo anula con nota de crédito (pendiente).
+
 - Bebidas Moe es **Responsable Inscripto**.
 
 ### Decisiones cerradas para el bloque de facturación ARCA (2026-09-05)
 
-- **Ambiente:** arranca en **homologación**, con el certificado personal de Francisco ya
-  generado y vinculado al servicio WSFE. La migración al certificado de producción del
-  cliente es un paso manual posterior, cuando el circuito esté validado.
+- **Ambiente:** arrancó en **homologación**, con el certificado personal de Francisco, y
+  pasó a **producción el 2026-10-20** con el certificado de producción y el punto de venta
+  real dados de alta a mano en el portal de ARCA. El ambiente es la variable de entorno
+  `ARCA_ENTORNO`, nunca algo hardcodeado; el cache del Ticket de Acceso de WSAA está
+  indexado por `(entorno, servicio)` para que el token de un ambiente no se use contra el
+  otro, y `/vender/facturar/configuracion` muestra en qué ambiente está el sistema.
 - **Comprobantes soportados:** Factura A y Factura B únicamente (no C).
 - **Disparo:** manual, con un botón **"Facturar"** separado de "Confirmar venta", en el
   detalle de la venta ya confirmada. Una venta puede quedar sin facturar indefinidamente

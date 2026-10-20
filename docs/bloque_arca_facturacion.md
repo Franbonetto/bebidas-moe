@@ -9,17 +9,30 @@ este bloque. Leer primero `CLAUDE.md` y `docs/arquitectura.md` como siempre.
 
 Permitir que, desde el POS, una venta ya confirmada pueda facturarse
 fiscalmente contra ARCA (ex AFIP), obteniendo CAE y quedando en condiciones
-legales de entregarse al cliente. Arrancamos en **ambiente de homologación**
-con el certificado personal de Francisco; la migración al certificado de
-producción del cliente es un paso posterior (ya se tiene la clave fiscal del
-dueño para generarlo cuando corresponda).
+legales de entregarse al cliente.
+
+**EN PRODUCCIÓN DESDE 2026-10-20.** Arrancó en homologación con el
+certificado personal de Francisco y el circuito se validó ahí el
+2026-09-19 (ver sección 8). El cruce de ambiente —certificado de
+producción, punto de venta real, limpieza de los comprobantes de prueba—
+está documentado paso por paso en
+`scripts/paso-arca-produccion-2026-10-20/README.md`. **Desde ahora toda
+factura que emite el sistema es real:** no se borra un comprobante, se lo
+anula con nota de crédito (que todavía no existe, ver sección 7).
 
 ---
 
 ## 2. Decisiones de negocio ya cerradas
 
-- **Ambiente:** homologación primero. No tocar producción hasta validar el
-  circuito completo con comprobantes de prueba.
+- **Ambiente:** **producción desde 2026-10-20**. Arrancó en homologación y
+  no se pasó a producción hasta validar el circuito completo con
+  comprobantes de prueba (sección 8). El ambiente es una variable de
+  entorno (`ARCA_ENTORNO`), nunca algo hardcodeado, y desde el cruce el
+  cache del Ticket de Acceso está indexado por `(entorno, servicio)`
+  —`20261020090000_arca_ta_cache_entorno.sql`— para que volver a
+  homologación a probar algo no envenene el token de producción. La
+  pantalla `/vender/facturar/configuracion` muestra en qué ambiente está
+  el sistema: no hay que deducirlo de las variables de entorno.
 - **Comprobantes soportados:** Factura A y Factura B (no C por ahora).
 - **Disparo:** manual **+ automático para lo que no es efectivo
   (actualizado 2026-10-19)**. La venta se sigue confirmando igual en el POS
@@ -179,16 +192,19 @@ Reglas:
   tampoco existe todavía).
 - Envío automático del comprobante por mail/WhatsApp.
 - Controlador fiscal físico / impresora fiscal.
-- Migración al certificado de producción del cliente (paso manual
-  posterior, cuando el circuito esté validado en homologación).
-- **Limpiar `comprobantes_fiscales`/`comprobantes_fiscales_items` de datos
-  de homologación antes de arrancar en producción.** Verificado 2026-09-19:
+- ~~Migración al certificado de producción del cliente~~ — **hecho
+  2026-10-20**, ver `scripts/paso-arca-produccion-2026-10-20/`.
+- ~~Limpiar `comprobantes_fiscales`/`comprobantes_fiscales_items` de datos
+  de homologación antes de arrancar en producción~~ — **hecho 2026-10-20**
+  (`02-limpieza.sql`). El motivo, por si hace falta entenderlo después:
   homologación de ARCA resetea su propio historial de tanto en tanto (nada
   que ver con nuestro código, que siempre pide el último autorizado antes
-  de numerar), y eso deja filas locales viejas apuntando a CAE que ARCA ya
-  no reconoce (detectado con el botón "Verificar" -- ver sección 8).
-  Arrancar producción con la tabla vacía evita arrastrar esa numeración
-  pisada de las pruebas.
+  de numerar), y eso dejaba filas locales viejas apuntando a CAE que ARCA
+  ya no reconocía (detectado con el botón "Verificar" -- ver sección 8).
+  Producción arrancó con la tabla vacía. Las ventas reales del 19 y 20/10
+  que se habían facturado contra homologación quedaron **sin factura**
+  (decisión del usuario 2026-10-20): si alguna se pide después, se emite a
+  mano.
 
 ---
 

@@ -215,15 +215,23 @@ inventario queda cerrado e inmutable.
 
 ---
 
-## ETAPA 2 EN CURSO: FACTURACIÓN ARCA
+## ETAPA 2: FACTURACIÓN ARCA — EN PRODUCCIÓN DESDE 2026-10-20
 
 **Ya no está fuera de alcance.** A partir de 2026-09-05 se decidió arrancar la
 integración con ARCA (ex AFIP) descripta en `docs/bloque_arca_facturacion.md` —
 leer ese documento completo antes de tocar este bloque. Resumen de las decisiones
 ya cerradas ahí (no volver a preguntarlas):
 
-- Ambiente de homologación primero; certificado personal de Francisco ya generado
-  y vinculado al servicio WSFE.
+- **El sistema factura de verdad desde el 2026-10-20.** Toda factura que emite
+  tiene validez fiscal: un comprobante no se borra ni se edita, se anula con nota
+  de crédito (que todavía no existe — está en los pendientes del bloque). El
+  cruce de homologación a producción está documentado en
+  `scripts/paso-arca-produccion-2026-10-20/README.md`.
+- El ambiente vive en `ARCA_ENTORNO` (`homologacion` | `produccion`), nunca
+  hardcodeado, y el cache del Ticket de Acceso está indexado por
+  `(entorno, servicio)`: el token de un ambiente no se usa contra el otro. Si
+  volvés a homologación a probar algo, **acordate de volver a producción** — la
+  pantalla `/vender/facturar/configuracion` dice en qué ambiente está.
 - Factura A y B únicamente (no C). Disparo manual desde un botón "Facturar" en el
   detalle de la venta — nunca bloquea el cierre de la venta en sí. **Desde
   2026-10-19 se suma el disparo automático** para las ventas que no son en

@@ -15,8 +15,20 @@ const URLS: Record<EntornoArca, { wsaa: string; wsfe: string }> = {
   },
 };
 
-export function configArca() {
-  const entorno = process.env.ARCA_ENTORNO;
+export function configArca(): {
+  entorno: EntornoArca;
+  cert: string;
+  key: string;
+  cuit: string;
+  urls: { wsaa: string; wsfe: string };
+} {
+  // El `as EntornoArca` es necesario: process.env es `string | undefined`
+  // y TypeScript no angosta un `string` por descartarle literales, así
+  // que sin esto el entorno sale tipado como `string` y se pierde en
+  // cuanto alguien lo usa (ej. el cartel de ambiente de
+  // /vender/facturar/configuracion). El chequeo de abajo es la garantía
+  // real de que el valor es uno de los dos.
+  const entorno = process.env.ARCA_ENTORNO as EntornoArca | undefined;
   if (entorno !== "homologacion" && entorno !== "produccion") {
     throw new Error("ARCA_ENTORNO debe ser 'homologacion' o 'produccion'");
   }
