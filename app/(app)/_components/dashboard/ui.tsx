@@ -12,11 +12,16 @@ const formatoDiaLargo = new Intl.DateTimeFormat("es-AR", {
 // Encabezado de los tres paneles de Inicio: el saludo y el día de hoy en
 // palabras. El texto del saludo lo arma cada panel con saludoDelMomento()
 // (ver lib.ts) -- acá solo se dibuja, para que los tres se vean igual.
+//
+// Los signos de exclamación los pone el componente y no quien lo llama
+// (pedido del usuario 2026-10-19): así los tres paneles los llevan sí o
+// sí, con el de apertura incluido, y no hay que acordarse de escribirlos
+// en cada lugar.
 export function Saludo({ texto, fecha = new Date() }: { texto: string; fecha?: Date }) {
   const dia = formatoDiaLargo.format(fecha);
   return (
     <div>
-      <h1 className="text-[17px] font-semibold tracking-tight text-text">{texto}</h1>
+      <h1 className="text-[17px] font-semibold tracking-tight text-text">¡{texto}!</h1>
       <p className="mt-[2px] text-[12.5px] text-text-3">
         {dia.charAt(0).toUpperCase() + dia.slice(1)}
       </p>
