@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
-import { fechaOperativa, inicioDelDia } from "@/lib/fecha";
+import { ZONA_ARGENTINA, fechaOperativa, horaArgentina, inicioDelDia } from "@/lib/fecha";
 import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { AutoRefresh } from "../auto-refresh";
 import { AlertRow, Card, EmptyState, Kpi, KpiGrid, QuickAction, QuickActions, SectionHeader } from "./ui";
@@ -21,6 +21,23 @@ import { AlertRow, Card, EmptyState, Kpi, KpiGrid, QuickAction, QuickActions, Se
 // De paso, el inicio dejó de leer movimientos_stock e historial_costos
 // enteros, que es lo que lo hacía lento en el celular.
 
+// Saludo según la hora de Argentina, no la del servidor (que corre en UTC
+// y a las 20:00 de acá ya cree que son las 23). Los cortes son los de acá:
+// hasta las 13 es "buen día", el local abre a la mañana y cierra a las 22.
+function saludo(hora: number): string {
+  if (hora < 6) return "Buenas noches";
+  if (hora < 13) return "Buen día";
+  if (hora < 20) return "Buenas tardes";
+  return "Buenas noches";
+}
+
+const formatoDiaLargo = new Intl.DateTimeFormat("es-AR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  timeZone: ZONA_ARGENTINA,
+});
+
 type Sucursal = { id: string; nombre: string };
 
 type CajaFila = {
@@ -36,8 +53,14 @@ type PedidoCompraReciente = {
   pedidos_compra_items: { id: string }[];
 };
 
-export async function DuenoDashboard() {
+export async function DuenoDashboard({ nombre }: { nombre: string }) {
   const supabase = await createClient();
+
+  const ahora = new Date();
+  // Solo el primer nombre: en el saludo "Buen día, Lucas" suena como lo
+  // diría alguien del local, y `usuarios.nombre` puede traer el apellido.
+  const primerNombre = nombre.trim().split(/\s+/)[0] ?? "";
+  const diaLargo = formatoDiaLargo.format(ahora);
 
   const hoy = fechaOperativa();
   const inicioHoy = inicioDelDia();
@@ -141,6 +164,16 @@ export async function DuenoDashboard() {
   return (
     <div className="flex flex-col gap-6">
       <AutoRefresh />
+
+      <div>
+        <h1 className="text-[17px] font-semibold tracking-tight text-text">
+          {saludo(horaArgentina(ahora))}
+          {primerNombre ? `, ${primerNombre}` : ""}
+        </h1>
+        <p className="mt-[2px] text-[12.5px] text-text-3">
+          {diaLargo.charAt(0).toUpperCase() + diaLargo.slice(1)}
+        </p>
+      </div>
 
       <Link
         href={pedidoCompra ? `/pedidos/compra/${pedidoCompra.id}` : "/pedidos"}

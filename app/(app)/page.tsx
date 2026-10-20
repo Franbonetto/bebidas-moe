@@ -13,12 +13,14 @@ export default async function InicioPage() {
 
   const { data: usuario } = await supabase
     .from("usuarios")
-    .select("rol")
+    .select("rol, nombre")
     .eq("id", user!.id)
     .maybeSingle();
 
   if (usuario?.rol === "dueno") {
-    return <DuenoDashboard />;
+    // El nombre es para el saludo del encabezado (pedido del usuario
+    // 2026-10-19): sale de `usuarios.nombre`, no está escrito en el código.
+    return <DuenoDashboard nombre={usuario.nombre ?? ""} />;
   }
 
   // Encargado: Olavarría (central) ve el panel de abastecimiento, Laprida

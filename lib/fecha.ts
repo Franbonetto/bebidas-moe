@@ -65,3 +65,20 @@ export function inicioDeSemana(fecha: Date = new Date()): Date {
   const diasDesdeLunes = dia === 0 ? 6 : dia - 1;
   return new Date(inicio.getTime() - diasDesdeLunes * 86_400_000);
 }
+
+// Hora del día en Argentina, 0 a 23. Para el saludo del inicio ("buen
+// día" / "buenas tardes" / "buenas noches"): el servidor corre en UTC, así
+// que a las 20:00 de acá `new Date().getHours()` ya devuelve 23 y el
+// saludo salía tres horas adelantado.
+//
+// hourCycle "h23" y no hour12: false, porque con hour12: false algunos
+// motores devuelven "24" para la medianoche.
+export function horaArgentina(fecha: Date = new Date()): number {
+  const partes = new Intl.DateTimeFormat("en-GB", {
+    timeZone: ZONA,
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(fecha);
+
+  return Number(partes.find((p) => p.type === "hour")?.value ?? "0");
+}

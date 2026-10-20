@@ -159,7 +159,7 @@ const NAV: NavItem[] = [
   {
     label: "Usuarios",
     href: "/usuarios",
-    seccion: "catalogo",
+    seccion: "personas",
     soloDueno: true,
     icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z",
   },
