@@ -7,6 +7,11 @@ import { devolucionesPorVenta } from "../vender/_lib/devoluciones-por-venta";
 import { PosClient } from "../vender/_components/pos-client";
 import { EnviosHistorialTable, type EnvioRow } from "./_components/envios-historial-table";
 
+// Mismo motivo que en /vender (ver el comentario de maxDuration allá):
+// cobrar un envío con un medio que no es efectivo también pide el CAE, y
+// sin esto la plataforma corta la request antes que nuestro propio timeout.
+export const maxDuration = 60;
+
 export default async function EnviosPage({
   searchParams,
 }: {

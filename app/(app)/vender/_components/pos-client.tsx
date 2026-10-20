@@ -313,6 +313,23 @@ export function PosClient({
   const primerMedioRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
+  // Candado del cobro (2026-10-20: "no puede cobrarse una misma venta en el
+  // mismo momento exacto"). El botón ya estaba bloqueado con `pending`,
+  // pero los atajos de teclado -- el Enter del modal de pago, el F12 --
+  // llamaban a confirmar() sin mirar nada, y el modal recién se cierra
+  // cuando TERMINA todo: con la facturación automática esperando el CAE,
+  // eso son hasta 30 segundos con la puerta abierta. Va en un ref y no en
+  // un estado porque tiene que valer en el mismo tick, antes de cualquier
+  // re-render.
+  const cobrandoRef = useRef(false);
+
+  // Una clave por cobro, no por intento: si el intento anterior cortó sin
+  // respuesta (la plataforma corta la request mientras ARCA no contesta),
+  // el reintento manda LA MISMA clave y la base lo reconoce como el mismo
+  // cobro en vez de grabar una segunda venta. Por ticket, para que dos
+  // tickets en espera no compartan clave.
+  const clavesCobroRef = useRef<Record<string, string>>({});
+
   useEffect(() => {
     if (mostrarPago) primerMedioRef.current?.focus();
   }, [mostrarPago]);
@@ -938,60 +955,85 @@ export function PosClient({
       return;
     }
     setError(null);
+
+    // Ya hay un cobro en vuelo: esto no es una venta nueva, es el mismo
+    // cobro apretado dos veces (el Enter de la pistola, el dedo apoyado,
+    // la espera de ARCA que parece que se colgó). Se ignora.
+    if (cobrandoRef.current) return;
+    cobrandoRef.current = true;
+
+    const ticketCobrado = ticketActivoId;
+    const claveCobro = (clavesCobroRef.current[ticketCobrado] ??= crypto.randomUUID());
     const totalCobrado = totalACobrar;
     const pagosVenta: PagoVenta[] = pagos.map((p) => ({ medio_pago: p.medioPago, monto: p.monto }));
     startTransition(async () => {
-      const desarme = await autoDesarmarFaltantes();
-      if ("error" in desarme) {
-        setError(desarme.error);
-        return;
+      try {
+        const desarme = await autoDesarmarFaltantes();
+        if ("error" in desarme) {
+          setError(desarme.error);
+          return;
+        }
+        const resultado = await confirmarVenta(
+          sucursalId,
+          pagosVenta,
+          construirLineasVenta(esEfectivoPuro),
+          claveCobro,
+          modoEnvio
+            ? {
+                motomandado: motomandado.trim(),
+                direccionEnvio: direccionEnvio.trim(),
+                pagado: envioPagado,
+              }
+            : undefined,
+        );
+        if ("error" in resultado) {
+          // La clave NO se borra: si el error fue "la caja ya está
+          // cerrada" no se grabó nada y da igual, pero si fue un corte en
+          // el camino la venta puede estar grabada, y el reintento tiene
+          // que viajar con la misma clave para que no se cobre de nuevo.
+          setError(resultado.error);
+          return;
+        }
+
+        // Cobro cerrado: la clave ya cumplió. El próximo cobro de este
+        // mostrador arranca con una nueva, así que dos ventas iguales a
+        // propósito siguen siendo dos ventas.
+        delete clavesCobroRef.current[ticketCobrado];
+
+        const restantes = tickets.filter((t) => t.id !== ticketCobrado);
+        if (restantes.length > 0) {
+          setTickets(restantes);
+          setTicketActivoId(restantes[0].id);
+        } else {
+          contadorTicketRef.current += 1;
+          const nuevoId = String(contadorTicketRef.current);
+          setTickets([ticketVacio(nuevoId)]);
+          setTicketActivoId(nuevoId);
+        }
+
+        setMostrarPago(false);
+        setLineaSeleccionada(null);
+        setUltimaVenta({
+          id: resultado.id,
+          comprobante: resultado.comprobante,
+          aviso: resultado.avisoFacturacion,
+        });
+
+        if (avisoTimeoutRef.current) clearTimeout(avisoTimeoutRef.current);
+        setVentaConfirmada(totalCobrado);
+        avisoTimeoutRef.current = setTimeout(() => setVentaConfirmada(null), 5000);
+
+        // Cobrando desde el panel no se cierra ningún modal, así que el
+        // efecto de arriba no se entera: el foco se devuelve a mano para que
+        // el primer escaneo de la venta siguiente no se pierda.
+        searchInputRef.current?.focus();
+
+        router.refresh();
+      } finally {
+        // Pase lo que pase se suelta el candado: si no, un error dejaría el
+        // POS sin poder cobrar hasta recargar la página.
+        cobrandoRef.current = false;
       }
-      const resultado = await confirmarVenta(
-        sucursalId,
-        pagosVenta,
-        construirLineasVenta(esEfectivoPuro),
-        modoEnvio
-          ? {
-              motomandado: motomandado.trim(),
-              direccionEnvio: direccionEnvio.trim(),
-              pagado: envioPagado,
-            }
-          : undefined,
-      );
-      if ("error" in resultado) {
-        setError(resultado.error);
-        return;
-      }
-
-      const restantes = tickets.filter((t) => t.id !== ticketActivoId);
-      if (restantes.length > 0) {
-        setTickets(restantes);
-        setTicketActivoId(restantes[0].id);
-      } else {
-        contadorTicketRef.current += 1;
-        const nuevoId = String(contadorTicketRef.current);
-        setTickets([ticketVacio(nuevoId)]);
-        setTicketActivoId(nuevoId);
-      }
-
-      setMostrarPago(false);
-      setLineaSeleccionada(null);
-      setUltimaVenta({
-        id: resultado.id,
-        comprobante: resultado.comprobante,
-        aviso: resultado.avisoFacturacion,
-      });
-
-      if (avisoTimeoutRef.current) clearTimeout(avisoTimeoutRef.current);
-      setVentaConfirmada(totalCobrado);
-      avisoTimeoutRef.current = setTimeout(() => setVentaConfirmada(null), 5000);
-
-      // Cobrando desde el panel no se cierra ningún modal, así que el
-      // efecto de arriba no se entera: el foco se devuelve a mano para que
-      // el primer escaneo de la venta siguiente no se pierda.
-      searchInputRef.current?.focus();
-
-      router.refresh();
     });
   }
 
@@ -1038,6 +1080,9 @@ export function PosClient({
       // se abre.
       if (e.key === "Enter" && mostrarPago && pagos.length > 0 && restante === 0) {
         e.preventDefault();
+        // Tecla mantenida apretada: el navegador repite el evento decenas
+        // de veces por segundo. Un cobro se pide una vez (2026-10-20).
+        if (e.repeat) return;
         confirmar();
         return;
       }
@@ -1076,6 +1121,7 @@ export function PosClient({
       }
       if (e.key === "F12") {
         e.preventDefault();
+        if (e.repeat) return;
         if (!hayItems) return;
         if (pagos.length > 0 && restante === 0) confirmar();
         else setMostrarPago(true);

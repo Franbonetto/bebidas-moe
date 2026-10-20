@@ -62,6 +62,12 @@ export async function confirmarVenta(
   sucursalId: string,
   pagos: PagoVenta[],
   lineas: LineaVenta[],
+  // Clave del cobro (2026-10-20, ver
+  // 20261020130000_venta_idempotente.sql): la genera el POS, una por cobro,
+  // y la repite si tiene que reintentar. Si la clave ya tiene venta,
+  // confirmar_venta() devuelve ESA en lugar de grabar otra. Es lo que hace
+  // que un reintento no se cobre dos veces.
+  claveCobro: string,
   envio?: DatosEnvio,
 ): Promise<
   | { error: string }
@@ -77,6 +83,7 @@ export async function confirmarVenta(
     p_motomandado: envio?.motomandado ?? null,
     p_direccion_envio: envio?.direccionEnvio ?? null,
     p_envio_pagado: envio?.pagado ?? null,
+    p_idempotency_key: claveCobro,
   });
 
   if (error) return { error: error.message };

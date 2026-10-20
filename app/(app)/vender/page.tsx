@@ -13,9 +13,21 @@ import { PosClient } from "./_components/pos-client";
 // Importa que sea así y no al revés: si la plataforma cortara la función
 // antes, la venta ya estaría grabada en la base pero el POS mostraría un
 // error, y la cajera podría cobrarla de nuevo -- una venta duplicada con
-// su descuento de stock. Con 30s, el que corta primero siempre es nuestro
-// timeout, que devuelve la venta hecha y el comprobante en `error`.
-export const maxDuration = 30;
+// su descuento de stock. El que corta primero tiene que ser siempre
+// nuestro timeout, que devuelve la venta hecha y el comprobante en `error`.
+//
+// 30s no alcanzaban (2026-10-20): facturar son hasta TRES llamadas con
+// 15s de tope cada una -- login WSAA si el token esta vencido,
+// FECompUltimoAutorizado para saber el numero, y FECAESolicitar. Con ARCA
+// lento eso pasa los 30s, la plataforma cortaba la request y la cajera
+// veia un error por una venta que si se habia grabado. 60 es el techo del
+// plan Hobby de Vercel, asi que es lo mas que se le puede dar.
+//
+// Aun asi, el corte no puede duplicar la venta: el reintento viaja con la
+// misma clave de idempotencia y confirmar_venta() devuelve la venta que ya
+// existe (20261020130000_venta_idempotente.sql). Esto es para que la
+// cajera no vea el error, no para evitar el duplicado.
+export const maxDuration = 60;
 
 export default async function VenderPage({
   searchParams,

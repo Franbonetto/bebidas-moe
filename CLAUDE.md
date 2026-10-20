@@ -138,6 +138,13 @@ Las promociones aplican solo pagando en efectivo.
 
 ### POS
 - Medio de pago **al final**, antes de cobrar.
+- **Un cobro, una venta (2026-10-20).** El POS genera una clave por cobro y la
+  repite si tiene que reintentar; `confirmar_venta()` tiene un unique index sobre
+  esa clave y, si ya tiene venta, **devuelve esa misma venta** en lugar de grabar
+  otra (`supabase/migrations/20261020130000_venta_idempotente.sql`). Es lo que
+  impide que un Enter de más, o un corte de red mientras se espera el CAE, cobren
+  dos veces la misma venta y descuadren la caja. Una acción nueva que grabe una
+  venta lleva su clave; no alcanza con deshabilitar el botón.
 - **Un solo total a la vista** (cambiado el 2026-10-08: antes se mostraban los dos
   y confundía). Mientras no se eligió medio de pago se muestra el de efectivo, que
   es como se cobra la mayoría de las ventas, con una línea al pie aclarando cuánto

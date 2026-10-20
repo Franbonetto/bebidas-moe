@@ -349,6 +349,43 @@ export async function facturarVentaAutomatica(
 
   if (!venta) return { facturado: false, aviso: "No se encontró la venta para facturar" };
 
+  // Reintento del mismo cobro (clave de idempotencia, 2026-10-20): si la
+  // request anterior se cortó después de grabar la venta, confirmar_venta()
+  // devolvió esa misma venta y acá llegamos de nuevo. Volver a pedirle un
+  // CAE a ARCA sería emitir DOS comprobantes de una sola venta -- y el
+  // segundo se perdería igual, porque guardar_comprobante_fiscal() rechaza
+  // refacturar una venta ya autorizada, pero recién después de que ARCA
+  // gastó el número. Así que si la factura ya está, se devuelve esa y el
+  // POS reimprime el mismo ticket, con el mismo CAE.
+  const { data: previo } = await supabase
+    .from("comprobantes_fiscales")
+    .select("tipo_cbte, numero_comprobante, cae, vencimiento_cae, estado")
+    .eq("venta_id", ventaId)
+    .maybeSingle<{
+      tipo_cbte: "A" | "B";
+      numero_comprobante: number | null;
+      cae: string | null;
+      vencimiento_cae: string | null;
+      estado: string;
+    }>();
+
+  if (
+    previo?.estado === "autorizado" &&
+    previo.numero_comprobante !== null &&
+    previo.cae !== null &&
+    previo.vencimiento_cae !== null
+  ) {
+    return {
+      facturado: true,
+      comprobante: {
+        tipoCbte: previo.tipo_cbte,
+        numeroComprobante: previo.numero_comprobante,
+        cae: previo.cae,
+        vencimientoCae: previo.vencimiento_cae,
+      },
+    };
+  }
+
   const { data: pagosRaw, error: errorPagos } = await traerTodo(
     supabase.from("venta_pagos").select("medio_pago").eq("venta_id", ventaId),
   );
