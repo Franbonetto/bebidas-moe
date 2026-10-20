@@ -3,7 +3,7 @@
 // que el resto de la app, ver productos/page.tsx) y estas funciones solo
 // las reducen/derivan.
 
-import { inicioDelDia } from "@/lib/fecha";
+import { horaArgentina, inicioDelDia } from "@/lib/fecha";
 
 export function haceDias(fechaIso: string): string {
   const dias = Math.floor((Date.now() - new Date(fechaIso).getTime()) / 86_400_000);
@@ -231,4 +231,30 @@ export function topProductosVendidos(items: { sku_id: string; cantidad: number }
     .map(([sku_id, unidades]) => ({ sku_id, unidades }))
     .sort((a, b) => b.unidades - a.unidades)
     .slice(0, limite);
+}
+
+// Saludo del encabezado de los tres paneles. La hora es la de Argentina
+// (horaArgentina(), lib/fecha.ts) y no la del servidor, que corre en UTC:
+// a las 20:00 de acá new Date().getHours() devuelve 23 y el saludo salía
+// tres horas adelantado.
+//
+// Cortes: hasta las 6 es noche, hasta las 13 mañana, hasta las 20 tarde,
+// después noche. El local abre a la mañana y cierra a las 22.
+//
+// Dos estilos porque el destinatario no es el mismo: el panel del dueño
+// saluda a una persona por su nombre ("Buen día, Lucas") y los de las
+// sucursales saludan al mostrador, que puede ser más de una ("Buenos días,
+// equipo Moe") -- pedido del usuario 2026-10-19.
+const SALUDO: Record<"persona" | "equipo", { manana: string; tarde: string; noche: string }> = {
+  persona: { manana: "Buen día", tarde: "Buenas tardes", noche: "Buenas noches" },
+  equipo: { manana: "Buenos días", tarde: "Buenas tardes", noche: "Buenas noches" },
+};
+
+export function saludoDelMomento(estilo: "persona" | "equipo", fecha: Date = new Date()): string {
+  const hora = horaArgentina(fecha);
+  const palabras = SALUDO[estilo];
+  if (hora < 6) return palabras.noche;
+  if (hora < 13) return palabras.manana;
+  if (hora < 20) return palabras.tarde;
+  return palabras.noche;
 }

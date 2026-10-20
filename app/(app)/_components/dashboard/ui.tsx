@@ -1,5 +1,28 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { ZONA_ARGENTINA } from "@/lib/fecha";
+
+const formatoDiaLargo = new Intl.DateTimeFormat("es-AR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  timeZone: ZONA_ARGENTINA,
+});
+
+// Encabezado de los tres paneles de Inicio: el saludo y el día de hoy en
+// palabras. El texto del saludo lo arma cada panel con saludoDelMomento()
+// (ver lib.ts) -- acá solo se dibuja, para que los tres se vean igual.
+export function Saludo({ texto, fecha = new Date() }: { texto: string; fecha?: Date }) {
+  const dia = formatoDiaLargo.format(fecha);
+  return (
+    <div>
+      <h1 className="text-[17px] font-semibold tracking-tight text-text">{texto}</h1>
+      <p className="mt-[2px] text-[12.5px] text-text-3">
+        {dia.charAt(0).toUpperCase() + dia.slice(1)}
+      </p>
+    </div>
+  );
+}
 
 export function SectionHeader({ title, meta }: { title: string; meta?: string }) {
   return (

@@ -4,7 +4,12 @@ import { traerTodo } from "@/lib/supabase/traer-todo";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
 import { EstadoPedidoBadge, type EstadoPedido } from "@/app/(app)/pedidos/_components/estado-pedido-badge";
 import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
-import { calcularCostosQueSubieron, calcularProductosPorVencer, haceDias } from "./lib";
+import {
+  calcularCostosQueSubieron,
+  calcularProductosPorVencer,
+  haceDias,
+  saludoDelMomento,
+} from "./lib";
 import {
   AlertRow,
   Badge,
@@ -13,6 +18,7 @@ import {
   PlaceholderCard,
   QuickAction,
   QuickActions,
+  Saludo,
   SectionHeader,
 } from "./ui";
 
@@ -125,6 +131,8 @@ export async function OlavarriaDashboard() {
 
   return (
     <div className="flex flex-col gap-5">
+      <Saludo texto={`${saludoDelMomento("equipo")}, equipo Moe`} />
+
       <div>
         <SectionHeader title="Necesita atención" />
         <div className="flex flex-col gap-[8px]">

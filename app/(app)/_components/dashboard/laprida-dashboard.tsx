@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { presentacionLabel, type SkuPresentacion } from "@/app/(app)/productos/_lib/presentacion";
-import { calcularProductosPorVencer, haceDias } from "./lib";
+import { calcularProductosPorVencer, haceDias, saludoDelMomento } from "./lib";
 import {
   AlertRow,
   Badge,
@@ -10,6 +10,7 @@ import {
   EmptyState,
   QuickAction,
   QuickActions,
+  Saludo,
   SectionHeader,
   StatRow,
 } from "./ui";
@@ -136,6 +137,8 @@ export async function LapridaDashboard() {
 
   return (
     <div className="flex flex-col gap-5">
+      <Saludo texto={`${saludoDelMomento("equipo")}, equipo Moe`} />
+
       <div>
         <SectionHeader title="Necesita atención" />
         <div className="flex flex-col gap-[8px]">
