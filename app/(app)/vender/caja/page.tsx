@@ -336,6 +336,18 @@ export default async function CajaPage({
                 >
                   Imprimir cierre
                 </a>
+
+                {/* Segunda puerta al mismo pendiente: si la caja se cerró y
+                    la cajera salió de la pantalla del ticket sin mandarlo,
+                    desde acá vuelve (el aviso en rojo vive allá). */}
+                <a
+                  href={`/ticket/caja/${caja.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-2 inline-block text-[12.5px] font-medium text-moe hover:underline"
+                >
+                  Mandarle el cierre al dueño →
+                </a>
               </div>
             )}
           </>

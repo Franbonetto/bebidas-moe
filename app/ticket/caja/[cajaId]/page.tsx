@@ -4,7 +4,9 @@ import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
 import { formatoMoneda } from "@/app/(app)/vender/_lib/formato";
 import { formatoFecha, formatoFechaHora, formatoHora } from "@/app/(app)/compras/_lib/formato";
+import { fechaOperativa } from "@/lib/fecha";
 import { linkWhatsapp, telefonoWhatsapp } from "@/lib/whatsapp";
+import { EnviarCierreWhatsapp } from "../../_components/enviar-cierre-whatsapp";
 import { ImprimirBoton } from "../../_components/imprimir-boton";
 import { ImprimirAlAbrir } from "../../_components/imprimir-al-abrir";
 
@@ -224,6 +226,10 @@ export default async function TicketCajaPage({
   // El número del dueño vive en WHATSAPP_DUENO (Vercel y .env.local), no en
   // el repo. Si falta, no hay botón.
   const telefonoDueno = telefonoWhatsapp(process.env.WHATSAPP_DUENO);
+  // El cierre del dia es el que hay que mandar si o si; un cierre viejo que
+  // se vuelve a abrir para reimprimir no tiene por que gritar "falta
+  // mandarlo".
+  const esCierreDeHoy = cerrada && caja.fecha === fechaOperativa();
   const linkCierre =
     cerrada && telefonoDueno
       ? linkWhatsapp(
@@ -253,8 +259,13 @@ export default async function TicketCajaPage({
     <div className="ticket-print mx-auto max-w-[380px] p-4 text-[13px] text-text">
       {imprimir === "1" && <ImprimirAlAbrir />}
 
+      {/* El cierre no termina en el papel: el dueño lo tiene que recibir.
+          En el cierre de hoy es un pendiente en rojo arriba de todo; en uno
+          viejo, un botón más. */}
+      {esCierreDeHoy && <EnviarCierreWhatsapp link={linkCierre} nombreDueno={nombreDueno} />}
+
       <div className="no-print mb-4 flex flex-wrap justify-end gap-2">
-        {linkCierre && (
+        {linkCierre && !esCierreDeHoy && (
           <a
             href={linkCierre}
             target="_blank"
