@@ -54,9 +54,13 @@ La facturación automática de las ventas que no son en efectivo arrancó el
 se cobraron, pero su "factura" se emitió contra homologación: no vale
 nada ante ARCA.
 
-Decisión del usuario (2026-10-20): **se borran sin re-emitir.** Quedan
-como ventas sin factura, igual que las de efectivo. Si algún cliente pide
-la factura después, se emite a mano desde `/vender/facturar`.
+Decisión del usuario (2026-10-20): **se borran sin re-emitir.**
+
+Y no quedó ningún agujero fiscal: el usuario confirmó después que **esas
+10 ventas ya habían sido facturadas con el sistema viejo**, que seguía
+operando en paralelo. O sea que tienen factura válida —emitida por el
+otro sistema, en su propio punto de venta— y lo único que se borró de acá
+fue el registro de homologación, que no valía nada.
 
 Efecto colateral esperado y correcto: el balance de IVA del dueño
 (`balance_iva()`) deja de contar el IVA de esos comprobantes. Nunca

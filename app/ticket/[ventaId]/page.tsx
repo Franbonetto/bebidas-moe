@@ -197,8 +197,12 @@ export default async function TicketPage({ params }: { params: Promise<{ ventaId
       <div className="text-center">
         <p className="tk-nombre text-[15px] font-bold">Bebidas Moe</p>
         {/* Eslogan del reparto, pedido del usuario 2026-10-19. Por ahora
-            solo en el ticket de un envío. */}
-        {venta.es_envio && <p className="tk-eslogan text-[12.5px] font-semibold">Te lo lleva a casa!</p>}
+            solo en el ticket de un envío. Redactado desde el lado del
+            cliente -- "te lo trae", no "te lo lleva" -- y con los signos
+            de apertura, a pedido del usuario (2026-10-20). */}
+        {venta.es_envio && (
+          <p className="tk-eslogan text-[12.5px] font-semibold">¡Te lo trae a casa!</p>
+        )}
         {/* La dirección sale de sucursales.direccion: cada sucursal imprime
             la suya, no se hardcodea ninguna. */}
         {venta.sucursal?.direccion && (

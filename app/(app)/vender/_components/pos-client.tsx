@@ -296,7 +296,6 @@ export function PosClient({
     // (fue en efectivo), un texto = hay algo que resolver a mano.
     aviso: string | null;
   } | null>(null);
-  const avisoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [mostrarPago, setMostrarPago] = useState(false);
   // Alta de un producto particular (picada, canasta de regalería): se pide
   // qué es y cuánto sale, nada más. No hay catálogo detrás.
@@ -581,10 +580,9 @@ export function PosClient({
   const restante = Math.round((totalACobrar - sumaPagos) * 100) / 100;
 
   function agregarSku(sku: SkuPos, cantidad = 1) {
-    if (ventaConfirmada != null) {
-      if (avisoTimeoutRef.current) clearTimeout(avisoTimeoutRef.current);
-      setVentaConfirmada(null);
-    }
+    // El cartel de la venta anterior se va cuando la cajera arranca la
+    // siguiente, no por un temporizador -- ver el bloque del cartel.
+    if (ventaConfirmada != null) setVentaConfirmada(null);
     actualizarTicketActivo((t) => {
       const idx = t.lineas.findIndex((l) => l.skuId === sku.id);
       let lineas: LineaTicket[];
@@ -1019,9 +1017,7 @@ export function PosClient({
           aviso: resultado.avisoFacturacion,
         });
 
-        if (avisoTimeoutRef.current) clearTimeout(avisoTimeoutRef.current);
         setVentaConfirmada(totalCobrado);
-        avisoTimeoutRef.current = setTimeout(() => setVentaConfirmada(null), 5000);
 
         // Cobrando desde el panel no se cierra ningún modal, así que el
         // efecto de arriba no se entera: el foco se devuelve a mano para que
@@ -1490,46 +1486,61 @@ export function PosClient({
             </span>
           </div>
 
-          {ventaConfirmada != null && (
-            <div className="mx-[15px] mt-[11px] flex items-center gap-2 rounded-[7px] bg-ok-bg px-[12px] py-[10px] text-[14px] font-medium text-ok">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                className="h-[15px] w-[15px] shrink-0"
-              >
-                <path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-              </svg>
-              Venta registrada · {formatoMoneda.format(ventaConfirmada)}
-            </div>
-          )}
+          {/* Cartel de la última venta: confirmación, estado de la factura
+              y el botón de imprimir, todo en UN bloque.
+              
+              Antes eran dos carteles y el de arriba se escondía solo a los
+              5 segundos, así que el botón de imprimir daba un salto hacia
+              arriba justo cuando la cajera iba a tocarlo y se le erraba
+              (pedido del usuario 2026-10-20: "no se llega a tocar el botón,
+              es muy corto el tiempo"). Ahora nada se mueve por un reloj: el
+              cartel se va cuando la cajera arranca la venta siguiente. */}
+          {(ventaConfirmada != null || ultimaVenta) && (
+            <div className="mx-[15px] mt-[11px] overflow-hidden rounded-[7px] border border-border">
+              {ventaConfirmada != null && (
+                <div className="flex items-center gap-2 bg-ok-bg px-[12px] py-[10px] text-[14px] font-medium text-ok">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    className="h-[15px] w-[15px] shrink-0"
+                  >
+                    <path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                  </svg>
+                  Venta registrada · {formatoMoneda.format(ventaConfirmada)}
+                </div>
+              )}
 
-          {ultimaVenta && (
-            <div className="mx-[15px] mt-[8px] flex items-start justify-between gap-3 rounded-[7px] border border-border bg-bg-2 px-[12px] py-[9px] text-[13.5px]">
-              {/* Facturación automática (2026-10-19): una venta con tarjeta,
-                  transferencia o QR sale facturada de acá. Si ARCA no la
-                  autorizó, el motivo se muestra entero -- la cajera lo
-                  necesita para saber que tiene que emitirla a mano. */}
-              <span
-                className={
-                  ultimaVenta.comprobante ? "text-ok" : ultimaVenta.aviso ? "text-warn" : "text-text-2"
-                }
-              >
-                {ultimaVenta.comprobante
-                  ? `Factura ${ultimaVenta.comprobante.tipoCbte} N° ${ultimaVenta.comprobante.numeroComprobante} autorizada`
-                  : ultimaVenta.aviso
-                    ? `Sin facturar: ${ultimaVenta.aviso}. Emitila a mano desde Facturar.`
-                    : "Ticket interno (venta en efectivo)"}
-              </span>
-              <a
-                href={`/ticket/${ultimaVenta.id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0 font-medium text-moe hover:underline"
-              >
-                Imprimir ticket →
-              </a>
+              {ultimaVenta && (
+                <div className="flex items-center justify-between gap-3 bg-bg-2 px-[12px] py-[10px] text-[13.5px]">
+                  {/* Facturación automática (2026-10-19): una venta con tarjeta,
+                      transferencia o QR sale facturada de acá. Si ARCA no la
+                      autorizó, el motivo se muestra entero -- la cajera lo
+                      necesita para saber que tiene que emitirla a mano. */}
+                  <span
+                    className={
+                      ultimaVenta.comprobante ? "text-ok" : ultimaVenta.aviso ? "text-warn" : "text-text-2"
+                    }
+                  >
+                    {ultimaVenta.comprobante
+                      ? `Factura ${ultimaVenta.comprobante.tipoCbte} N° ${ultimaVenta.comprobante.numeroComprobante} autorizada`
+                      : ultimaVenta.aviso
+                        ? `Sin facturar: ${ultimaVenta.aviso}. Emitila a mano desde Facturar.`
+                        : "Ticket interno (venta en efectivo)"}
+                  </span>
+                  {/* Botón de verdad, no un link de texto: esto se toca con
+                      el dedo en el mostrador. */}
+                  <a
+                    href={`/ticket/${ultimaVenta.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="shrink-0 rounded-[6px] bg-moe px-[14px] py-[9px] text-[13.5px] font-medium text-white hover:bg-moe/90"
+                  >
+                    Imprimir ticket
+                  </a>
+                </div>
+              )}
             </div>
           )}
 
