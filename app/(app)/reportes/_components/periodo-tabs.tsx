@@ -3,7 +3,11 @@ import { PERIODOS, type Periodo } from "../_lib/periodo";
 
 // Mismas pestañas en todos los reportes. No es un componente de cliente:
 // son links con ?periodo=, que además deja el rango en la URL.
-export function PeriodoTabs({ base, actual }: { base: string; actual: Periodo }) {
+//
+// `actual` puede venir en null: es el caso de /reportes/caja mirando un día
+// puntual, donde ningún período está elegido y hacer click en uno vuelve al
+// reporte por rango.
+export function PeriodoTabs({ base, actual }: { base: string; actual: Periodo | null }) {
   return (
     <div className="flex flex-wrap gap-2">
       {PERIODOS.map((p) => (

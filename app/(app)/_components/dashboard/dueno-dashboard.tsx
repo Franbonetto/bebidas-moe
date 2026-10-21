@@ -199,8 +199,11 @@ export async function DuenoDashboard({ nombre }: { nombre: string }) {
         <Card
           title="Por sucursal"
           action={
-            <Link href="/reportes/caja" className="whitespace-nowrap text-[12.5px] font-medium text-moe hover:underline">
-              Ver el reporte →
+            <Link
+              href={`/reportes/caja?dia=${hoy}`}
+              className="whitespace-nowrap text-[12.5px] font-medium text-moe hover:underline"
+            >
+              Ver el día →
             </Link>
           }
         >

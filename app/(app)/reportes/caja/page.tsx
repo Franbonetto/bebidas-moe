@@ -8,6 +8,9 @@ import { ReporteHeader } from "../_components/reporte-header";
 import { Tabla, Td, Th, Tr } from "../_components/tabla";
 import { desdePeriodo, leerPeriodo } from "../_lib/periodo";
 import { exigirDueno } from "../_lib/permiso";
+import { CajaDia } from "./_components/caja-dia";
+import { SelectorDia } from "./_components/selector-dia";
+import { fechaDelDia, leerDia } from "./_lib/dia";
 
 // Reporte de caja y dinero: todo lo que entró y salió, de las dos
 // sucursales (reorganización pedida por el usuario 2026-10-19 -- antes
@@ -106,11 +109,41 @@ function nombreRel(rel: { nombre: string } | { nombre: string }[] | null): strin
 export default async function ReporteCajaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string }>;
+  searchParams: Promise<{ periodo?: string; dia?: string }>;
 }) {
-  const { periodo: periodoParam } = await searchParams;
+  const { periodo: periodoParam, dia: diaParam } = await searchParams;
   const supabase = await createClient();
   await exigirDueno(supabase);
+
+  const hoy = fechaOperativa();
+  const dia = leerDia(diaParam);
+
+  // Un día puntual reemplaza al reporte por período: es otra pregunta
+  // ("qué pasó el martes") y mezclarla con el rango dejaba dos totales
+  // distintos en la misma pantalla (decisión del usuario 2026-10-21).
+  if (dia) {
+    const { data: sucursalesDia } = await traerTodo(
+      supabase
+        .from("sucursales")
+        .select("id, nombre")
+        .eq("activo", true)
+        .order("es_central", { ascending: false }),
+    );
+
+    return (
+      <div className="flex flex-col gap-6">
+        <ReporteHeader
+          titulo="Caja y dinero"
+          bajada="La caja de un día: el arqueo de cada sucursal, con qué pagaron, las ventas una por una y todo lo que se vendió."
+          base="/reportes/caja"
+          periodo={null}
+          extra={<SelectorDia base="/reportes/caja" dia={dia} hoy={hoy} />}
+          meta={`${formatoFecha.format(fechaDelDia(dia))}${dia === hoy ? " · hoy" : ""}`}
+        />
+        <CajaDia supabase={supabase} dia={dia} sucursales={sucursalesDia ?? []} />
+      </div>
+    );
+  }
 
   const periodo = leerPeriodo(periodoParam);
   const desde = desdePeriodo(periodo);
@@ -289,6 +322,7 @@ export default async function ReporteCajaPage({
         bajada="Lo que entró y salió en las dos sucursales: ventas, medios de pago, cierres de caja, egresos, devoluciones y productos particulares."
         base="/reportes/caja"
         periodo={periodo}
+        extra={<SelectorDia base="/reportes/caja" dia={null} hoy={hoy} />}
       />
 
       <KpiGrid>
@@ -407,7 +441,10 @@ export default async function ReporteCajaPage({
       </div>
 
       <div>
-        <SectionHeader title="Cajas día por día" meta="Quién abrió, quién cerró y cuánto faltó o sobró" />
+        <SectionHeader
+          title="Cajas día por día"
+          meta="Tocá una fecha para ver ese día completo: ventas y productos"
+        />
         <Card title={`${cajas.length} caja${cajas.length === 1 ? "" : "s"} en el período`}>
           {cajas.length === 0 ? (
             <EmptyState
@@ -432,7 +469,14 @@ export default async function ReporteCajaPage({
               <tbody>
                 {cajas.map((c) => (
                   <Tr key={c.id}>
-                    <Td>{formatoFecha.format(new Date(`${c.fecha}T12:00:00`))}</Td>
+                    <Td>
+                      <Link
+                        href={`/reportes/caja?dia=${c.fecha}`}
+                        className="font-medium text-moe hover:underline"
+                      >
+                        {formatoFecha.format(new Date(`${c.fecha}T12:00:00`))}
+                      </Link>
+                    </Td>
                     <Td>{nombreSucursal(c.sucursal_id)}</Td>
                     <Td>
                       <span className="font-medium text-text">

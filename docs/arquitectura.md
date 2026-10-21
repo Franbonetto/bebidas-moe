@@ -648,6 +648,26 @@ Alertas definidas:
 - **Enc. Olavarría** — abastecimiento: pedidos de Laprida sin atender, stock bajo, productos a comprar, costos que subieron, envases a devolver.
 - **Enc. Laprida** — reposición: qué falta, pedido semanal, mercadería en camino, alertas de su sucursal.
 
+### La caja de un día (2026-10-21)
+
+Además del reporte por período (hoy / semana / mes / 30 días), `/reportes/caja` abre **un día
+puntual** con `?dia=AAAA-MM-DD`: se elige con el calendario que está al lado de las pestañas, o
+tocando una fecha en «Cajas día por día». Reemplaza al reporte por rango en vez de convivir con
+él — son dos preguntas distintas y dos totales distintos en la misma pantalla confunden.
+
+Ese día muestra: el arqueo de cada sucursal (quién abrió y cerró, apertura, efectivo según
+sistema, contado y diferencia), con qué pagaron, **las ventas una por una** —desplegables, con
+las líneas de cada ticket— y **lo vendido agrupado por producto**, más las entradas y salidas del
+cajón y las devoluciones.
+
+- **Qué venta es «de ese día»: la que cuelga de una caja de esa fecha** (`ventas.caja_id`), no la
+  que cae en un rango de horas. Es la definición del negocio —una venta de las 21:30 es de la caja
+  que se abrió esa mañana, aunque en UTC ya sea otro día— y la misma que usa el cierre de caja.
+- El importe por producto sale de `venta_items.precio_unitario`, que ya tiene aplicada la promo y
+  el descuento por efectivo. Por eso cierra contra el total del día **menos el depósito de
+  envases**, que no es venta de mercadería (la pantalla lo aclara cuando hay).
+- Solo el dueño, como el resto de `/reportes` de dinero.
+
 ---
 
 ## 1.14 Infraestructura
