@@ -23,6 +23,9 @@ export type Compra = {
   impuestos_internos: number | null;
   percepcion_iva: number | null;
   percepcion_iibb: number | null;
+  // Lo que costó traer la mercadería, cuando se pagó aparte de la factura.
+  // null = no hubo (o vino adentro del neto, como una línea más del papel).
+  flete: number | null;
   proveedor: { razon_social: string; nombre_comercial: string | null } | null;
 };
 
@@ -172,7 +175,7 @@ export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; pued
                   </td>
                   <td
                     className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text"
-                    title="Productos más impuestos y percepciones, como figura al pie de la factura"
+                    title="Productos más impuestos y percepciones, como figura al pie de la factura, más el flete que se haya pagado aparte"
                   >
                     {formatoMoneda.format(totalPagadoCompra(c))}
                   </td>

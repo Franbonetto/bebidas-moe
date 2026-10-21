@@ -18,7 +18,7 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
     .from("compras")
     .select(
       `id, numero_factura, fecha_factura, estado, total,
-       tipo_comprobante, neto_gravado, iva, impuestos_internos, percepcion_iva, percepcion_iibb,
+       tipo_comprobante, neto_gravado, iva, impuestos_internos, percepcion_iva, percepcion_iibb, flete,
        proveedor:proveedores ( id, razon_social, nombre_comercial ),
        compra_items (
          id, sku_id, cantidad, costo_unitario, costo_con_impuestos, subtotal, fecha_vencimiento,
@@ -47,7 +47,7 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
       supabase
         .from("compras_reclasificacion_fiscal")
         .select(
-          "id, tipo_anterior, tipo_nuevo, numero_nuevo, fecha_nueva, iva_nuevo, motivo, fecha, usuario:usuarios ( nombre )",
+          "id, tipo_anterior, tipo_nuevo, numero_nuevo, fecha_nueva, iva_nuevo, flete_anterior, flete_nuevo, motivo, fecha, usuario:usuarios ( nombre )",
         )
         .eq("compra_id", id)
         .order("fecha", { ascending: false }),

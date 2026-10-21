@@ -198,6 +198,14 @@ los impuestos del pie entre las líneas: `factor = total pagado / total de las l
 Factura B no hay pie: manda el costo unitario pelado. Ver `docs/arquitectura.md` 1.6,
 *Costo con impuestos* (2026-10-16).
 
+**El flete entra al costo igual que los impuestos (2026-10-21).** Campo opcional del
+encabezado de la entrada, para el flete que se paga **aparte** (si viene como línea de
+la factura ya está en el neto y cargarlo lo duplicaría): el factor pasa a ser
+`(total pagado + flete) / total de las líneas`. Con remito y flete también se reparte.
+No es fiscal: no toca IVA ni el balance, y queda afuera del cuadre del pie. Se corrige
+con `reclasificar_comprobante_compra()`, con motivo y log. Ver `docs/arquitectura.md`
+1.6, *Flete*.
+
 ### Pedidos y transferencias
 ```
 PEDIDO:        borrador → enviado → en_preparacion → preparado → despachado → cerrado

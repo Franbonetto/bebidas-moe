@@ -36,6 +36,18 @@ export type ComprobanteCompra = {
   percepcion_iibb: number | null;
 };
 
+// El flete que se pagó aparte para que la mercadería llegue al local.
+// Opcional (null = no hubo) y no es un dato del comprobante: va al lado,
+// porque existe igual con remito y porque no es fiscal -- no discrimina
+// IVA ni entra en el balance. Sí entra al costo de los productos, repartido
+// entre las líneas como los impuestos del pie
+// (supabase/migrations/20261021090000_flete_compra.sql).
+function validarFlete(flete: number | null): string | null {
+  if (flete === null) return null;
+  if (!Number.isFinite(flete) || flete < 0) return "El flete no puede ser un monto negativo.";
+  return null;
+}
+
 function validarLineas(lineas: LineaCompra[]): string | null {
   if (lineas.length === 0) return "Agregá al menos una línea.";
   for (const l of lineas) {
@@ -86,6 +98,7 @@ function validarComprobante(c: ComprobanteCompra): string | null {
 export async function cargarCompraDirecta(datos: {
   proveedor_id: string;
   comprobante: ComprobanteCompra;
+  flete: number | null;
   lineas: LineaCompra[];
 }, pin: string): Promise<{ error: string } | { id: string }> {
   const pinOk = verificarPinOperaciones(pin);
@@ -97,6 +110,9 @@ export async function cargarCompraDirecta(datos: {
 
   const errorComprobante = validarComprobante(datos.comprobante);
   if (errorComprobante) return { error: errorComprobante };
+
+  const errorFlete = validarFlete(datos.flete);
+  if (errorFlete) return { error: errorFlete };
 
   const errorLineas = validarLineas(datos.lineas);
   if (errorLineas) return { error: errorLineas };
@@ -112,6 +128,7 @@ export async function cargarCompraDirecta(datos: {
     p_impuestos_internos: datos.comprobante.impuestos_internos,
     p_percepcion_iva: datos.comprobante.percepcion_iva,
     p_percepcion_iibb: datos.comprobante.percepcion_iibb,
+    p_flete: datos.flete,
   });
 
   if (error) return { error: error.message };
@@ -123,12 +140,15 @@ export async function cargarCompraDirecta(datos: {
 }
 
 // La mercadería llegó con remito y la factura llegó después (o se cargó mal
-// el tipo). Cambia SOLO el comprobante fiscal -- no toca stock, costos ni el
-// total -- y deja una fila inmutable en compras_reclasificacion_fiscal con
-// quién, cuándo y por qué.
+// el tipo, o el flete se pagó y nadie lo cargó). Cambia SOLO el comprobante
+// fiscal y el flete -- no toca stock ni el total de la compra -- y deja una
+// fila inmutable en compras_reclasificacion_fiscal con quién, cuándo y por
+// qué. El costo de los productos sí se recalcula: hasta que apareció la
+// factura (o el flete) no había nada para repartir entre las líneas.
 export async function reclasificarComprobanteCompra(datos: {
   compra_id: string;
   comprobante: ComprobanteCompra;
+  flete: number | null;
   motivo: string;
 }, pin: string): Promise<{ error: string } | { ok: true }> {
   const pinOk = verificarPinOperaciones(pin);
@@ -138,6 +158,9 @@ export async function reclasificarComprobanteCompra(datos: {
 
   const errorComprobante = validarComprobante(datos.comprobante);
   if (errorComprobante) return { error: errorComprobante };
+
+  const errorFlete = validarFlete(datos.flete);
+  if (errorFlete) return { error: errorFlete };
 
   if (!datos.motivo.trim())
     return { error: "Escribí por qué se cambia el comprobante de esta compra." };
@@ -153,12 +176,14 @@ export async function reclasificarComprobanteCompra(datos: {
     p_impuestos_internos: datos.comprobante.impuestos_internos,
     p_percepcion_iva: datos.comprobante.percepcion_iva,
     p_percepcion_iibb: datos.comprobante.percepcion_iibb,
+    p_flete: datos.flete,
   });
 
   if (error) return { error: error.message };
 
   revalidatePath("/compras");
   revalidatePath(`/compras/${datos.compra_id}`);
+  revalidatePath("/productos");
   revalidatePath("/reportes/iva");
   return { ok: true };
 }

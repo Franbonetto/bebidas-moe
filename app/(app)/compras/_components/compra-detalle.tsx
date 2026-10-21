@@ -13,6 +13,7 @@ import {
   TIPO_COMPROBANTE_LABEL,
   desglosarIvaCompra,
   redondearPeso,
+  tieneDesglose,
   tienePieFiscal,
   totalPagadoCompra,
   type TipoComprobante,
@@ -75,6 +76,8 @@ export type ReclasificacionCompra = {
   numero_nuevo: string | null;
   fecha_nueva: string | null;
   iva_nuevo: number | null;
+  flete_anterior: number | null;
+  flete_nuevo: number | null;
   motivo: string;
   fecha: string;
   usuario: { nombre: string } | null;
@@ -168,6 +171,9 @@ function ComprobanteForm({
   const [percepcionIibb, setPercepcionIibb] = useState(
     compra.percepcion_iibb !== null ? String(compra.percepcion_iibb) : "",
   );
+  // El flete se corrige por acá igual que la factura que llegó tarde: no se
+  // edita la compra a mano, queda la fila en el log y se recalcula el costo.
+  const [flete, setFlete] = useState(compra.flete !== null ? String(compra.flete) : "");
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -198,6 +204,7 @@ function ComprobanteForm({
           percepcion_iva: discriminaIva && percepcionIva !== "" ? Number(percepcionIva) : null,
           percepcion_iibb: discriminaIva && percepcionIibb !== "" ? Number(percepcionIibb) : null,
         },
+        flete: flete === "" ? null : Number(flete),
         motivo,
       }, pin);
 
@@ -320,6 +327,22 @@ function ComprobanteForm({
         </>
       )}
 
+      <div className="mt-3 sm:w-1/3 sm:pr-2">
+        <label className={labelClass}>Flete</label>
+        <input
+          type="number"
+          min={0}
+          step="0.01"
+          placeholder="0"
+          className={`${inputClass} text-right tabular-nums`}
+          value={flete}
+          onChange={(e) => setFlete(e.target.value)}
+        />
+        <p className="mt-[4px] text-[11px] leading-[1.3] text-text-3">
+          Solo si se pagó aparte. Cambiarlo recalcula el costo de estos productos.
+        </p>
+      </div>
+
       <div className="mt-3">
         <label className={labelClass}>¿Por qué se corrige? *</label>
         <input
@@ -377,24 +400,28 @@ export function CompraDetalle({
   const [editando, setEditando] = useState(false);
   const [verDesglose, setVerDesglose] = useState(false);
 
-  // Lo que se pagó por la compra: productos más todo lo que suma el pie.
-  // Es el número grande de la pantalla, el mismo que figura abajo de todo
-  // en el papel (usuario 2026-10-16).
+  // Lo que se pagó por la compra: productos, todo lo que suma el pie y el
+  // flete que se haya pagado aparte. Es el número grande de la pantalla,
+  // el mismo que figura abajo de todo en el papel (usuario 2026-10-16).
   const totalPagado = totalPagadoCompra(compra);
   const hayPie = tienePieFiscal(compra);
+  // Un remito con flete no tiene pie, pero sí tiene algo repartido entre
+  // las líneas: el desglose también se muestra en ese caso.
+  const hayDesglose = tieneDesglose(compra);
   const unidades = useMemo(
     () => compra.items.reduce((acc, it) => acc + it.cantidad, 0),
     [compra.items],
   );
 
-  // Los impuestos del pie son de toda la factura, así que para saber cuánto
-  // salió de verdad cada cosa se reparten entre las líneas según cuánto
-  // pesa cada una: lo pagado dividido lo que suman los productos.
+  // Los impuestos del pie y el flete son de toda la entrega, así que para
+  // saber cuánto salió de verdad cada cosa se reparten entre las líneas
+  // según cuánto pesa cada una: lo pagado dividido lo que suman los
+  // productos.
   //
   // Sale bien carguen las líneas en neto (el factor da 1,28: IVA más las
   // dos percepciones) o con IVA adentro (da 1,06: solo las percepciones,
   // porque el IVA ya está en el costo). Nunca duplica.
-  const factorImpuestos = hayPie && compra.total > 0 ? totalPagado / compra.total : 1;
+  const factorImpuestos = hayDesglose && compra.total > 0 ? totalPagado / compra.total : 1;
 
   // Propuesta de desglose para cuando la factura llega después: el costo
   // cargado es el precio final pagado, el neto sale para atrás.
@@ -435,7 +462,7 @@ export function CompraDetalle({
               <p className="text-[22px] font-semibold leading-[1.25] tabular-nums text-text">
                 {formatoMonedaExacto.format(totalPagado)}
               </p>
-              {hayPie ? (
+              {hayDesglose ? (
                 <button
                   type="button"
                   onClick={() => setVerDesglose((v) => !v)}
@@ -450,7 +477,7 @@ export function CompraDetalle({
               )}
             </div>
 
-            {hayPie && verDesglose && (
+            {hayDesglose && verDesglose && (
               <div className="w-full rounded-[6px] border border-border bg-bg-2 px-[12px] py-[10px] sm:w-[330px]">
                 <FilaDesglose
                   label="Productos"
@@ -461,16 +488,27 @@ export function CompraDetalle({
                   apagado
                 />
                 <div className="my-[7px] border-t border-border" />
-                <FilaDesglose label="Neto gravado" monto={compra.neto_gravado ?? 0} />
-                {!!compra.impuestos_internos && (
-                  <FilaDesglose label="Impuestos internos" monto={compra.impuestos_internos} />
+                {hayPie && (
+                  <>
+                    <FilaDesglose label="Neto gravado" monto={compra.neto_gravado ?? 0} />
+                    {!!compra.impuestos_internos && (
+                      <FilaDesglose label="Impuestos internos" monto={compra.impuestos_internos} />
+                    )}
+                    <FilaDesglose label="IVA" monto={compra.iva ?? 0} />
+                    {!!compra.percepcion_iva && (
+                      <FilaDesglose label="Percepción IVA" monto={compra.percepcion_iva} />
+                    )}
+                    {!!compra.percepcion_iibb && (
+                      <FilaDesglose label="Percepción IIBB" monto={compra.percepcion_iibb} />
+                    )}
+                  </>
                 )}
-                <FilaDesglose label="IVA" monto={compra.iva ?? 0} />
-                {!!compra.percepcion_iva && (
-                  <FilaDesglose label="Percepción IVA" monto={compra.percepcion_iva} />
-                )}
-                {!!compra.percepcion_iibb && (
-                  <FilaDesglose label="Percepción IIBB" monto={compra.percepcion_iibb} />
+                {!!compra.flete && (
+                  <FilaDesglose
+                    label="Flete"
+                    ayuda="Se pagó aparte, no está en la factura"
+                    monto={compra.flete}
+                  />
                 )}
                 <div className="my-[7px] border-t border-border" />
                 <FilaDesglose label="Total pagado" monto={totalPagado} fuerte />
@@ -525,7 +563,13 @@ export function CompraDetalle({
                   {formatoFechaHora.format(new Date(r.fecha))} · {r.usuario?.nombre ?? "—"} ·{" "}
                   {r.tipo_anterior ? TIPO_COMPROBANTE_LABEL[r.tipo_anterior] : "Sin clasificar"} →{" "}
                   {TIPO_COMPROBANTE_LABEL[r.tipo_nuevo]}
-                  {r.numero_nuevo ? ` (${r.numero_nuevo})` : ""} — {r.motivo}
+                  {r.numero_nuevo ? ` (${r.numero_nuevo})` : ""}
+                  {/* Una corrección puede ser solo del flete: ahí el tipo de
+                      comprobante queda igual y lo que cambió es este número. */}
+                  {r.flete_nuevo !== r.flete_anterior
+                    ? ` · flete ${formatoMonedaExacto.format(r.flete_nuevo ?? 0)}`
+                    : ""}{" "}
+                  — {r.motivo}
                 </p>
               ))}
             </div>
@@ -536,10 +580,15 @@ export function CompraDetalle({
       <div className="overflow-hidden rounded-card border border-border bg-bg">
         <div className="flex flex-wrap items-center justify-between gap-1 border-b border-border px-[14px] py-[11px]">
           <h3 className="text-[13px] font-semibold text-text">Líneas</h3>
-          {hayPie && (
+          {hayDesglose && (
             <p className="text-[11.5px] text-text-3">
-              El costo con impuestos es el que el sistema toma como costo del producto: reparte el
-              IVA y las percepciones de la factura entre las líneas (acá, ×{" "}
+              El costo con impuestos es el que el sistema toma como costo del producto: reparte{" "}
+              {hayPie && compra.flete
+                ? "el IVA, las percepciones y el flete"
+                : hayPie
+                  ? "el IVA y las percepciones de la factura"
+                  : "el flete"}{" "}
+              entre las líneas (acá, ×{" "}
               {factorImpuestos.toLocaleString("es-AR", { maximumFractionDigits: 3 })}).
             </p>
           )}

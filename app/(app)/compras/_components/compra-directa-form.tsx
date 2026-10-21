@@ -133,6 +133,11 @@ export function CompraDirectaForm({
   const [internos, setInternos] = useState("");
   const [percepcionIva, setPercepcionIva] = useState("");
   const [percepcionIibb, setPercepcionIibb] = useState("");
+  // Lo que costó traer la mercadería, cuando se paga aparte y no figura en
+  // la factura. Nunca obligatorio. No es un dato fiscal (por eso vive
+  // afuera del pie y vale también con remito), pero sí entra al costo de
+  // los productos, repartido entre las líneas igual que los impuestos.
+  const [flete, setFlete] = useState("");
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [avisoPrecio, setAvisoPrecio] = useState<string | null>(null);
@@ -178,6 +183,7 @@ export function CompraDirectaForm({
   const internosValor = internos === "" ? null : Number(internos);
   const percepcionIvaValor = percepcionIva === "" ? null : Number(percepcionIva);
   const percepcionIibbValor = percepcionIibb === "" ? null : Number(percepcionIibb);
+  const fleteValor = flete === "" ? null : Number(flete);
 
   // Suma del pie, con la misma estructura que traen las facturas reales:
   // neto gravado + impuestos internos + IVA + percepciones = total.
@@ -400,6 +406,7 @@ export function CompraDirectaForm({
       [internosValor, "Los impuestos internos"],
       [percepcionIvaValor, "La percepción de IVA"],
       [percepcionIibbValor, "La percepción de IIBB"],
+      [fleteValor, "El flete"],
     ] as const) {
       if (valor !== null && (!Number.isFinite(valor) || valor < 0))
         return `${nombre} no puede ser un monto negativo.`;
@@ -453,6 +460,9 @@ export function CompraDirectaForm({
           percepcion_iva: discriminaIva ? percepcionIvaValor : null,
           percepcion_iibb: discriminaIva ? percepcionIibbValor : null,
         },
+        // Afuera del comprobante a propósito: el flete que se paga aparte
+        // no es un dato fiscal y existe igual con remito.
+        flete: fleteValor,
         lineas: lineas
           .filter((l) => !l.soloPrecio)
           .map((l) => ({
@@ -488,6 +498,7 @@ export function CompraDirectaForm({
       setInternos("");
       setPercepcionIva("");
       setPercepcionIibb("");
+      setFlete("");
 
       if (fallos.length > 0) {
         setCompraCreadaId(resultado.id);
@@ -515,7 +526,8 @@ export function CompraDirectaForm({
         presentación (x24, x6, unidad) tiene su propio precio, siempre cargado a mano y obligatorio
         — si ya tenía uno, aparece debajo del campo como sugerencia. Si agregás un pack que se
         desarma, el resto de la familia aparece abajo para cargarle el precio ahí mismo. El
-        vencimiento es opcional: cargalo solo si el producto lo tiene.
+        vencimiento es opcional: cargalo solo si el producto lo tiene. Si pagaste flete aparte,
+        cargalo abajo de todo: se reparte entre los productos y queda adentro del costo.
       </p>
 
       {avisoPrecio && (
@@ -862,17 +874,42 @@ export function CompraDirectaForm({
             </>
           )}
 
-          <p
-            className={`flex items-center justify-between gap-3 text-[13px] font-semibold text-text ${
-              discriminaIva ? "mt-2 border-t border-border pt-2" : "justify-end"
-            }`}
-          >
+          {/* El flete queda afuera del cuadre a propósito: se compara el pie
+              contra las líneas, y el flete pagado aparte no está en ninguno
+              de los dos. Sumarlo daría un aviso de diferencia siempre. */}
+          <div className={discriminaIva ? "mt-2 border-t border-border pt-2" : ""}>
+            <FilaPie
+              label="Flete"
+              ayuda="Opcional. Solo si se pagó aparte: si viene como una línea de la factura ya está en el neto"
+              value={flete}
+              onChange={setFlete}
+              placeholder="0"
+            />
+          </div>
+
+          <p className="mt-2 flex items-center justify-between gap-3 border-t border-border pt-2 text-[13px] font-semibold text-text">
             <span>Total de las líneas</span>
             <span className="tabular-nums">{formatoMoneda.format(total)}</span>
           </p>
 
+          {!!fleteValor && (
+            <p className="mt-1 flex items-center justify-between gap-3 text-[12.5px] text-text-2">
+              <span>Total pagado, con el flete</span>
+              <span className="tabular-nums">
+                {formatoMoneda.format((cuadre ?? total) + fleteValor)}
+              </span>
+            </p>
+          )}
+
           {diferenciaCuadre !== null && Math.abs(diferenciaCuadre) <= TOLERANCIA_CUADRE && (
             <p className="mt-1 text-right text-[12px] text-ok">Cuadra con la factura ✓</p>
+          )}
+
+          {!!fleteValor && total > 0 && (
+            <p className="mt-1 text-right text-[12px] text-text-3">
+              El flete se reparte entre las líneas según cuánto pesa cada una, igual que los
+              impuestos: entra al costo de los productos.
+            </p>
           )}
         </div>
       </div>

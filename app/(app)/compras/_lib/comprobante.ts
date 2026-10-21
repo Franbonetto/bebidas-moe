@@ -61,15 +61,16 @@ export function desglosarIvaCompra(
 }
 
 // Lo que realmente se pagó: el total que figura abajo de todo en la
-// factura (neto + internos + IVA + percepciones). Las líneas solas nunca
-// son ese número -- les faltan los impuestos del pie.
+// factura (neto + internos + IVA + percepciones), más el flete si se pagó
+// aparte. Las líneas solas nunca son ese número -- les faltan los impuestos
+// del pie.
 //
 // Sirve igual carguen las líneas en neto o con IVA adentro: el pie se copia
 // tal cual del papel, así que neto + IVA ya es lo que suman las líneas en
 // un caso y el neto solo en el otro.
 //
 // Sin pie cargado (remito, o una compra vieja sin clasificar) lo único que
-// se sabe es lo que suman las líneas.
+// se sabe es lo que suman las líneas, más el flete.
 export function totalPagadoCompra(compra: {
   total: number;
   neto_gravado: number | null;
@@ -77,14 +78,18 @@ export function totalPagadoCompra(compra: {
   impuestos_internos: number | null;
   percepcion_iva: number | null;
   percepcion_iibb: number | null;
+  flete?: number | null;
 }): number {
-  if (compra.neto_gravado === null || compra.iva === null) return compra.total;
+  const flete = compra.flete ?? 0;
+  if (compra.neto_gravado === null || compra.iva === null)
+    return redondearPeso(compra.total + flete);
   return redondearPeso(
     compra.neto_gravado +
       (compra.impuestos_internos ?? 0) +
       compra.iva +
       (compra.percepcion_iva ?? 0) +
-      (compra.percepcion_iibb ?? 0),
+      (compra.percepcion_iibb ?? 0) +
+      flete,
   );
 }
 
@@ -92,6 +97,18 @@ export function totalPagadoCompra(compra: {
 // que habilita mostrar el desglose.
 export function tienePieFiscal(compra: { neto_gravado: number | null; iva: number | null }): boolean {
   return compra.neto_gravado !== null && compra.iva !== null;
+}
+
+// Lo que el sistema reparte entre las líneas para saber cuánto salió de
+// verdad cada unidad: los impuestos del pie y el flete pagado aparte. Un
+// remito con flete no tiene pie pero sí tiene algo que repartir, así que no
+// alcanza con tienePieFiscal() para decidir si mostrar el desglose.
+export function tieneDesglose(compra: {
+  neto_gravado: number | null;
+  iva: number | null;
+  flete?: number | null;
+}): boolean {
+  return tienePieFiscal(compra) || !!compra.flete;
 }
 
 export function redondearPeso(valor: number): number {

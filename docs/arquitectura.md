@@ -220,6 +220,31 @@ cargado a $6.095,04, costó $7.801,65.
 - Las compras cargadas antes de esta decisión quedan como están: se corrigen solas a medida que
   entra mercadería nueva, porque el costo actual es el del último lote.
 
+### Flete (2026-10-21)
+
+Lo que se paga para que la mercadería llegue al local. Es un campo **opcional** del encabezado de
+la entrada: uno por entrega, del viaje entero, no de cada producto.
+
+- **Viene de las dos formas, según el proveedor.** A veces es un renglón más de la Factura A, y
+  entonces ya está adentro del neto gravado: el factor lo reparte solo y **no hay que cargarlo**,
+  o se contaría dos veces. El campo es para el flete que se paga aparte, al camión, sin figurar
+  en el papel. La pantalla lo aclara al lado del campo.
+- **Entra al costo, con el mismo criterio que los impuestos**: es plata que salió del bolsillo por
+  esa mercadería. El factor pasa a ser `(total pagado + flete) / total de las líneas`, y se
+  reparte **en proporción a lo que pesa cada línea** — una línea que es el 40% de la compra se
+  lleva el 40% del flete, no se divide en partes iguales ni por unidad.
+- **Con remito también se reparte.** Hasta ahora, sin Factura A el factor era `null` y el costo
+  quedaba pelado; una entrada con remito y flete ahora corrige el costo igual.
+- **No es un dato fiscal.** No toca neto ni IVA, no da crédito fiscal y no entra en el balance de
+  1.8 (que ya declara a los fletes fuera de alcance). Tampoco toca `compras.total`, que sigue
+  siendo la suma de las líneas.
+- **Queda afuera del cuadre.** El aviso de diferencia compara el pie contra las líneas, y el flete
+  pagado aparte no está en ninguno de los dos: sumarlo daría un aviso permanente.
+- **Se corrige por el mismo camino que la factura que llega tarde** (el caso real: el flete se pagó
+  y nadie lo cargó): `reclasificar_comprobante_compra()`, con motivo obligatorio, fila en
+  `compras_reclasificacion_fiscal` y recálculo del costo. Nunca con un UPDATE suelto — el trigger
+  `validar_edicion_compra()` lo bloquea igual que a las columnas fiscales.
+
 ## 1.7 Precios y promociones
 
 ```
