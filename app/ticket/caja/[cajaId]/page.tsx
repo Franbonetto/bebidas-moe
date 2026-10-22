@@ -23,6 +23,14 @@ import { ImprimirAlAbrir } from "../../_components/imprimir-al-abrir";
 // El efectivo del sistema, el declarado y la diferencia salen de las
 // columnas que fijó cerrar_caja() al cerrar: son el snapshot inmutable de
 // ese momento, no se recalculan acá.
+//
+// Lo único que el cierre hace con esos números es restarles el monto de
+// apertura (pedido del usuario 2026-10-22): esa plata no sale del local,
+// queda en el cajón para abrir mañana, así que el papel y el mensaje
+// informan el efectivo del día sin ella. El monto sale de
+// cajas.monto_apertura, el que la encargada contó al abrir -- no hay
+// ningún importe escrito en el código. La diferencia no cambia: restarle
+// lo mismo al sistema y al contado la deja igual.
 
 const MEDIO_LABEL: Record<string, string> = {
   efectivo: "Efectivo",
@@ -57,6 +65,11 @@ function mensajeCierre(datos: {
   diferencia: number;
 }): string {
   const plata = (n: number) => formatoMoneda.format(n);
+  // El efectivo que se informa es el del día: el de apertura queda en el
+  // cajón. Se le resta a los dos lados del arqueo, así la diferencia
+  // sigue siendo la misma que fijó cerrar_caja().
+  const sistemaNeto = datos.sistema - datos.apertura;
+  const contadoNeto = datos.contado - datos.apertura;
   // La sucursal va en mayúscula y en negrita: es lo primero que el dueño
   // necesita distinguir cuando le entran los dos cierres la misma noche
   // (pedido del usuario 2026-10-19).
@@ -82,7 +95,9 @@ function mensajeCierre(datos: {
   }
 
   lineas.push("");
-  lineas.push(`Apertura: ${plata(datos.apertura)}`);
+  lineas.push(
+    `Apertura: ${plata(datos.apertura)}` + (datos.apertura > 0 ? " (queda en el cajón)" : ""),
+  );
   if (datos.entradas > 0) lineas.push(`Entradas de caja: +${plata(datos.entradas)}`);
   if (datos.salidas > 0) lineas.push(`Salidas de caja: −${plata(datos.salidas)}`);
   if (datos.devolucionesEfectivo > 0) {
@@ -90,8 +105,8 @@ function mensajeCierre(datos: {
   }
 
   lineas.push("");
-  lineas.push(`Efectivo según sistema: ${plata(datos.sistema)}`);
-  lineas.push(`Efectivo contado: ${plata(datos.contado)}`);
+  lineas.push(`Efectivo del día según sistema: ${plata(sistemaNeto)}`);
+  lineas.push(`Efectivo del día contado: ${plata(contadoNeto)}`);
   lineas.push(
     `*Diferencia: ${plata(datos.diferencia)}*` +
       (datos.diferencia === 0
@@ -223,6 +238,11 @@ export default async function TicketCajaPage({
   const cerrada = caja.estado === "cerrada";
   const diferencia = caja.diferencia ?? 0;
 
+  // El efectivo del día, sin la apertura: ver la nota de arriba.
+  const apertura = caja.monto_apertura ?? 0;
+  const sistemaNeto = (caja.efectivo_sistema ?? 0) - apertura;
+  const contadoNeto = (caja.efectivo_declarado ?? 0) - apertura;
+
   // El número del dueño vive en WHATSAPP_DUENO (Vercel y .env.local), no en
   // el repo. Si falta, no hay botón.
   const telefonoDueno = telefonoWhatsapp(process.env.WHATSAPP_DUENO);
@@ -324,9 +344,16 @@ export default async function TicketCajaPage({
 
       <div className="my-3 border-t border-dashed border-border" />
 
-      <div className="flex justify-between">
-        <span>Monto de apertura</span>
-        <span className="tabular-nums">{formatoMoneda.format(caja.monto_apertura ?? 0)}</span>
+      <div className="flex flex-col gap-[3px]">
+        <div className="flex justify-between">
+          <span>Monto de apertura</span>
+          <span className="tabular-nums">{formatoMoneda.format(apertura)}</span>
+        </div>
+        {apertura > 0 && (
+          <p className="tk-chico text-[11.5px] text-text-2">
+            Queda en el cajón para abrir mañana: no entra en el efectivo del día.
+          </p>
+        )}
       </div>
 
       <div className="my-3 border-t border-dashed border-border" />
@@ -401,17 +428,22 @@ export default async function TicketCajaPage({
       {cerrada ? (
         <div className="flex flex-col gap-[3px]">
           <div className="flex justify-between">
-            <span className="text-text-2">Efectivo según sistema</span>
-            <span className="tabular-nums">{formatoMoneda.format(caja.efectivo_sistema ?? 0)}</span>
+            <span className="text-text-2">Efectivo del día según sistema</span>
+            <span className="tabular-nums">{formatoMoneda.format(sistemaNeto)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-text-2">Efectivo contado</span>
-            <span className="tabular-nums">{formatoMoneda.format(caja.efectivo_declarado ?? 0)}</span>
+            <span className="text-text-2">Efectivo del día contado</span>
+            <span className="tabular-nums">{formatoMoneda.format(contadoNeto)}</span>
           </div>
           <div className="tk-total flex justify-between text-[15px] font-bold">
             <span>Diferencia</span>
             <span className="tabular-nums">{formatoMoneda.format(diferencia)}</span>
           </div>
+          {apertura > 0 && (
+            <p className="tk-chico text-center text-[11.5px] text-text-2">
+              Los dos importes son sin los {formatoMoneda.format(apertura)} de apertura.
+            </p>
+          )}
           <p className="tk-chico text-center text-[11.5px] text-text-2">
             {diferencia === 0
               ? "La caja cerró justa."
