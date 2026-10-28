@@ -316,7 +316,8 @@ export async function facturarVenta(
 // factura sola" de CLAUDE.md y el "Disparo: manual" de
 // docs/bloque_arca_facturacion.md (sección 2):
 //
-//   - Débito, crédito, transferencia y QR dejan rastro bancario, así que
+//   - Débito, crédito, transferencia, QR, Mercado Pago y Cuenta DNI (los
+//     dos últimos agregados 2026-10-28) dejan rastro bancario, así que
 //     esas ventas se facturan legalmente sin esperar que el cliente lo
 //     pida. El efectivo sigue como estaba: ticket interno, y factura a
 //     mano desde /vender/facturar si la piden.
@@ -329,7 +330,7 @@ export async function facturarVenta(
 //     todo antes de que se hable con ARCA, y un fallo acá deja el
 //     comprobante en `rechazado`/`error`, reintentable. Sin reintentos
 //     silenciosos (docs/bloque_arca_facturacion.md, sección 4).
-const MEDIOS_QUE_FACTURAN = ["debito", "credito", "transferencia", "qr"];
+const MEDIOS_QUE_FACTURAN = ["debito", "credito", "transferencia", "qr", "mercado_pago", "cuenta_dni"];
 
 export type ResultadoFacturacionAutomatica =
   // `aviso` en null = no correspondía facturar (venta en efectivo): no es

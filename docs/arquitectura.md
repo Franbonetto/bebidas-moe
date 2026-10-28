@@ -310,7 +310,8 @@ sobre `recargos_sucursal`.
 - **Nunca puede ser mayor al precio de lista**, y el sistema no deja guardarlo: la venta
   no se podría cerrar, porque `confirmar_venta()` rechaza toda línea con
   `precio_unitario > precio_lista_unitario`.
-- Débito, crédito, transferencia y QR siguen pagando el precio de lista.
+- Débito, crédito, transferencia, QR, Mercado Pago y Cuenta DNI siguen pagando el precio
+  de lista.
 
 - Promos con **vigencia opcional**: sin fechas = permanente.
 - **Advertencia automática** cuando el precio final queda por debajo del costo. Avisa, no bloquea, y queda registrado.
@@ -336,6 +337,16 @@ Buscar/agregar productos → ticket con el total en efectivo
 - **Búsqueda** por fragmentos (`jw dou` encuentra Johnnie Walker Double Black), más vendidos primero, grilla de accesos rápidos configurable. Compatible con lector de código de barras cuando lo compren.
 - **Sin stock:** permite vender, advierte, y marca el producto para revisión de inventario.
 - **Caja diaria por sucursal:** total, desglose por medio de pago, cantidad de tickets, diferencia entre sistema y efectivo real.
+- **Medios de pago (actualizado 2026-10-28):** Efectivo, Mercado Pago, Cuenta DNI, QR,
+  Transferencia, Débito, Crédito — ese es también el orden de los botones en el POS
+  (pedido del usuario: Mercado Pago y Cuenta DNI 2do y 3ro, discriminados del QR
+  genérico para que el dueño los vea aparte en los cierres de caja y en su panel).
+  Atajos F1-F5 para los cinco primeros; Débito y Crédito, los menos usados en el
+  local, quedan sin tecla dedicada porque F6-F12 ya tienen otras acciones (Cantidad,
+  Entrada/Egresos, Ver precio, Buscar, Nuevo ticket, Cobrar). Mercado Pago y Cuenta
+  DNI se tratan igual que QR/débito/crédito/transferencia en todo lo demás: no son
+  "billete en mano" (no disparan descuento de efectivo ni promociones) y sí disparan
+  la facturación automática de la sección 2 de `docs/bloque_arca_facturacion.md`.
 
 ### Precio tocado a mano en el mostrador (2026-10-17)
 
@@ -398,8 +409,9 @@ es real: no se borra un comprobante, se lo anula con nota de crédito (pendiente
   detalle de la venta ya confirmada. Una venta puede quedar sin facturar indefinidamente
   sin romper nada — facturar nunca es requisito para cerrar una venta.
   **Actualizado 2026-10-19:** las ventas que **no son en efectivo** (débito, crédito,
-  transferencia, QR, y el pago dividido donde alguno de los medios no sea efectivo) se
-  facturan **automáticamente** al cobrar, como Factura B a Consumidor Final, desde
+  transferencia, QR, Mercado Pago, Cuenta DNI, y el pago dividido donde alguno de los
+  medios no sea efectivo) se facturan **automáticamente** al cobrar, como Factura B a
+  Consumidor Final, desde
   `confirmarVenta()` → `facturarVentaAutomatica()`. La venta se graba primero y la
   facturación nunca la voltea: si ARCA rechaza o no responde (tope de 15s), el
   comprobante queda `rechazado`/`error`, el POS muestra el motivo y se reintenta a mano.

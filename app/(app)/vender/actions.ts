@@ -35,7 +35,7 @@ export type ComprobanteResumen = {
 };
 
 export type PagoVenta = {
-  medio_pago: "efectivo" | "debito" | "credito" | "transferencia" | "qr";
+  medio_pago: "efectivo" | "debito" | "credito" | "transferencia" | "qr" | "mercado_pago" | "cuenta_dni";
   monto: number;
 };
 
@@ -92,8 +92,8 @@ export async function confirmarVenta(
 
   // Facturación automática de lo que no es efectivo (decisión del usuario
   // 2026-10-19, reemplaza el "no se factura sola" del 2026-10-08): débito,
-  // crédito, transferencia y QR se facturan acá mismo, como Factura B a
-  // Consumidor Final. El efectivo no.
+  // crédito, transferencia, QR, Mercado Pago y Cuenta DNI se facturan acá
+  // mismo, como Factura B a Consumidor Final. El efectivo no.
   //
   // El orden importa y es a propósito: la venta YA está grabada por
   // confirmar_venta() antes de que se hable con ARCA. Si ARCA rechaza,
@@ -158,7 +158,7 @@ export type CambioItemInput = {
 // plata se le devuelve por el posnet y no sale del cajon (decision del
 // usuario 2026-10-19, ver
 // supabase/migrations/20261019110000_devolucion_medio_reembolso.sql).
-export type MedioReembolso = "efectivo" | "debito" | "credito" | "transferencia" | "qr";
+export type MedioReembolso = "efectivo" | "debito" | "credito" | "transferencia" | "qr" | "mercado_pago" | "cuenta_dni";
 
 export async function confirmarDevolucion(input: {
   ventaId: string;

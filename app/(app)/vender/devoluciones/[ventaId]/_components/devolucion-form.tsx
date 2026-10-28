@@ -36,6 +36,8 @@ const modoBtnClass = (activo: boolean) =>
 // cajón (pedido del usuario 2026-10-19).
 const MEDIOS: { id: MedioReembolso; label: string }[] = [
   { id: "efectivo", label: "Efectivo" },
+  { id: "mercado_pago", label: "Mercado Pago" },
+  { id: "cuenta_dni", label: "Cuenta DNI" },
   { id: "debito", label: "Posnet débito" },
   { id: "credito", label: "Posnet crédito" },
   { id: "transferencia", label: "Transferencia" },
@@ -44,6 +46,8 @@ const MEDIOS: { id: MedioReembolso; label: string }[] = [
 
 const MEDIO_LABEL: Record<string, string> = {
   efectivo: "efectivo",
+  mercado_pago: "Mercado Pago",
+  cuenta_dni: "Cuenta DNI",
   debito: "débito",
   credito: "crédito",
   transferencia: "transferencia",

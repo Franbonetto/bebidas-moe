@@ -39,10 +39,11 @@ anula con nota de crédito (que todavía no existe, ver sección 7).
   (`confirmar_venta()`, sin cambios, y sigue sin ser requisito facturar
   para cerrar una venta), pero el server action `confirmarVenta()` llama
   después a `facturarVentaAutomatica()`:
-  - Si alguno de los medios de pago es **débito, crédito, transferencia o
-    QR**, se emite **Factura B a Consumidor Final** por el total de la
-    venta. En un pago dividido alcanza con que uno de los medios no sea
-    efectivo: no existe media venta facturada.
+  - Si alguno de los medios de pago es **débito, crédito, transferencia,
+    QR, Mercado Pago o Cuenta DNI** (los dos últimos agregados 2026-10-28),
+    se emite **Factura B a Consumidor Final** por el total de la venta. En
+    un pago dividido alcanza con que uno de los medios no sea efectivo: no
+    existe media venta facturada.
   - Si la venta fue **toda en efectivo**, no se factura sola: ticket
     interno, y Factura A o B a mano si el cliente la pide.
   - El POS **espera** el CAE (tope de 15s, ver el timeout de

@@ -51,7 +51,7 @@ export type SkuPos = {
 export type ComboData = ComboDef;
 export type PromoCantidadData = PromoCantidadDef;
 
-type MedioPago = "efectivo" | "debito" | "credito" | "transferencia" | "qr";
+type MedioPago = "efectivo" | "debito" | "credito" | "transferencia" | "qr" | "mercado_pago" | "cuenta_dni";
 
 // Una línea del ticket. `precioManual` y `recargoFrio` son el pedido del
 // usuario 2026-10-17 y son independientes entre sí: el lápiz REEMPLAZA el
@@ -155,15 +155,24 @@ function ticketVacio(id: string): Ticket {
 // corrió a F6 y Nuevo ticket a F11 para hacerle lugar (ver useEffect de
 // atajos globales más abajo).
 //
+// 2026-10-28: se agregan Mercado Pago y Cuenta DNI, discriminados del QR
+// genérico (el dueño los quiere ver aparte en los cierres de caja). Van 2do
+// y 3ro, justo después de Efectivo (pedido del usuario). No quedan F-keys
+// libres sin pisar Cantidad/Entrada/Egresos/Ver precio/Buscar/Nuevo
+// ticket/Cobrar (F6-F12), así que Débito y Crédito -- los menos usados en
+// el local -- pierden su tecla dedicada: siguen eligiéndose con el mouse.
+//
 // El orden del array es el de los botones en pantalla: se mueven junto con
 // la tecla, para que lo que se ve siga el orden F1, F2, F3... y no haya que
 // buscar cuál es cuál.
 const MEDIOS: { id: MedioPago; label: string; tecla?: string }[] = [
   { id: "efectivo", label: "Efectivo", tecla: "F1" },
-  { id: "qr", label: "QR", tecla: "F2" },
-  { id: "transferencia", label: "Transferencia", tecla: "F3" },
-  { id: "debito", label: "Débito", tecla: "F4" },
-  { id: "credito", label: "Crédito", tecla: "F5" },
+  { id: "mercado_pago", label: "Mercado Pago", tecla: "F2" },
+  { id: "cuenta_dni", label: "Cuenta DNI", tecla: "F3" },
+  { id: "qr", label: "QR", tecla: "F4" },
+  { id: "transferencia", label: "Transferencia", tecla: "F5" },
+  { id: "debito", label: "Débito" },
+  { id: "credito", label: "Crédito" },
 ];
 
 const ORIGEN_LABEL: Record<Tramo["origen"], string> = {
@@ -1087,10 +1096,10 @@ export function PosClient({
         if (lineas.length === 0) return;
         const medio = {
           F1: "efectivo",
-          F2: "qr",
-          F3: "transferencia",
-          F4: "debito",
-          F5: "credito",
+          F2: "mercado_pago",
+          F3: "cuenta_dni",
+          F4: "qr",
+          F5: "transferencia",
         } as const;
         elegirMedioUnico(medio[e.key]);
         return;

@@ -8,6 +8,8 @@ import { formatoMoneda } from "../_lib/formato";
 
 const MEDIO_LABEL: Record<string, string> = {
   efectivo: "Efectivo",
+  mercado_pago: "Mercado Pago",
+  cuenta_dni: "Cuenta DNI",
   debito: "Débito",
   credito: "Crédito",
   transferencia: "Transferencia",
