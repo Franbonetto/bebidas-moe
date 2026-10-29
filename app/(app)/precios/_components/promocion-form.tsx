@@ -20,7 +20,7 @@ const modoBtnClass = (activo: boolean) =>
     activo ? "border-moe bg-moe-soft text-moe" : "border-border bg-bg text-text-2 hover:bg-bg-2"
   }`;
 
-type Fila = { skuId: string };
+type Fila = { skuId: string; cantidadRequerida: number };
 
 // costo_actual no viene en SkuCatalogo (compras no lo necesita): esta
 // pantalla solo se muestra a quien ya puede ver costos (ve_costos()), asi
@@ -52,10 +52,13 @@ export function PromocionForm({
   const [sinFechaLimite, setSinFechaLimite] = useState(promocion?.vigente_hasta == null);
   const [activo, setActivo] = useState(promocion?.activo ?? true);
 
-  // Combo: solo qué productos lo arman. El precio ya no va por producto --
-  // se carga el total de la promo más abajo, uno por sucursal.
+  // Combo: qué productos lo arman y cuántas unidades de cada uno (ej. Skyy
+  // x1 + Speed x2). El precio ya no va por producto -- se carga el total de
+  // la promo más abajo, uno por sucursal.
   const [filasCombo, setFilasCombo] = useState<Fila[]>(
-    promocion?.tipo === "combo" ? promocion.items.map((i) => ({ skuId: i.sku_id })) : [],
+    promocion?.tipo === "combo"
+      ? promocion.items.map((i) => ({ skuId: i.sku_id, cantidadRequerida: i.cantidad_requerida }))
+      : [],
   );
 
   // El total que paga el cliente, por sucursal. Olavarría y Laprida no
@@ -85,7 +88,7 @@ export function PromocionForm({
   const excluirIdsCombo = useMemo(() => new Set(filasCombo.map((f) => f.skuId)), [filasCombo]);
 
   function agregarSkuCombo(sku: SkuCatalogo) {
-    setFilasCombo((prev) => [...prev, { skuId: sku.id }]);
+    setFilasCombo((prev) => [...prev, { skuId: sku.id, cantidadRequerida: 1 }]);
   }
 
   // Las sucursales donde corre la promo: todas, o la única elegida.
@@ -93,6 +96,12 @@ export function PromocionForm({
 
   function quitarFilaCombo(index: number) {
     setFilasCombo((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function cambiarCantidadCombo(index: number, cantidad: string) {
+    setFilasCombo((prev) =>
+      prev.map((f, i) => (i === index ? { ...f, cantidadRequerida: Number(cantidad) } : f)),
+    );
   }
 
   function advertenciaBajoCosto(skuId: string, precioUnitario: number): string | null {
@@ -112,6 +121,10 @@ export function PromocionForm({
 
     if (tipo === "combo") {
       if (filasCombo.length < 2) return "Un combo necesita al menos 2 SKU distintos.";
+      for (const f of filasCombo) {
+        if (!Number.isInteger(f.cantidadRequerida) || f.cantidadRequerida < 1)
+          return "La cantidad de cada producto del combo tiene que ser un entero de 1 o más.";
+      }
     } else {
       if (!skuCantidadId) return "Elegí el SKU de la promoción.";
       const cantidad = Number(cantidadRequerida);
@@ -146,7 +159,7 @@ export function PromocionForm({
 
     const items: PromocionItemInput[] =
       tipo === "combo"
-        ? filasCombo.map((f) => ({ skuId: f.skuId, cantidadRequerida: 1 }))
+        ? filasCombo.map((f) => ({ skuId: f.skuId, cantidadRequerida: f.cantidadRequerida }))
         : [{ skuId: skuCantidadId, cantidadRequerida: Number(cantidadRequerida) }];
 
     // Solo las sucursales con total cargado: dejar una vacía es la forma de
@@ -304,7 +317,15 @@ export function PromocionForm({
               {filasCombo.map((f, index) => {
                 const sku = skuPorId.get(f.skuId);
                 return (
-                  <div key={f.skuId} className="grid grid-cols-[1fr_auto] items-center gap-2">
+                  <div key={f.skuId} className="grid grid-cols-[56px_1fr_auto] items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      value={f.cantidadRequerida}
+                      onChange={(e) => cambiarCantidadCombo(index, e.target.value)}
+                      className={`${inputClass} text-center`}
+                      aria-label="Cantidad"
+                    />
                     <span className="truncate text-[13px] text-text">
                       {sku?.producto?.nombre}
                       {sku && <span className="text-text-3"> · {sku.producto?.marca?.nombre} — {presentacionLabel(sku)}</span>}
@@ -319,6 +340,12 @@ export function PromocionForm({
                   </div>
                 );
               })}
+              {filasCombo.length > 0 && (
+                <p className="text-[11.5px] text-text-3">
+                  La cantidad es cuántas unidades de ese producto entran en el combo (ej. Skyy x1 +
+                  Speed x2). La promo recién se dispara en el mostrador cuando están todas juntas.
+                </p>
+              )}
               <SkuPicker skus={skus} excluirIds={excluirIdsCombo} onSelect={agregarSkuCombo} />
             </div>
           ) : (

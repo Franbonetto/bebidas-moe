@@ -38,7 +38,7 @@ function resumenItems(promocion: PromocionRow, skuPorId: Map<string, PromocionSk
     .map((item) => {
       const sku = skuPorId.get(item.sku_id);
       const nombre = sku ? `${sku.producto?.nombre} (${presentacionLabel(sku)})` : "SKU eliminado";
-      return promocion.tipo === "cantidad" ? `${item.cantidad_requerida}x ${nombre}` : nombre;
+      return item.cantidad_requerida > 1 ? `${item.cantidad_requerida}x ${nombre}` : nombre;
     })
     .join(promocion.tipo === "combo" ? " + " : "");
 }
