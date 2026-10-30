@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { TipoComprobante } from "./_lib/comprobante";
+import type { MedioPago } from "./_lib/pagos";
 import { verificarPinOperaciones } from "@/lib/pin";
 
 export type LineaCompra = {
@@ -185,5 +186,61 @@ export async function reclasificarComprobanteCompra(datos: {
   revalidatePath(`/compras/${datos.compra_id}`);
   revalidatePath("/productos");
   revalidatePath("/reportes/iva");
+  return { ok: true };
+}
+
+// Registrar un pago sobre una boleta puntual. Sin PIN: es una pantalla
+// privada del dueño (distinto del PIN de "entrada de mercadería", que frena
+// a la encargada en el mostrador -- acá el que opera ya es el dueño).
+// registrar_pago_compra() valida en la base que quien llama sea el dueño.
+export async function registrarPagoCompra(datos: {
+  compra_id: string;
+  monto: number;
+  medio_pago: MedioPago;
+  nota: string | null;
+}): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  if (!Number.isFinite(datos.monto) || datos.monto <= 0)
+    return { error: "El monto tiene que ser mayor a cero." };
+
+  const { error } = await supabase.rpc("registrar_pago_compra", {
+    p_compra_id: datos.compra_id,
+    p_monto: datos.monto,
+    p_medio_pago: datos.medio_pago,
+    p_nota: datos.nota,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/compras");
+  revalidatePath(`/compras/${datos.compra_id}`);
+  revalidatePath("/proveedores");
+  return { ok: true };
+}
+
+// Anular un pago cargado mal. No lo edita ni lo borra: agrega una fila
+// 'reversa' con motivo obligatorio (reversar_pago_compra()). Si ese pago
+// había generado un excedente a favor en la cuenta del proveedor, también
+// se revierte.
+export async function reversarPagoCompra(datos: {
+  pago_id: string;
+  compra_id: string;
+  motivo: string;
+}): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  if (!datos.motivo.trim()) return { error: "Escribí por qué se anula este pago." };
+
+  const { error } = await supabase.rpc("reversar_pago_compra", {
+    p_pago_id: datos.pago_id,
+    p_motivo: datos.motivo.trim(),
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/compras");
+  revalidatePath(`/compras/${datos.compra_id}`);
+  revalidatePath("/proveedores");
   return { ok: true };
 }

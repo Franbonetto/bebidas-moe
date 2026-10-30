@@ -8,6 +8,13 @@ import {
   totalPagadoCompra,
   type TipoComprobante,
 } from "../_lib/comprobante";
+import {
+  ESTADO_PAGO_LABEL,
+  estadoPagoCompra,
+  totalAbonadoCompra,
+  type EstadoPagoCompra,
+  type TipoPago,
+} from "../_lib/pagos";
 
 export type Compra = {
   id: string;
@@ -26,7 +33,23 @@ export type Compra = {
   // Lo que costó traer la mercadería, cuando se pagó aparte de la factura.
   // null = no hubo (o vino adentro del neto, como una línea más del papel).
   flete: number | null;
-  proveedor: { razon_social: string; nombre_comercial: string | null } | null;
+  proveedor: {
+    id?: string;
+    razon_social: string;
+    nombre_comercial: string | null;
+    // Días de plazo configurados en Proveedores -- solo lo trae el detalle
+    // de la boleta, para mostrar el vencimiento (pedido del usuario
+    // 2026-10-30).
+    plazo_dias?: number | null;
+  } | null;
+  // Cuándo el dueño abrió esta boleta por primera vez. null = todavía no la
+  // vio -- se muestra como "Nueva". Siempre null para Olavarría, que no la
+  // usa.
+  visto_dueno_en?: string | null;
+  // El historial de pagos de esta boleta. null = quien mira no es el dueño
+  // (el estado de pago es privado, decisión del usuario 2026-10-30) -- en
+  // ese caso no se muestra la columna "Pago".
+  pagos?: { tipo: TipoPago; monto: number }[] | null;
 };
 
 const ESTADO_LABEL: Record<Compra["estado"], string> = {
@@ -72,7 +95,47 @@ export function ComprobanteBadge({ tipo }: { tipo: TipoComprobante | null }) {
   );
 }
 
-export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; puedeCargar: boolean }) {
+// Verde con tilde = pagada. Amarillo = abonada en parte. Rojo = todavía no
+// se le pagó nada. Solo lo ve el dueño (pedido del usuario 2026-10-30).
+const ESTADO_PAGO_CLASS: Record<EstadoPagoCompra, string> = {
+  pagada: "bg-ok-bg text-ok",
+  parcial: "bg-warn-bg text-warn",
+  impaga: "bg-err-bg text-err",
+};
+
+export function EstadoPagoBadge({ estado }: { estado: EstadoPagoCompra }) {
+  return (
+    <span
+      className={`inline-block whitespace-nowrap rounded-[4px] px-[8px] py-[2px] text-[11.5px] font-medium ${ESTADO_PAGO_CLASS[estado]}`}
+    >
+      {estado === "pagada" ? "✓ " : ""}
+      {ESTADO_PAGO_LABEL[estado]}
+    </span>
+  );
+}
+
+// Boleta que la encargada cargó y el dueño todavía no abrió. Se apaga sola
+// al abrir el detalle (marcar_compra_vista()).
+function NuevaBadge() {
+  return (
+    <span className="inline-block whitespace-nowrap rounded-[4px] bg-info-bg px-[7px] py-[1px] text-[11px] font-medium text-info">
+      Nueva
+    </span>
+  );
+}
+
+export function ComprasTable({
+  compras,
+  puedeCargar,
+  esDueno = false,
+}: {
+  compras: Compra[];
+  puedeCargar: boolean;
+  // La columna "Pago" y la marca "Nueva" son privadas del dueño (pedido del
+  // usuario 2026-10-30). Olavarría ve esta misma tabla sin ninguna de las
+  // dos.
+  esDueno?: boolean;
+}) {
   const [query, setQuery] = useState("");
 
   const filtradas = useMemo(() => {
@@ -148,6 +211,11 @@ export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; pued
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
                   Estado
                 </th>
+                {esDueno && (
+                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
+                    Pago
+                  </th>
+                )}
                 <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
                   Total pagado
                 </th>
@@ -157,8 +225,12 @@ export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; pued
               {filtradas.map((c) => (
                 <tr key={c.id} className="border-b border-[#F1F1F3] last:border-b-0 hover:bg-[#FAFAFB]">
                   <td className="px-0 py-0">
-                    <Link href={`/compras/${c.id}`} className="block px-[14px] py-[9px] font-medium text-text">
+                    <Link
+                      href={`/compras/${c.id}`}
+                      className="flex items-center gap-[7px] px-[14px] py-[9px] font-medium text-text"
+                    >
                       {c.proveedor?.nombre_comercial ?? c.proveedor?.razon_social ?? "—"}
+                      {esDueno && !c.visto_dueno_en && <NuevaBadge />}
                     </Link>
                   </td>
                   <td className="px-[14px] py-[9px] align-middle">
@@ -173,6 +245,15 @@ export function ComprasTable({ compras, puedeCargar }: { compras: Compra[]; pued
                   <td className="px-[14px] py-[9px] align-middle">
                     <EstadoCompraBadge estado={c.estado} />
                   </td>
+                  {esDueno && (
+                    <td className="px-0 py-0 align-middle">
+                      <Link href={`/compras/${c.id}`} className="block px-[14px] py-[9px]">
+                        <EstadoPagoBadge
+                          estado={estadoPagoCompra(totalPagadoCompra(c), totalAbonadoCompra(c.pagos ?? []))}
+                        />
+                      </Link>
+                    </td>
+                  )}
                   <td
                     className="px-[14px] py-[9px] text-right align-middle font-medium tabular-nums text-text"
                     title="Productos más impuestos y percepciones, como figura al pie de la factura, más el flete que se haya pagado aparte"

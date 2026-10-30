@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ProveedorForm } from "./proveedor-form";
 
@@ -111,11 +112,13 @@ export function ProveedoresTable({ proveedores }: { proveedores: Proveedor[] }) 
                   key={p.id}
                   className="border-b border-[#F1F1F3] last:border-b-0 hover:bg-[#FAFAFB]"
                 >
-                  <td className="px-[14px] py-[9px] align-middle">
-                    <p className="font-medium text-text">{p.razon_social}</p>
-                    {p.nombre_comercial && (
-                      <p className="text-[11.5px] text-text-3">{p.nombre_comercial}</p>
-                    )}
+                  <td className="px-0 py-0">
+                    <Link href={`/proveedores/${p.id}`} className="block px-[14px] py-[9px]">
+                      <p className="font-medium text-text hover:underline">{p.razon_social}</p>
+                      {p.nombre_comercial && (
+                        <p className="text-[11.5px] text-text-3">{p.nombre_comercial}</p>
+                      )}
+                    </Link>
                   </td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">{p.cuit ?? "—"}</td>
                   <td className="px-[14px] py-[9px] align-middle text-text-2">

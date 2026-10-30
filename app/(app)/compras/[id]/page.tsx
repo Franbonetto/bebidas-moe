@@ -9,6 +9,7 @@ import {
   type ReclasificacionCompra,
   type RecepcionDetalle,
 } from "../_components/compra-detalle";
+import type { CompraPago } from "../_lib/pagos";
 
 export default async function CompraDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,7 +20,8 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
     .select(
       `id, numero_factura, fecha_factura, estado, total,
        tipo_comprobante, neto_gravado, iva, impuestos_internos, percepcion_iva, percepcion_iibb, flete,
-       proveedor:proveedores ( id, razon_social, nombre_comercial ),
+       visto_dueno_en,
+       proveedor:proveedores ( id, razon_social, nombre_comercial, plazo_dias ),
        compra_items (
          id, sku_id, cantidad, costo_unitario, costo_con_impuestos, subtotal, fecha_vencimiento,
          sku:skus ( nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
@@ -32,7 +34,16 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
 
   if (!compra) notFound();
 
-  const [{ data: recepciones }, { data: reclasificaciones }, esDuenoActual] = await Promise.all([
+  const esDuenoActual = await esDueno(supabase);
+
+  // Primera vez que el dueño abre esta boleta: se apaga la marca "Nueva" de
+  // la lista. No hace nada si ya estaba vista, ni si quien mira no es el
+  // dueño (marcar_compra_vista() lo valida igual en la base).
+  if (esDuenoActual) {
+    await supabase.rpc("marcar_compra_vista", { p_id: id });
+  }
+
+  const [{ data: recepciones }, { data: reclasificaciones }, { data: pagos }] = await Promise.all([
     traerTodo(
       supabase
         .from("recepciones_compra")
@@ -52,7 +63,17 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
         .eq("compra_id", id)
         .order("fecha", { ascending: false }),
     ),
-    esDueno(supabase),
+    // Privado del dueño (pedido del usuario 2026-10-30): a Olavarría ni se
+    // le pide -- RLS lo bloquearía de todos modos.
+    esDuenoActual
+      ? traerTodo(
+          supabase
+            .from("compra_pagos")
+            .select("id, compra_id, tipo, monto, medio_pago, nota, pago_original_id, fecha, usuario:usuarios ( nombre )")
+            .eq("compra_id", id)
+            .order("fecha", { ascending: true }),
+        )
+      : Promise.resolve({ data: [] }),
   ]);
 
   const recepcionesList = (recepciones ?? []) as unknown as RecepcionDetalle[];
@@ -85,6 +106,10 @@ export default async function CompraDetallePage({ params }: { params: Promise<{ 
         // Cargar la factura que llegó después es carga de mercadería, no
         // lectura: el dueño mira, la encargada corrige.
         puedeReclasificar={!esDuenoActual && compraRaw.estado !== "borrador"}
+        // El pago de la boleta es privado del dueño (pedido del usuario
+        // 2026-10-30): a Olavarría no se le muestra ni esta sección.
+        esDueno={esDuenoActual}
+        pagos={(pagos ?? []) as unknown as CompraPago[]}
       />
     </PinProvider>
   );

@@ -6,7 +6,7 @@ import {
   presentacionLabel,
   type SkuPresentacion,
 } from "@/app/(app)/productos/_components/productos-table";
-import { formatoFechaHora, formatoMoneda, formatoMonedaExacto } from "../_lib/formato";
+import { formatoFecha, formatoFechaHora, formatoMoneda, formatoMonedaExacto } from "../_lib/formato";
 import {
   TIPOS_COMPROBANTE,
   TIPO_COMPROBANTE_AYUDA,
@@ -18,8 +18,17 @@ import {
   totalPagadoCompra,
   type TipoComprobante,
 } from "../_lib/comprobante";
-import { reclasificarComprobanteCompra } from "../actions";
-import { ComprobanteBadge, EstadoCompraBadge, type Compra } from "./compras-table";
+import { reclasificarComprobanteCompra, registrarPagoCompra, reversarPagoCompra } from "../actions";
+import { ComprobanteBadge, EstadoCompraBadge, EstadoPagoBadge, type Compra } from "./compras-table";
+import {
+  MEDIO_PAGO_LABEL,
+  estadoPagoCompra,
+  fechaVencimientoPago,
+  pagoYaAnulado,
+  totalAbonadoCompra,
+  type CompraPago,
+  type MedioPago,
+} from "../_lib/pagos";
 import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 
 type SkuInfo = SkuPresentacion & {
@@ -376,6 +385,280 @@ function ComprobanteForm({
   );
 }
 
+// Pago de la boleta al proveedor. Privado del dueño (pedido del usuario
+// 2026-10-30): a Olavarría no se le muestra -- ni el detalle de la compra le
+// manda estos pagos (ver app/(app)/compras/[id]/page.tsx).
+function PagoBoletaPanel({ compra, pagos }: { compra: CompraDetalleData; pagos: CompraPago[] }) {
+  const router = useRouter();
+  const totalAPagar = totalPagadoCompra(compra);
+  const totalAbonado = totalAbonadoCompra(pagos);
+  const saldo = redondearPeso(totalAPagar - totalAbonado);
+  const estado = estadoPagoCompra(totalAPagar, totalAbonado);
+  const vencimiento = fechaVencimientoPago(compra.fecha_factura, compra.proveedor?.plazo_dias ?? null);
+
+  const [mostrarForm, setMostrarForm] = useState(false);
+  const [monto, setMonto] = useState("");
+  const [medio, setMedio] = useState<MedioPago>("efectivo");
+  const [nota, setNota] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const [anulando, setAnulando] = useState<string | null>(null);
+  const [motivoAnulacion, setMotivoAnulacion] = useState("");
+  const [errorAnulacion, setErrorAnulacion] = useState<string | null>(null);
+  const [pendingAnular, startTransitionAnular] = useTransition();
+
+  const montoNum = Number(monto);
+  const excedente = monto !== "" && Number.isFinite(montoNum) && montoNum > saldo ? redondearPeso(montoNum - saldo) : 0;
+
+  function registrar() {
+    setError(null);
+    if (!monto || !Number.isFinite(montoNum) || montoNum <= 0) {
+      setError("El monto tiene que ser mayor a cero.");
+      return;
+    }
+    startTransition(async () => {
+      const resultado = await registrarPagoCompra({
+        compra_id: compra.id,
+        monto: montoNum,
+        medio_pago: medio,
+        nota: nota.trim() || null,
+      });
+      if ("error" in resultado) {
+        setError(resultado.error);
+        return;
+      }
+      setMonto("");
+      setNota("");
+      setMostrarForm(false);
+      router.refresh();
+    });
+  }
+
+  function anular(pagoId: string) {
+    setErrorAnulacion(null);
+    if (!motivoAnulacion.trim()) {
+      setErrorAnulacion("Escribí por qué se anula este pago.");
+      return;
+    }
+    startTransitionAnular(async () => {
+      const resultado = await reversarPagoCompra({
+        pago_id: pagoId,
+        compra_id: compra.id,
+        motivo: motivoAnulacion,
+      });
+      if ("error" in resultado) {
+        setErrorAnulacion(resultado.error);
+        return;
+      }
+      setAnulando(null);
+      setMotivoAnulacion("");
+      router.refresh();
+    });
+  }
+
+  const pagosActivos = pagos.filter((p) => p.tipo === "pago");
+
+  return (
+    <div className="rounded-card border border-border bg-bg p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[13px] font-semibold text-text">Pago al proveedor</h3>
+          {vencimiento && (
+            <p className="mt-[2px] text-[12px] text-text-3">
+              Plazo configurado en Proveedores: {compra.proveedor?.plazo_dias} días · vence el{" "}
+              {formatoFecha.format(vencimiento)}
+            </p>
+          )}
+        </div>
+        <EstadoPagoBadge estado={estado} />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-baseline gap-5 border-t border-border pt-3">
+        <div>
+          <p className="text-[11.5px] text-text-3">Total a pagar</p>
+          <p className="text-[15px] font-semibold tabular-nums text-text">
+            {formatoMonedaExacto.format(totalAPagar)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[11.5px] text-text-3">Abonado</p>
+          <p className="text-[15px] font-semibold tabular-nums text-ok">
+            {formatoMonedaExacto.format(totalAbonado)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[11.5px] text-text-3">Saldo pendiente</p>
+          <p
+            className={`text-[15px] font-semibold tabular-nums ${saldo > 0 ? "text-err" : "text-text-3"}`}
+          >
+            {formatoMonedaExacto.format(Math.max(saldo, 0))}
+          </p>
+        </div>
+      </div>
+
+      {pagosActivos.length > 0 && (
+        <div className="mt-3 flex flex-col gap-[8px] border-t border-border pt-3">
+          {pagosActivos.map((p) => {
+            const anulado = pagoYaAnulado(p.id, pagos);
+            const reversa = pagos.find((r) => r.pago_original_id === p.id);
+            return (
+              <div key={p.id} className="flex flex-col gap-[4px]">
+                <div className="flex flex-wrap items-baseline justify-between gap-2 text-[12.5px]">
+                  <span className={anulado ? "text-text-3 line-through" : "text-text-2"}>
+                    {formatoFechaHora.format(new Date(p.fecha))} · {MEDIO_PAGO_LABEL[p.medio_pago]} ·{" "}
+                    {p.usuario?.nombre ?? "—"}
+                    {p.nota ? ` — ${p.nota}` : ""}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={`tabular-nums font-medium ${anulado ? "text-text-3 line-through" : "text-text"}`}
+                    >
+                      {formatoMonedaExacto.format(p.monto)}
+                    </span>
+                    {!anulado && anulando !== p.id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAnulando(p.id);
+                          setErrorAnulacion(null);
+                          setMotivoAnulacion("");
+                        }}
+                        className="text-[11.5px] font-medium text-err hover:underline"
+                      >
+                        Anular
+                      </button>
+                    )}
+                  </span>
+                </div>
+
+                {anulado && reversa && (
+                  <p className="text-[11.5px] text-text-3">Anulado — {reversa.nota}</p>
+                )}
+
+                {anulando === p.id && (
+                  <div className="rounded-[6px] border border-border bg-bg-2 p-[10px]">
+                    <label className={labelClass}>¿Por qué se anula? *</label>
+                    <input
+                      className={inputClass}
+                      value={motivoAnulacion}
+                      onChange={(e) => setMotivoAnulacion(e.target.value)}
+                      autoFocus
+                    />
+                    {errorAnulacion && <p className="mt-[4px] text-[12px] text-err">{errorAnulacion}</p>}
+                    <div className="mt-2 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAnulando(null);
+                          setMotivoAnulacion("");
+                          setErrorAnulacion(null);
+                        }}
+                        className="text-[12px] text-text-3 hover:text-text"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={pendingAnular}
+                        onClick={() => anular(p.id)}
+                        className="rounded-[6px] bg-err px-[10px] py-[5px] text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-60"
+                      >
+                        {pendingAnular ? "Anulando…" : "Anular pago"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {saldo > 0 &&
+        (mostrarForm ? (
+          <div className="mt-3 border-t border-border pt-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className={labelClass}>Monto *</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className={`${inputClass} text-right tabular-nums`}
+                  value={monto}
+                  onChange={(e) => setMonto(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Medio de pago *</label>
+                <div className="flex gap-2">
+                  {(["efectivo", "transferencia"] as MedioPago[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMedio(m)}
+                      className={`flex-1 rounded-[6px] border px-[10px] py-[6px] text-[13px] ${
+                        medio === m
+                          ? "border-moe bg-moe-soft text-moe"
+                          : "border-border bg-bg text-text-2 hover:bg-[#FAFAFB]"
+                      }`}
+                    >
+                      {MEDIO_PAGO_LABEL[m]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className={labelClass}>Nota (opcional)</label>
+                <input className={inputClass} value={nota} onChange={(e) => setNota(e.target.value)} />
+              </div>
+            </div>
+
+            {excedente > 0 && (
+              <p className="mt-2 text-[12px] text-info">
+                Supera el saldo de esta boleta: los {formatoMonedaExacto.format(excedente)} de diferencia
+                se descuentan de la cuenta general con el proveedor.
+              </p>
+            )}
+
+            {error && <p className="mt-2 text-[12.5px] text-err">{error}</p>}
+
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarForm(false);
+                  setError(null);
+                }}
+                className="text-[12.5px] text-text-3 hover:text-text"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={registrar}
+                disabled={pending}
+                className="rounded-[6px] bg-moe px-[14px] py-[7px] text-[13px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+              >
+                {pending ? "Registrando…" : "Registrar pago"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setMostrarForm(true)}
+            className="mt-3 block border-t border-border pt-3 text-[12.5px] font-medium text-moe hover:underline"
+          >
+            Registrar pago
+          </button>
+        ))}
+    </div>
+  );
+}
+
 // Solo lectura: toda compra se carga y recibe en un solo paso desde
 // "Cargar mercadería" (cargar_compra_directa()), así que para cuando esta
 // pantalla existe la compra ya está cerrada -- no hay borrador para editar
@@ -387,6 +670,8 @@ export function CompraDetalle({
   recepciones,
   reclasificaciones,
   puedeReclasificar,
+  esDueno,
+  pagos,
 }: {
   compra: CompraDetalleData;
   recepciones: RecepcionDetalle[];
@@ -394,6 +679,10 @@ export function CompraDetalle({
   // El dueño solo visualiza compras: el comprobante lo carga la encargada
   // (20260922140000_compras_solo_lectura_dueno.sql).
   puedeReclasificar: boolean;
+  // El pago de la boleta es privado del dueño (pedido del usuario
+  // 2026-10-30).
+  esDueno: boolean;
+  pagos: CompraPago[];
 }) {
   const itemsPorId = useMemo(() => new Map(compra.items.map((i) => [i.id, i])), [compra.items]);
   const router = useRouter();
@@ -576,6 +865,8 @@ export function CompraDetalle({
           </div>
         )}
       </div>
+
+      {esDueno && <PagoBoletaPanel compra={compra} pagos={pagos} />}
 
       <div className="overflow-hidden rounded-card border border-border bg-bg">
         <div className="flex flex-wrap items-center justify-between gap-1 border-b border-border px-[14px] py-[11px]">

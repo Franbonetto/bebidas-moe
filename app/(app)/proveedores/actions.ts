@@ -39,5 +39,39 @@ export async function actualizarProveedor(
   if (error) return { error: error.message };
 
   revalidatePath("/proveedores");
+  revalidatePath(`/proveedores/${id}`);
+  return { ok: true };
+}
+
+export type TipoAjusteCuentaProveedor = "aumento_deuda" | "credito_a_favor";
+
+// Cuenta aparte con el proveedor, fuera de boleta por boleta: deuda que el
+// dueño carga a mano (ej. un saldo de antes de usar el sistema) o un
+// crédito a favor. Privado del dueño -- registrar_ajuste_cuenta_proveedor()
+// lo valida en la base. Sin PIN: pantalla privada del dueño, no el mostrador
+// (pedido del usuario 2026-10-30).
+export async function registrarAjusteCuentaProveedor(datos: {
+  proveedor_id: string;
+  tipo: TipoAjusteCuentaProveedor;
+  monto: number;
+  nota: string;
+}): Promise<{ error: string } | { ok: true }> {
+  const supabase = await createClient();
+
+  if (!Number.isFinite(datos.monto) || datos.monto <= 0)
+    return { error: "El monto tiene que ser mayor a cero." };
+  if (!datos.nota.trim()) return { error: "Escribí una nota: qué es y por qué." };
+
+  const { error } = await supabase.rpc("registrar_ajuste_cuenta_proveedor", {
+    p_proveedor_id: datos.proveedor_id,
+    p_tipo: datos.tipo,
+    p_monto: datos.monto,
+    p_nota: datos.nota.trim(),
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/proveedores/${datos.proveedor_id}`);
+  revalidatePath("/proveedores");
   return { ok: true };
 }
