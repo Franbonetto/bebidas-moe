@@ -66,6 +66,7 @@ export async function DuenoDashboard({ nombre }: { nombre: string }) {
     { data: stock },
     { data: transferenciasEnTransito },
     { data: pedidoCompraReciente },
+    { data: prestamosActivos },
   ] = await Promise.all([
     traerTodo(
       supabase
@@ -106,6 +107,15 @@ export async function DuenoDashboard({ nombre }: { nombre: string }) {
       .order("fecha_creacion", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    // Préstamos a proveedores atrasados (pedido del usuario 2026-10-31):
+    // solo lo urgente entra en "Para mirar" -- el resto vive en
+    // /vender/prestamos, no en el inicio.
+    traerTodo(
+      supabase
+        .from("prestamos_proveedor")
+        .select("id, fecha_estimada_devolucion")
+        .eq("estado", "activo"),
+    ),
   ]);
 
   const sucursalesList = (sucursales ?? []) as Sucursal[];
@@ -153,6 +163,10 @@ export async function DuenoDashboard({ nombre }: { nombre: string }) {
 
   const enTransito = (transferenciasEnTransito ?? []).length;
   const sinAbrir = porSucursal.filter((s) => !s.caja);
+
+  const prestamosAtrasados = (prestamosActivos ?? []).filter(
+    (p) => p.fecha_estimada_devolucion != null && p.fecha_estimada_devolucion < hoy,
+  ).length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -238,7 +252,7 @@ export async function DuenoDashboard({ nombre }: { nombre: string }) {
         </Card>
       </div>
 
-      {(enTransito > 0 || sinAbrir.length > 0) && (
+      {(enTransito > 0 || sinAbrir.length > 0 || prestamosAtrasados > 0) && (
         <div>
           <SectionHeader title="Para mirar" meta="Lo urgente del día; el resto está en Alertas" />
           <div className="flex flex-col gap-[8px]">
@@ -256,6 +270,14 @@ export async function DuenoDashboard({ nombre }: { nombre: string }) {
                 title={`${enTransito} transferencia${enTransito === 1 ? "" : "s"} en tránsito`}
                 sub="Mercadería que salió de Olavarría y Laprida todavía no recibió"
                 href="/pedidos"
+              />
+            )}
+            {prestamosAtrasados > 0 && (
+              <AlertRow
+                color="warn"
+                title={`${prestamosAtrasados} préstamo${prestamosAtrasados === 1 ? "" : "s"} a proveedores atrasado${prestamosAtrasados === 1 ? "" : "s"}`}
+                sub="Pasó la fecha estimada de devolución"
+                href="/vender/prestamos"
               />
             )}
           </div>

@@ -115,6 +115,7 @@ export default async function VenderPage({
         cajaId={cajaHoy?.id ?? null}
         cantidadTicketsHoy={cantidadTicketsHoy}
         empleados={empleados ?? []}
+        esCentral={sucursal.es_central}
       />
     </div>
   );

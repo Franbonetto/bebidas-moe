@@ -253,6 +253,7 @@ export function PosClient({
   cantidadTicketsHoy,
   empleados,
   modoEnvio = false,
+  esCentral = false,
 }: {
   sucursalId: string;
   sucursalNombre: string;
@@ -274,6 +275,11 @@ export function PosClient({
   // accesos que no aplican a un pedido para delivery (Facturar,
   // Devoluciones).
   modoEnvio?: boolean;
+  // Préstamos a proveedores (2026-10-31) solo se originan desde la central
+  // (Olavarría, ver 20261031090000_prestamos_proveedor.sql): el acceso solo
+  // se muestra mirando esa sucursal, aunque quien ve costos pueda estar
+  // parado en la pantalla de Laprida.
+  esCentral?: boolean;
 }) {
   const router = useRouter();
   const [tickets, setTickets] = useState<Ticket[]>(() => [ticketVacio("1")]);
@@ -1271,6 +1277,14 @@ export function PosClient({
               className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[13.5px] font-medium text-text-2 hover:bg-bg-2"
             >
               Facturar
+            </Link>
+          )}
+          {!modoEnvio && esCentral && puedeTocarPrecios && (
+            <Link
+              href="/vender/prestamos"
+              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[13.5px] font-medium text-text-2 hover:bg-bg-2"
+            >
+              Préstamos
             </Link>
           )}
           {!modoEnvio && (

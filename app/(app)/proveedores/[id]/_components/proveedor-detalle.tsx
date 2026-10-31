@@ -9,7 +9,7 @@ import {
 } from "@/app/(app)/compras/_components/compras-table";
 import { estadoPagoCompra, totalAbonadoCompra } from "@/app/(app)/compras/_lib/pagos";
 import { totalPagadoCompra } from "@/app/(app)/compras/_lib/comprobante";
-import { formatoFechaHora, formatoMonedaExacto } from "@/app/(app)/compras/_lib/formato";
+import { formatoFecha, formatoFechaHora, formatoMonedaExacto } from "@/app/(app)/compras/_lib/formato";
 import {
   presentacionLabel,
   type SkuPresentacion,
@@ -37,6 +37,28 @@ export type AjusteCuentaProveedor = {
   nota: string;
   fecha: string;
   usuario: { nombre: string } | null;
+};
+
+// Préstamos de mercadería a este proveedor (2026-10-31): el reintegro en
+// sí vive en /vender/prestamos, esto es solo para verlo en el contexto del
+// proveedor -- "si ese proveedor tiene algún préstamo debe aparecer"
+// (pedido del usuario).
+export type PrestamoProveedor = {
+  id: string;
+  estado: "activo" | "devuelto";
+  fechaPrestamo: string;
+  fechaEstimadaDevolucion: string | null;
+  fechaDevolucion: string | null;
+  atrasado: boolean;
+  nota: string | null;
+  usuarioNombre: string;
+  usuarioDevolucionNombre: string | null;
+  items: {
+    skuId: string;
+    skuNombre: string;
+    cantidadPrestada: number;
+    cantidadDevuelta: number;
+  }[];
 };
 
 export type ProductoProveedor = {
@@ -296,11 +318,76 @@ function CuentaProveedorPanel({
   );
 }
 
+function PrestamosProveedorPanel({ prestamos }: { prestamos: PrestamoProveedor[] }) {
+  const activos = prestamos.filter((p) => p.estado === "activo");
+  const devueltos = prestamos.filter((p) => p.estado === "devuelto");
+
+  function resumenItems(items: PrestamoProveedor["items"]) {
+    return items.map((i) => `${i.cantidadPrestada} ${i.skuNombre}`).join(", ");
+  }
+
+  return (
+    <div className="rounded-card border border-border bg-bg p-5">
+      <div className="flex items-center justify-between">
+        <h3 className="text-[13px] font-semibold text-text">Préstamos de mercadería</h3>
+        <Link href="/vender/prestamos" className="text-[12px] font-medium text-moe hover:underline">
+          Ir a Préstamos →
+        </Link>
+      </div>
+
+      {activos.length > 0 && (
+        <div className="mt-3 flex flex-col gap-[6px] border-t border-border pt-3">
+          {activos.map((p) => {
+            const pendiente = p.items.reduce(
+              (acc, i) => acc + (i.cantidadPrestada - i.cantidadDevuelta),
+              0,
+            );
+            return (
+              <div key={p.id} className="flex flex-wrap items-baseline justify-between gap-2 text-[12.5px]">
+                <span className="text-text-2">
+                  {formatoFechaHora.format(new Date(p.fechaPrestamo))} · {resumenItems(p.items)} ·{" "}
+                  {p.usuarioNombre}
+                  {p.nota && ` — "${p.nota}"`}
+                </span>
+                <span
+                  className={`shrink-0 rounded-[5px] px-[7px] py-[2px] text-[11px] font-medium ${
+                    p.atrasado ? "bg-warn-bg text-warn" : "bg-info-bg text-info"
+                  }`}
+                >
+                  {pendiente} pendiente{pendiente === 1 ? "" : "s"}
+                  {p.atrasado ? " · atrasado" : ""}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {devueltos.length > 0 && (
+        <div className="mt-3 flex flex-col gap-[4px] border-t border-border pt-3">
+          {devueltos.map((p) => (
+            <div key={p.id} className="flex flex-wrap items-baseline justify-between gap-2 text-[12.5px]">
+              <span className="text-text-2">
+                {resumenItems(p.items)}
+                {p.nota && ` — "${p.nota}"`}
+              </span>
+              <span className="shrink-0 tabular-nums text-text-3">
+                {p.fechaDevolucion ? formatoFecha.format(new Date(p.fechaDevolucion)) : "—"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ProveedorDetalle({
   proveedor,
   compras,
   ajustes,
   productos,
+  prestamos,
   sucursalCentralNombre,
   esDueno,
 }: {
@@ -308,6 +395,7 @@ export function ProveedorDetalle({
   compras: Compra[];
   ajustes: AjusteCuentaProveedor[];
   productos: ProductoProveedor[];
+  prestamos: PrestamoProveedor[];
   sucursalCentralNombre: string | null;
   esDueno: boolean;
 }) {
@@ -356,6 +444,8 @@ export function ProveedorDetalle({
       {esDueno && (
         <CuentaProveedorPanel proveedorId={proveedor.id} compras={compras} ajustes={ajustes} />
       )}
+
+      {prestamos.length > 0 && <PrestamosProveedorPanel prestamos={prestamos} />}
 
       <ComprasTable compras={compras} puedeCargar={false} esDueno={esDueno} />
 
