@@ -9,12 +9,14 @@ export function AppShell({
   nombre,
   rol,
   puedeVerCostos,
+  puedeCargaInicialLaprida,
   pedidosCompraSinVer,
   children,
 }: {
   nombre: string;
   rol: string;
   puedeVerCostos: boolean;
+  puedeCargaInicialLaprida?: boolean;
   pedidosCompraSinVer?: number;
   children: ReactNode;
 }) {
@@ -44,6 +46,7 @@ export function AppShell({
         nombre={nombre}
         rol={rol}
         puedeVerCostos={puedeVerCostos}
+        puedeCargaInicialLaprida={puedeCargaInicialLaprida}
         pedidosCompraSinVer={pedidosCompraSinVer}
         abierto={menuAbierto}
         onCerrar={() => setMenuAbierto(false)}

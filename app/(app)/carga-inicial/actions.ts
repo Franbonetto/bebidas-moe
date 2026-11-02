@@ -506,3 +506,54 @@ export async function guardarCargaInicial(datos: {
   revalidatePath("/precios");
   return { stock: (data as number) ?? datos.cantidad };
 }
+
+// Cuánto tiene el sistema hoy de este SKU en esa sucursal. Versión liviana
+// de datosSkuParaCarga() para la carga inicial de Laprida, que no toca
+// costo, precio ni proveedor -- el encargado de Laprida no los ve
+// (CLAUDE.md, matriz de roles).
+export async function stockActualSkuSucursal(
+  skuId: string,
+  sucursalId: string,
+): Promise<{ error: string } | { stockActual: number }> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("stock_sucursal")
+    .select("cantidad")
+    .eq("sku_id", skuId)
+    .eq("sucursal_id", sucursalId)
+    .maybeSingle();
+
+  if (error) return { error: error.message };
+  return { stockActual: data?.cantidad ?? 0 };
+}
+
+// Carga inicial de Laprida: solo la cantidad contada, sin costo ni
+// proveedor (20261102090000_carga_inicial_laprida.sql abrió el permiso de
+// cargar_stock_inicial() para este caso exacto).
+export async function guardarCargaInicialSimple(
+  skuId: string,
+  sucursalId: string,
+  cantidad: number,
+  pin: string,
+): Promise<{ error: string } | { stock: number }> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
+  if (!Number.isInteger(cantidad) || cantidad < 0)
+    return { error: "La cantidad contada tiene que ser un número entero, cero o más." };
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("cargar_stock_inicial", {
+    p_sku_id: skuId,
+    p_sucursal_id: sucursalId,
+    p_cantidad: cantidad,
+  });
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/productos");
+  revalidatePath("/carga-inicial");
+  return { stock: (data as number) ?? cantidad };
+}

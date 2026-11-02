@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { veCostos } from "@/lib/permisos";
+import { veCostos, operaSucursal } from "@/lib/permisos";
 import { AppShell } from "./_components/app-shell";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -45,11 +45,30 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     pedidosCompraSinVer = count ?? 0;
   }
 
+  // "Carga inicial" está restringida a puedeVerCostos, salvo para quien
+  // opera la sucursal satélite (Laprida): esa tiene su propia versión sin
+  // costo (20261102090000_carga_inicial_laprida.sql). Solo se consulta
+  // cuando hace falta -- el dueño y Olavarría ya entran por puedeVerCostos.
+  let puedeCargaInicialLaprida = false;
+  if (!puedeVerCostos) {
+    const { data: sucursalSatelite } = await supabase
+      .from("sucursales")
+      .select("id")
+      .eq("activo", true)
+      .eq("es_central", false)
+      .limit(1)
+      .maybeSingle();
+    puedeCargaInicialLaprida = sucursalSatelite
+      ? await operaSucursal(supabase, sucursalSatelite.id)
+      : false;
+  }
+
   return (
     <AppShell
       nombre={usuario.nombre}
       rol={usuario.rol}
       puedeVerCostos={puedeVerCostos}
+      puedeCargaInicialLaprida={puedeCargaInicialLaprida}
       pedidosCompraSinVer={pedidosCompraSinVer}
     >
       {children}

@@ -16,6 +16,10 @@ type NavItem = {
   restringido?: boolean;
   ocultoParaDueno?: boolean;
   soloDueno?: boolean;
+  // Excepción puntual a "restringido": además de puedeVerCostos, también
+  // entra quien tiene esta bandera (hoy solo Carga inicial, para el
+  // encargado de Laprida -- ver puedeCargaInicialLaprida más abajo).
+  restringidoExcepto?: "cargaInicialLaprida";
 };
 
 const SECCION_LABEL: Record<Seccion, string> = {
@@ -138,10 +142,12 @@ const NAV: NavItem[] = [
     label: "Carga inicial",
     href: "/carga-inicial",
     seccion: "catalogo",
-    // Incluye el costo: misma población que ve costos (dueño + Olavarría).
-    // Es la pantalla del arranque del sistema en cada sucursal -- se usa
-    // mucho unos días y después casi nunca.
+    // Dueño y Olavarría ven la versión completa (incluye costo). El
+    // encargado de Laprida entra igual, a su propia versión reducida a la
+    // cantidad contada (20261102090000_carga_inicial_laprida.sql) -- la
+    // misma pantalla, /carga-inicial/page.tsx decide cuál mostrarle.
     restringido: true,
+    restringidoExcepto: "cargaInicialLaprida",
     icon: "M12 5v14M5 12h14",
   },
   {
@@ -298,6 +304,7 @@ export function Sidebar({
   nombre,
   rol,
   puedeVerCostos,
+  puedeCargaInicialLaprida = false,
   pedidosCompraSinVer = 0,
   abierto = false,
   onCerrar,
@@ -305,6 +312,9 @@ export function Sidebar({
   nombre: string;
   rol: string;
   puedeVerCostos: boolean;
+  // Encargado de Laprida: entra a su propia "Carga inicial" aunque
+  // puedeVerCostos sea false (ver restringidoExcepto arriba).
+  puedeCargaInicialLaprida?: boolean;
   // Cantidad de pedidos de compra pendientes que el dueño todavía no abrió
   // (pedidos_compra.visto_en null) -- se muestra como badge rojo en
   // "Pedidos" (pedido del usuario 2026-09-22). Siempre 0 para encargados.
@@ -332,7 +342,9 @@ export function Sidebar({
 
   const nav = NAV.filter(
     (item) =>
-      (!item.restringido || puedeVerCostos) &&
+      (!item.restringido ||
+        puedeVerCostos ||
+        (item.restringidoExcepto === "cargaInicialLaprida" && puedeCargaInicialLaprida)) &&
       !(item.ocultoParaDueno && rol === "dueno") &&
       (!item.soloDueno || rol === "dueno"),
   );
