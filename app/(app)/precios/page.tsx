@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
-import { veCostos, esDueno } from "@/lib/permisos";
+import { veCostos, esDueno, operaSucursal } from "@/lib/permisos";
 import { calcularPrecioVenta, type SkuParaPrecio, type SucursalParaPrecio } from "@/lib/precios";
 import { PreciosTable, type PrecioSkuRow, type Sucursal, type Categoria } from "./_components/precios-table";
 import { RecargosCategoriaPanel } from "./_components/recargos-categoria-panel";
@@ -104,7 +104,16 @@ export default async function PreciosPage() {
         ])
       : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
-  const sucursalesList = (sucursales ?? []) as Sucursal[];
+  const sucursalesTodas = (sucursales ?? []) as Sucursal[];
+
+  // El encargado de Laprida solo ve el precio de Laprida, nunca el de
+  // Olavarría: dueño y encargado de Olavarría (ve_costos()) ven todas las
+  // sucursales, igual que en /productos con el stock.
+  const operables = puedeVerCostos
+    ? sucursalesTodas.map(() => true)
+    : await Promise.all(sucursalesTodas.map((s) => operaSucursal(supabase, s.id)));
+  const sucursalesList = sucursalesTodas.filter((_, i) => operables[i]);
+
   const categoriasList = (categorias ?? []) as Categoria[];
   const skusList = (skusRaw ?? []) as unknown as SkuFila[];
 

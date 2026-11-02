@@ -281,9 +281,11 @@ export function ProductosTable({
                     Stock {s.nombre}
                   </th>
                 ))}
-                <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
-                  Total
-                </th>
+                {sucursales.length > 1 && (
+                  <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
+                    Total
+                  </th>
+                )}
                 {puedeCrear && (
                   <th className="sticky top-0 z-10 w-[130px] border-b border-border bg-bg-2 px-[14px] py-[7px]" />
                 )}
@@ -383,11 +385,13 @@ export function ProductosTable({
                         {cantidad}
                       </td>
                     ))}
-                    <td
-                      className={`px-[14px] py-[9px] text-right font-medium tabular-nums ${totalClassName(total)}`}
-                    >
-                      {total}
-                    </td>
+                    {sucursales.length > 1 && (
+                      <td
+                        className={`px-[14px] py-[9px] text-right font-medium tabular-nums ${totalClassName(total)}`}
+                      >
+                        {total}
+                      </td>
+                    )}
                     {puedeCrear && (
                       <td
                         className="px-[14px] py-[9px] text-right align-middle"

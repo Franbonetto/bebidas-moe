@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
-import { veCostos } from "@/lib/permisos";
+import { veCostos, operaSucursal } from "@/lib/permisos";
 import { ProductosTable, type SkuRow, type Sucursal } from "./_components/productos-table";
 
 type StockRow = {
@@ -13,14 +13,26 @@ export default async function ProductosPage() {
   const supabase = await createClient();
   const puedeCrear = await veCostos(supabase);
 
-  const [{ data: sucursales }, { data: skus }, { data: stock }] = await Promise.all([
-    traerTodo(
-      supabase
-        .from("sucursales")
-        .select("id, nombre, es_central")
-        .eq("activo", true)
-        .order("es_central", { ascending: false }),
-    ),
+  const { data: sucursalesRaw } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre, es_central")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
+  const sucursalesTodas = (sucursalesRaw ?? []) as Sucursal[];
+
+  // El encargado de Laprida no ve stock de Olavarría (ni el de ninguna otra
+  // sucursal que no opere): dueño y encargado de Olavarría (ve_costos())
+  // ven todas, Laprida solo la suya -- mismo criterio de opera_sucursal()
+  // que ya se usa en pedidos, envíos, inventarios, etc.
+  const operables = puedeCrear
+    ? sucursalesTodas.map(() => true)
+    : await Promise.all(sucursalesTodas.map((s) => operaSucursal(supabase, s.id)));
+  const sucursalesList = sucursalesTodas.filter((_, i) => operables[i]);
+  const sucursalIds = sucursalesList.map((s) => s.id);
+
+  const [{ data: skus }, { data: stock }] = await Promise.all([
     traerTodo(
       supabase
         .from("skus")
@@ -34,13 +46,12 @@ export default async function ProductosPage() {
         )
         .eq("activo", true),
     ),
-    traerTodo(supabase.from("stock_sucursal").select("sku_id, sucursal_id, cantidad"), [
-      "sku_id",
-      "sucursal_id",
-    ]),
+    traerTodo(
+      supabase.from("stock_sucursal").select("sku_id, sucursal_id, cantidad").in("sucursal_id", sucursalIds),
+      ["sku_id", "sucursal_id"],
+    ),
   ]);
 
-  const sucursalesList = (sucursales ?? []) as Sucursal[];
   const skusList = (skus ?? []) as unknown as Omit<SkuRow, "stockPorSucursal">[];
   const stockList = (stock ?? []) as StockRow[];
 
