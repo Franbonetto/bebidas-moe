@@ -2,11 +2,13 @@ import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { veCostos, esDueno, operaSucursal } from "@/lib/permisos";
 import { calcularPrecioVenta, type SkuParaPrecio, type SucursalParaPrecio } from "@/lib/precios";
+import { fechaOperativa } from "@/lib/fecha";
 import { PreciosTable, type PrecioSkuRow, type Sucursal, type Categoria } from "./_components/precios-table";
 import { RecargosCategoriaPanel } from "./_components/recargos-categoria-panel";
 import { RecargosSkuPanel } from "./_components/recargos-sku-panel";
 import { DescuentosEfectivoPanel } from "./_components/descuentos-efectivo-panel";
 import { PromocionesPanel, type PromocionRow } from "./_components/promociones-panel";
+import { PromocionesVigentesPanel } from "./_components/promociones-vigentes-panel";
 import type { PromocionSkuOpcion } from "./_components/promocion-form";
 import { PreciosTabs } from "./_components/precios-tabs";
 import { PinProvider } from "@/app/(app)/_components/pin-gate";
@@ -76,33 +78,37 @@ export default async function PreciosPage() {
       ),
     ]);
 
-  const [{ data: recargosSucursal }, { data: recargosSku }, { data: descuentosEfectivo }, { data: promocionesRaw }] =
-    puedeVerCostos
-      ? await Promise.all([
-          traerTodo(
-            supabase.from("recargos_sucursal").select("sucursal_id, categoria_id, monto_fijo, actualizado_en"),
-            ["sucursal_id", "categoria_id"],
-          ),
-          traerTodo(supabase.from("recargos_sku").select("sucursal_id, sku_id, monto_fijo, actualizado_en"), [
-            "sucursal_id",
-            "sku_id",
-          ]),
-          traerTodo(
-            supabase.from("descuentos_efectivo").select("sucursal_id, categoria_id, porcentaje, actualizado_en"),
-            ["sucursal_id", "categoria_id"],
-          ),
-          traerTodo(
-            supabase
-              .from("promociones")
-              .select(
-                `id, nombre, tipo, sucursal_id, vigente_desde, vigente_hasta, activo,
-                 promocion_items ( sku_id, cantidad_requerida ),
-                 promocion_precios ( sucursal_id, precio_total )`,
-              )
-              .order("nombre"),
-          ),
-        ])
-      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
+  const [{ data: recargosSucursal }, { data: recargosSku }, { data: descuentosEfectivo }] = puedeVerCostos
+    ? await Promise.all([
+        traerTodo(
+          supabase.from("recargos_sucursal").select("sucursal_id, categoria_id, monto_fijo, actualizado_en"),
+          ["sucursal_id", "categoria_id"],
+        ),
+        traerTodo(supabase.from("recargos_sku").select("sucursal_id, sku_id, monto_fijo, actualizado_en"), [
+          "sucursal_id",
+          "sku_id",
+        ]),
+        traerTodo(
+          supabase.from("descuentos_efectivo").select("sucursal_id, categoria_id, porcentaje, actualizado_en"),
+          ["sucursal_id", "categoria_id"],
+        ),
+      ])
+    : [{ data: [] }, { data: [] }, { data: [] }];
+
+  // Promociones: RLS las deja leer a cualquier usuario activo
+  // (promociones_select = usuario_activo()), no solo a ve_costos() -- hace
+  // falta para que Laprida vea, de solo lectura, las que corren en su
+  // sucursal (abajo, PromocionesVigentesPanel).
+  const { data: promocionesRaw } = await traerTodo(
+    supabase
+      .from("promociones")
+      .select(
+        `id, nombre, tipo, sucursal_id, vigente_desde, vigente_hasta, activo,
+         promocion_items ( sku_id, cantidad_requerida ),
+         promocion_precios ( sucursal_id, precio_total )`,
+      )
+      .order("nombre"),
+  );
 
   const sucursalesTodas = (sucursales ?? []) as Sucursal[];
 
@@ -215,6 +221,21 @@ export default async function PreciosPage() {
     precios: (p.promocion_precios ?? []) as PromocionRow["precios"],
   }));
 
+  // Panel de solo lectura para Laprida (!puedeVerCostos): promociones
+  // activas, dentro de su vigencia (fecha operativa de Argentina, no la
+  // del servidor) y con total cargado para su sucursal.
+  const sucursalLaprida = sucursalesList.find((s) => !s.es_central) ?? null;
+  const hoy = fechaOperativa();
+  const promocionesVigentesLaprida = sucursalLaprida
+    ? promocionesList.filter((p) => {
+        if (!p.activo) return false;
+        if (p.vigente_desde && p.vigente_desde > hoy) return false;
+        if (p.vigente_hasta && p.vigente_hasta < hoy) return false;
+        if (p.sucursal_id && p.sucursal_id !== sucursalLaprida.id) return false;
+        return p.precios.some((pr) => pr.sucursal_id === sucursalLaprida.id);
+      })
+    : [];
+
   const tabPrecios = (
     <>
       <PreciosTable
@@ -223,6 +244,14 @@ export default async function PreciosPage() {
         puedeEditar={puedeEditarPrecios}
         puedeVerCostos={puedeVerCostos}
       />
+
+      {!puedeVerCostos && sucursalLaprida && (
+        <PromocionesVigentesPanel
+          sucursalId={sucursalLaprida.id}
+          skus={skusParaPromo}
+          promociones={promocionesVigentesLaprida}
+        />
+      )}
 
       {puedeVerCostos && sucursalCentral && (
         <>
