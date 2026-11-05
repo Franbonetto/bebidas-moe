@@ -521,12 +521,21 @@ export function CargaInicialForm({
 
             <div
               className={`mt-3 rounded-[6px] px-[10px] py-[8px] text-[12.5px] ${
-                datos.stockActual > 0 || yaCargadoEnSesion
-                  ? "bg-warn-bg text-warn"
-                  : "bg-bg-2 text-text-2"
+                datos.stockActual < 0
+                  ? "bg-err-bg text-err"
+                  : datos.stockActual > 0 || yaCargadoEnSesion
+                    ? "bg-warn-bg text-warn"
+                    : "bg-bg-2 text-text-2"
               }`}
             >
-              {datos.stockActual > 0 || yaCargadoEnSesion ? (
+              {datos.stockActual < 0 ? (
+                <>
+                  Ojo: se vendieron <b>{Math.abs(datos.stockActual)}</b> unidades de este producto
+                  sin que estuviera cargado en el sistema. Si el número que vas a escribir es de un
+                  conteo de otro día, volvé a contarlo ahora antes de guardar — si no, esas ventas
+                  quedan borradas del stock.
+                </>
+              ) : datos.stockActual > 0 || yaCargadoEnSesion ? (
                 <>
                   Ojo: el sistema ya tiene <b>{datos.stockActual}</b> de este producto en esta
                   sucursal. Si ya lo contaste antes, lo que escribas ahora lo reemplaza.
