@@ -14,15 +14,20 @@ export function SelectorDia({
   base,
   dia,
   hoy,
+  sucursal,
 }: {
   base: string;
   // null = todavía no se eligió ninguno: se está viendo el reporte por
   // período y el campo aparece vacío.
   dia: string | null;
   hoy: string;
+  // Sucursal elegida: se conserva al moverse de día, en vez de volver a la
+  // de siempre.
+  sucursal?: string;
 }) {
   const router = useRouter();
 
+  const sufijoSucursal = sucursal ? `&sucursal=${sucursal}` : "";
   const flechaClass =
     "rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-[12px] font-medium text-text-2 hover:bg-bg-2";
 
@@ -30,7 +35,7 @@ export function SelectorDia({
     <div className="flex items-center gap-1">
       {dia && (
         <Link
-          href={`${base}?dia=${diaAnterior(dia)}`}
+          href={`${base}?dia=${diaAnterior(dia)}${sufijoSucursal}`}
           className={flechaClass}
           aria-label="Día anterior"
           title="Día anterior"
@@ -49,7 +54,7 @@ export function SelectorDia({
           dia ? "border-moe bg-moe-soft text-moe" : "border-border bg-bg text-text-2"
         }`}
         onChange={(e) => {
-          if (e.target.value) router.push(`${base}?dia=${e.target.value}`);
+          if (e.target.value) router.push(`${base}?dia=${e.target.value}${sufijoSucursal}`);
         }}
       />
 
@@ -57,7 +62,7 @@ export function SelectorDia({
           caja para mostrar. */}
       {dia && dia < hoy && (
         <Link
-          href={`${base}?dia=${diaSiguiente(dia)}`}
+          href={`${base}?dia=${diaSiguiente(dia)}${sufijoSucursal}`}
           className={flechaClass}
           aria-label="Día siguiente"
           title="Día siguiente"

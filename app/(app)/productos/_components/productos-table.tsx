@@ -64,6 +64,15 @@ export function ProductosTable({
   skus: SkuRow[];
   puedeCrear: boolean;
 }) {
+  // Quien ve las dos sucursales (dueño, encargado de Olavarría) elige una
+  // por vez en vez de verlas mezcladas (pedido del usuario 2026-11-05).
+  // null = no hace falta elegir: solo hay una sucursal para mostrar (el
+  // caso de Laprida, que ya venía filtrada antes de llegar acá).
+  const [sucursalId, setSucursalId] = useState<string | null>(
+    sucursales.length > 1 ? sucursales.find((s) => s.es_central)?.id ?? sucursales[0].id : null,
+  );
+  const sucursalesMostradas = sucursalId ? sucursales.filter((s) => s.id === sucursalId) : sucursales;
+
   const [query, setQuery] = useState("");
   const [categoria, setCategoria] = useState("");
   // Para la pasada de asignación de códigos con la pistola en el mostrador:
@@ -180,6 +189,24 @@ export function ProductosTable({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-[14px] py-[11px]">
         <h2 className="text-[13px] font-semibold text-text">Catálogo</h2>
         <div className="flex flex-wrap items-center gap-3">
+          {sucursales.length > 1 && (
+            <div className="flex gap-1">
+              {sucursales.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setSucursalId(s.id)}
+                  className={`whitespace-nowrap rounded-[6px] border px-[10px] py-[5px] text-[13px] font-medium ${
+                    s.id === sucursalId
+                      ? "border-moe bg-moe-soft text-moe"
+                      : "border-border bg-bg-2 text-text-2 hover:bg-[#EFEFF1]"
+                  }`}
+                >
+                  {s.nombre}
+                </button>
+              ))}
+            </div>
+          )}
           {sinCodigoCount > 0 && (
             <button
               type="button"
@@ -273,7 +300,7 @@ export function ProductosTable({
                 <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-left text-[11.5px] font-medium tracking-wide text-text-2">
                   Código de barras
                 </th>
-                {sucursales.map((s) => (
+                {sucursalesMostradas.map((s) => (
                   <th
                     key={s.id}
                     className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2"
@@ -281,7 +308,7 @@ export function ProductosTable({
                     Stock {s.nombre}
                   </th>
                 ))}
-                {sucursales.length > 1 && (
+                {sucursalesMostradas.length > 1 && (
                   <th className="sticky top-0 z-10 whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium tracking-wide text-text-2">
                     Total
                   </th>
@@ -293,7 +320,7 @@ export function ProductosTable({
             </thead>
             <tbody>
               {filtrados.map((sku) => {
-                const cantidades = sucursales.map((s) => sku.stockPorSucursal[s.id] ?? 0);
+                const cantidades = sucursalesMostradas.map((s) => sku.stockPorSucursal[s.id] ?? 0);
                 const total = cantidades.reduce((acc, c) => acc + c, 0);
 
                 return (
@@ -379,13 +406,13 @@ export function ProductosTable({
                     </td>
                     {cantidades.map((cantidad, i) => (
                       <td
-                        key={sucursales[i].id}
+                        key={sucursalesMostradas[i].id}
                         className={`px-[14px] py-[9px] text-right tabular-nums ${stockClassName(cantidad, sku.stock_minimo)}`}
                       >
                         {cantidad}
                       </td>
                     ))}
-                    {sucursales.length > 1 && (
+                    {sucursalesMostradas.length > 1 && (
                       <td
                         className={`px-[14px] py-[9px] text-right font-medium tabular-nums ${totalClassName(total)}`}
                       >

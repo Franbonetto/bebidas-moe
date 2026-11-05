@@ -12,6 +12,7 @@ export function ReporteHeader({
   periodo,
   extra,
   meta,
+  sucursal,
 }: {
   titulo: string;
   bajada: string;
@@ -24,6 +25,9 @@ export function ReporteHeader({
   // Reemplaza la aclaración del rango cuando lo que se mira no es un
   // período.
   meta?: string;
+  // Sucursal elegida, para que las pestañas de período no la pierdan al
+  // cambiar de rango (solo /reportes/caja la usa).
+  sucursal?: string;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -33,7 +37,7 @@ export function ReporteHeader({
       </div>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <PeriodoTabs base={base} actual={periodo} />
+          <PeriodoTabs base={base} actual={periodo} sucursal={sucursal} />
           {extra}
         </div>
         <span className="text-[11.5px] text-text-3">

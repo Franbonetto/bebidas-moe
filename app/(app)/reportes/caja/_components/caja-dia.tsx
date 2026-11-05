@@ -111,14 +111,12 @@ function nombreRel(rel: { nombre: string } | { nombre: string }[] | null): strin
 export async function CajaDia({
   supabase,
   dia,
-  sucursales,
+  sucursalId,
 }: {
   supabase: SupabaseClient;
   dia: string;
-  sucursales: { id: string; nombre: string }[];
+  sucursalId: string;
 }) {
-  const nombreSucursal = (id: string) => sucursales.find((s) => s.id === id)?.nombre ?? "—";
-
   const { data: cajasRaw } = await traerTodo(
     supabase
       .from("cajas")
@@ -128,7 +126,8 @@ export async function CajaDia({
          empleado_apertura:empleados!cajas_empleado_apertura_id_fkey ( nombre ),
          empleado_cierre:empleados!cajas_empleado_cierre_id_fkey ( nombre )`,
       )
-      .eq("fecha", dia),
+      .eq("fecha", dia)
+      .eq("sucursal_id", sucursalId),
   );
 
   const cajas = (cajasRaw ?? []) as unknown as CajaFila[];
@@ -139,7 +138,7 @@ export async function CajaDia({
       <Card title="Sin caja ese día">
         <EmptyState
           title="No se abrió ninguna caja"
-          sub="Ese día no hubo caja abierta en ninguna de las dos sucursales, así que tampoco hubo ventas: el POS no deja vender con la caja cerrada."
+          sub="Ese día no hubo caja abierta en esta sucursal, así que tampoco hubo ventas: el POS no deja vender con la caja cerrada."
         />
       </Card>
     );
@@ -266,7 +265,6 @@ export async function CajaDia({
   const ventasDelDia: VentaDelDia[] = ventas.map((v) => ({
     id: v.id,
     hora: formatoHora.format(new Date(v.fecha)),
-    sucursal: nombreSucursal(v.sucursal_id),
     usuario: nombreRel(v.usuario) ?? "—",
     medios: mediosPorVenta.get(v.id)?.join(" + ") ?? "—",
     total: Number(v.total),
@@ -339,7 +337,6 @@ export async function CajaDia({
           <Tabla>
             <thead>
               <tr>
-                <Th>Sucursal</Th>
                 <Th>Abrió</Th>
                 <Th>Cerró</Th>
                 <Th align="right">Apertura</Th>
@@ -352,9 +349,6 @@ export async function CajaDia({
             <tbody>
               {cajas.map((c) => (
                 <Tr key={c.id}>
-                  <Td>
-                    <span className="font-medium text-text">{nombreSucursal(c.sucursal_id)}</span>
-                  </Td>
                   <Td>
                     {nombreRel(c.empleado_apertura) ?? "—"}
                     <span className="text-text-3"> · {formatoHora.format(new Date(c.abierta_en))}</span>
@@ -516,7 +510,6 @@ export async function CajaDia({
               <thead>
                 <tr>
                   <Th>Hora</Th>
-                  <Th>Sucursal</Th>
                   <Th>Tipo</Th>
                   <Th>Motivo</Th>
                   <Th>Quién</Th>
@@ -525,11 +518,9 @@ export async function CajaDia({
               </thead>
               <tbody>
                 {movimientos.map((m, i) => {
-                  const caja = cajas.find((c) => c.id === m.caja_id);
                   return (
                     <Tr key={`${m.caja_id}:${m.creado_en}:${i}`}>
                       <Td>{formatoHora.format(new Date(m.creado_en))}</Td>
-                      <Td>{caja ? nombreSucursal(caja.sucursal_id) : "—"}</Td>
                       <Td>
                         {m.tipo === "entrada" ? (
                           <span className="rounded-[5px] bg-ok-bg px-[7px] py-[2px] text-[11px] font-medium text-ok">
@@ -571,7 +562,6 @@ export async function CajaDia({
               <thead>
                 <tr>
                   <Th>Hora</Th>
-                  <Th>Sucursal</Th>
                   <Th>Resolución</Th>
                   <Th>Se devolvió con</Th>
                   <Th>Quién</Th>
@@ -582,7 +572,6 @@ export async function CajaDia({
                 {devoluciones.map((d) => (
                   <Tr key={d.id}>
                     <Td>{formatoFechaHora.format(new Date(d.fecha))}</Td>
-                    <Td>{nombreSucursal(d.sucursal_id)}</Td>
                     <Td>
                       <span className="text-text">
                         {RESOLUCION_LABEL[d.resolucion] ?? d.resolucion}

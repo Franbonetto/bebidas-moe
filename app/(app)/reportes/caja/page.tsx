@@ -10,17 +10,23 @@ import { desdePeriodo, leerPeriodo } from "../_lib/periodo";
 import { exigirDueno } from "../_lib/permiso";
 import { CajaDia } from "./_components/caja-dia";
 import { SelectorDia } from "./_components/selector-dia";
+import { SelectorSucursal } from "./_components/selector-sucursal";
 import { fechaDelDia, leerDia } from "./_lib/dia";
 
-// Reporte de caja y dinero: todo lo que entró y salió, de las dos
-// sucursales (reorganización pedida por el usuario 2026-10-19 -- antes
-// estos datos estaban desparramados entre el inicio del dueño y
-// /reportes/particulares).
+// Reporte de caja y dinero: todo lo que entró y salió (reorganización
+// pedida por el usuario 2026-10-19 -- antes estos datos estaban
+// desparramados entre el inicio del dueño y /reportes/particulares).
 //
 // Contesta, en este orden: cuánto se vendió, con qué pagaron, qué pasó con
 // cada caja día por día (quién la abrió, quién la cerró, cuánto faltó),
 // qué salió del cajón y por qué, qué se devolvió, y qué se cobró sin estar
 // en el catálogo.
+//
+// Una sucursal a la vez (pedido del usuario 2026-11-05: "no quiero que
+// estén mezcladas"): las pestañas Olavarría/Laprida (?sucursal=<id>, por
+// defecto Olavarría) filtran todas las secciones. Antes se mostraban las
+// dos juntas con una columna "Sucursal" en cada tabla -- esa columna ya no
+// hace falta porque ahora siempre es una sola.
 //
 // Criterio de toda la plata que se muestra acá: lo cobrado por medio de
 // pago sale de `venta_pagos`, no de `ventas.medio_pago` -- una venta
@@ -111,9 +117,9 @@ function nombreRel(rel: { nombre: string } | { nombre: string }[] | null): strin
 export default async function ReporteCajaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; dia?: string }>;
+  searchParams: Promise<{ periodo?: string; dia?: string; sucursal?: string }>;
 }) {
-  const { periodo: periodoParam, dia: diaParam } = await searchParams;
+  const { periodo: periodoParam, dia: diaParam, sucursal: sucursalParam } = await searchParams;
   const supabase = await createClient();
   await exigirDueno(supabase);
 
@@ -127,22 +133,40 @@ export default async function ReporteCajaPage({
     const { data: sucursalesDia } = await traerTodo(
       supabase
         .from("sucursales")
-        .select("id, nombre")
+        .select("id, nombre, es_central")
         .eq("activo", true)
         .order("es_central", { ascending: false }),
     );
+    const listaDia = (sucursalesDia ?? []) as { id: string; nombre: string; es_central: boolean }[];
+    const elegidaDia =
+      listaDia.find((s) => s.id === sucursalParam) ?? listaDia.find((s) => s.es_central) ?? listaDia[0];
+
+    if (!elegidaDia) {
+      return <EmptyState title="Faltan sucursales configuradas" sub="No hay ninguna sucursal activa." />;
+    }
 
     return (
       <div className="flex flex-col gap-6">
         <ReporteHeader
           titulo="Caja y dinero"
-          bajada="La caja de un día: el arqueo de cada sucursal, con qué pagaron, las ventas una por una y todo lo que se vendió."
+          bajada={`La caja de un día en ${elegidaDia.nombre}: el arqueo, con qué pagaron, las ventas una por una y todo lo que se vendió.`}
           base="/reportes/caja"
           periodo={null}
-          extra={<SelectorDia base="/reportes/caja" dia={dia} hoy={hoy} />}
+          sucursal={elegidaDia.id}
+          extra={
+            <>
+              <SelectorSucursal
+                base="/reportes/caja"
+                sucursales={listaDia}
+                actual={elegidaDia.id}
+                queryExtra={`dia=${dia}`}
+              />
+              <SelectorDia base="/reportes/caja" dia={dia} hoy={hoy} sucursal={elegidaDia.id} />
+            </>
+          }
           meta={`${formatoFecha.format(fechaDelDia(dia))}${dia === hoy ? " · hoy" : ""}`}
         />
-        <CajaDia supabase={supabase} dia={dia} sucursales={sucursalesDia ?? []} />
+        <CajaDia supabase={supabase} dia={dia} sucursalId={elegidaDia.id} />
       </div>
     );
   }
@@ -153,71 +177,76 @@ export default async function ReporteCajaPage({
   const inicioSemana = inicioDeSemana();
   const inicioMes = inicioDelMes();
 
-  // La tabla por sucursal muestra siempre hoy / esta semana / este mes
-  // (pedido del usuario: "los datos de las ventas del día, del mes, de los
-  // dos locales"), así que se trae desde el corte más viejo entre el
-  // período elegido y el mes en curso, y los baldes se arman en JS sobre
-  // esas mismas filas: una consulta en vez de cuatro.
+  const { data: sucursales } = await traerTodo(
+    supabase
+      .from("sucursales")
+      .select("id, nombre, es_central")
+      .eq("activo", true)
+      .order("es_central", { ascending: false }),
+  );
+  const sucursalesList = (sucursales ?? []) as { id: string; nombre: string; es_central: boolean }[];
+  const sucursalSeleccionada =
+    sucursalesList.find((s) => s.id === sucursalParam) ??
+    sucursalesList.find((s) => s.es_central) ??
+    sucursalesList[0];
+
+  if (!sucursalSeleccionada) {
+    return <EmptyState title="Faltan sucursales configuradas" sub="No hay ninguna sucursal activa." />;
+  }
+
+  // La tabla "hoy / esta semana / este mes" siempre trae esos tres baldes
+  // fijos además del período elegido, así que se trae desde el corte más
+  // viejo entre los dos y se arman en JS sobre esas mismas filas: una
+  // consulta en vez de cuatro.
   const desdeDatos = new Date(Math.min(desde.getTime(), inicioSemana.getTime(), inicioMes.getTime()));
 
-  const [
-    { data: sucursales },
-    { data: ventasRaw },
-    { data: cajasRaw },
-    { data: devolucionesRaw },
-    { data: particularesRaw },
-  ] = await Promise.all([
-    traerTodo(
-      supabase
-        .from("sucursales")
-        .select("id, nombre")
-        .eq("activo", true)
-        .order("es_central", { ascending: false }),
-    ),
-    traerTodo(
-      supabase
-        .from("ventas")
-        .select("id, sucursal_id, fecha, total, es_envio")
-        .eq("estado", "confirmada")
-        .gte("fecha", desdeDatos.toISOString()),
-    ),
-    traerTodo(
-      supabase
-        .from("cajas")
-        .select(
-          `id, fecha, sucursal_id, estado, monto_apertura, efectivo_sistema, efectivo_declarado,
+  const [{ data: ventasRaw }, { data: cajasRaw }, { data: devolucionesRaw }, { data: particularesRaw }] =
+    await Promise.all([
+      traerTodo(
+        supabase
+          .from("ventas")
+          .select("id, sucursal_id, fecha, total, es_envio")
+          .eq("estado", "confirmada")
+          .eq("sucursal_id", sucursalSeleccionada.id)
+          .gte("fecha", desdeDatos.toISOString()),
+      ),
+      traerTodo(
+        supabase
+          .from("cajas")
+          .select(
+            `id, fecha, sucursal_id, estado, monto_apertura, efectivo_sistema, efectivo_declarado,
            diferencia, cantidad_tickets,
            empleado_apertura:empleados!cajas_empleado_apertura_id_fkey ( nombre ),
            empleado_cierre:empleados!cajas_empleado_cierre_id_fkey ( nombre )`,
-        )
-        .gte("fecha", fechaOperativa(desde))
-        .order("fecha", { ascending: false }),
-    ),
-    traerTodo(
-      supabase
-        .from("devoluciones")
-        .select(
-          "id, fecha, sucursal_id, resolucion, medio_reembolso, monto_reembolsado, venta_id, usuario:usuarios ( nombre )",
-        )
-        .gte("fecha", desde.toISOString())
-        .order("fecha", { ascending: false }),
-    ),
-    // Los particulares no se pueden filtrar por fecha en la consulta: la
-    // fecha vive en la venta, no en la línea, y un gte() sobre la relación
-    // anidada no filtra la tabla de arriba. Se recorta en JS.
-    traerTodo(
-      supabase
-        .from("venta_items")
-        .select(
-          `id, descripcion, cantidad, precio_unitario,
+          )
+          .eq("sucursal_id", sucursalSeleccionada.id)
+          .gte("fecha", fechaOperativa(desde))
+          .order("fecha", { ascending: false }),
+      ),
+      traerTodo(
+        supabase
+          .from("devoluciones")
+          .select(
+            "id, fecha, sucursal_id, resolucion, medio_reembolso, monto_reembolsado, venta_id, usuario:usuarios ( nombre )",
+          )
+          .eq("sucursal_id", sucursalSeleccionada.id)
+          .gte("fecha", desde.toISOString())
+          .order("fecha", { ascending: false }),
+      ),
+      // Los particulares no se pueden filtrar por fecha (ni por sucursal) en
+      // la consulta: los dos viven en la venta, no en la línea, y un filtro
+      // sobre la relación anidada no filtra la tabla de arriba. Se recorta
+      // en JS, igual que ya hacía con la fecha.
+      traerTodo(
+        supabase
+          .from("venta_items")
+          .select(
+            `id, descripcion, cantidad, precio_unitario,
            venta:ventas ( fecha, estado, sucursal_id, usuario:usuarios ( nombre ) )`,
-        )
-        .is("sku_id", null),
-    ),
-  ]);
-
-  const sucursalesList = (sucursales ?? []) as { id: string; nombre: string }[];
-  const nombreSucursal = (id: string) => sucursalesList.find((s) => s.id === id)?.nombre ?? "—";
+          )
+          .is("sku_id", null),
+      ),
+    ]);
 
   const ventas = (ventasRaw ?? []) as unknown as VentaFila[];
   const cajas = (cajasRaw ?? []) as unknown as CajaFila[];
@@ -255,20 +284,13 @@ export default async function ReporteCajaPage({
   const inicioSemanaIso = inicioSemana.toISOString();
   const inicioMesIso = inicioMes.toISOString();
 
-  const porSucursal = sucursalesList.map((s) => {
-    const suyas = ventas.filter((v) => v.sucursal_id === s.id);
-    const delPeriodo = suyas.filter((v) => v.fecha >= desdeIso);
-    const totalPeriodo = totalDe(delPeriodo);
-    return {
-      id: s.id,
-      nombre: s.nombre,
-      hoy: totalDe(suyas.filter((v) => v.fecha >= inicioHoyIso)),
-      semana: totalDe(suyas.filter((v) => v.fecha >= inicioSemanaIso)),
-      mes: totalDe(suyas.filter((v) => v.fecha >= inicioMesIso)),
-      tickets: delPeriodo.length,
-      ticketPromedio: delPeriodo.length > 0 ? totalPeriodo / delPeriodo.length : 0,
-    };
-  });
+  // Hoy / esta semana / este mes de la sucursal elegida. Ya no hace falta
+  // un balde por sucursal: `ventas` viene filtrada a una sola.
+  const resumenSucursal = {
+    hoy: totalDe(ventas.filter((v) => v.fecha >= inicioHoyIso)),
+    semana: totalDe(ventas.filter((v) => v.fecha >= inicioSemanaIso)),
+    mes: totalDe(ventas.filter((v) => v.fecha >= inicioMesIso)),
+  };
 
   const vendidoPeriodo = totalDe(ventasPeriodo);
   const ticketsPeriodo = ventasPeriodo.length;
@@ -301,7 +323,6 @@ export default async function ReporteCajaPage({
   const movimientos = [...(movimientosRaw ?? [])].sort((a, b) =>
     a.creado_en < b.creado_en ? 1 : -1,
   );
-  const cajaPorId = new Map(cajas.map((c) => [c.id, c]));
   const salidasTotal = movimientos
     .filter((m) => m.tipo === "salida")
     .reduce((acc, m) => acc + Number(m.monto), 0);
@@ -310,7 +331,12 @@ export default async function ReporteCajaPage({
     .reduce((acc, m) => acc + Number(m.monto), 0);
 
   const particulares = ((particularesRaw ?? []) as unknown as ParticularFila[])
-    .filter((p) => p.venta?.estado === "confirmada" && p.venta.fecha >= desdeIso)
+    .filter(
+      (p) =>
+        p.venta?.estado === "confirmada" &&
+        p.venta.fecha >= desdeIso &&
+        p.venta.sucursal_id === sucursalSeleccionada.id,
+    )
     .sort((a, b) => (b.venta?.fecha ?? "").localeCompare(a.venta?.fecha ?? ""));
   const particularesTotal = particulares.reduce(
     (acc, p) => acc + Number(p.precio_unitario) * p.cantidad,
@@ -321,10 +347,21 @@ export default async function ReporteCajaPage({
     <div className="flex flex-col gap-6">
       <ReporteHeader
         titulo="Caja y dinero"
-        bajada="Lo que entró y salió en las dos sucursales: ventas, medios de pago, cierres de caja, egresos, devoluciones y productos particulares."
+        bajada={`Lo que entró y salió en ${sucursalSeleccionada.nombre}: ventas, medios de pago, cierres de caja, egresos, devoluciones y productos particulares.`}
         base="/reportes/caja"
         periodo={periodo}
-        extra={<SelectorDia base="/reportes/caja" dia={null} hoy={hoy} />}
+        sucursal={sucursalSeleccionada.id}
+        extra={
+          <>
+            <SelectorSucursal
+              base="/reportes/caja"
+              sucursales={sucursalesList}
+              actual={sucursalSeleccionada.id}
+              queryExtra={`periodo=${periodo}`}
+            />
+            <SelectorDia base="/reportes/caja" dia={null} hoy={hoy} sucursal={sucursalSeleccionada.id} />
+          </>
+        }
       />
 
       <KpiGrid>
@@ -349,66 +386,12 @@ export default async function ReporteCajaPage({
       </KpiGrid>
 
       <div>
-        <SectionHeader
-          title="Ventas por sucursal"
-          meta="Hoy, semana y mes son fijos; tickets y promedio siguen el período elegido"
-        />
-        <Card title="Vendido">
-          <Tabla>
-            <thead>
-              <tr>
-                <Th>Sucursal</Th>
-                <Th align="right">Hoy</Th>
-                <Th align="right">Esta semana</Th>
-                <Th align="right">Este mes</Th>
-                <Th align="right">Tickets</Th>
-                <Th align="right">Ticket promedio</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {porSucursal.map((s) => (
-                <Tr key={s.id}>
-                  <Td>
-                    <span className="font-medium text-text">{s.nombre}</span>
-                  </Td>
-                  <Td align="right" numero>
-                    {formatoMoneda.format(s.hoy)}
-                  </Td>
-                  <Td align="right" numero>
-                    {formatoMoneda.format(s.semana)}
-                  </Td>
-                  <Td align="right" numero>
-                    {formatoMoneda.format(s.mes)}
-                  </Td>
-                  <Td align="right" numero>
-                    {s.tickets}
-                  </Td>
-                  <Td align="right" numero>
-                    {formatoMoneda.format(s.ticketPromedio)}
-                  </Td>
-                </Tr>
-              ))}
-              <Tr total>
-                <Td>Total</Td>
-                <Td align="right" numero>
-                  {formatoMoneda.format(porSucursal.reduce((a, s) => a + s.hoy, 0))}
-                </Td>
-                <Td align="right" numero>
-                  {formatoMoneda.format(porSucursal.reduce((a, s) => a + s.semana, 0))}
-                </Td>
-                <Td align="right" numero>
-                  {formatoMoneda.format(porSucursal.reduce((a, s) => a + s.mes, 0))}
-                </Td>
-                <Td align="right" numero>
-                  {ticketsPeriodo}
-                </Td>
-                <Td align="right" numero>
-                  {formatoMoneda.format(ticketPromedio)}
-                </Td>
-              </Tr>
-            </tbody>
-          </Tabla>
-        </Card>
+        <SectionHeader title={`Vendido en ${sucursalSeleccionada.nombre}`} meta="Hoy, semana y mes son fijos" />
+        <KpiGrid>
+          <Kpi label="Hoy" value={formatoMoneda.format(resumenSucursal.hoy)} />
+          <Kpi label="Esta semana" value={formatoMoneda.format(resumenSucursal.semana)} />
+          <Kpi label="Este mes" value={formatoMoneda.format(resumenSucursal.mes)} />
+        </KpiGrid>
       </div>
 
       <div>
@@ -458,7 +441,6 @@ export default async function ReporteCajaPage({
               <thead>
                 <tr>
                   <Th>Fecha</Th>
-                  <Th>Sucursal</Th>
                   <Th>Abrió</Th>
                   <Th>Cerró</Th>
                   <Th align="right">Apertura</Th>
@@ -473,13 +455,12 @@ export default async function ReporteCajaPage({
                   <Tr key={c.id}>
                     <Td>
                       <Link
-                        href={`/reportes/caja?dia=${c.fecha}`}
+                        href={`/reportes/caja?dia=${c.fecha}&sucursal=${sucursalSeleccionada.id}`}
                         className="font-medium text-moe hover:underline"
                       >
                         {formatoFecha.format(new Date(`${c.fecha}T12:00:00`))}
                       </Link>
                     </Td>
-                    <Td>{nombreSucursal(c.sucursal_id)}</Td>
                     <Td>
                       <span className="font-medium text-text">
                         {nombreRel(c.empleado_apertura) ?? "—"}
@@ -553,7 +534,6 @@ export default async function ReporteCajaPage({
               <thead>
                 <tr>
                   <Th>Fecha</Th>
-                  <Th>Sucursal</Th>
                   <Th>Tipo</Th>
                   <Th>Motivo</Th>
                   <Th>Quién</Th>
@@ -562,11 +542,9 @@ export default async function ReporteCajaPage({
               </thead>
               <tbody>
                 {movimientos.map((m, i) => {
-                  const caja = cajaPorId.get(m.caja_id);
                   return (
                     <Tr key={`${m.caja_id}:${m.creado_en}:${i}`}>
                       <Td>{formatoFechaHora.format(new Date(m.creado_en))}</Td>
-                      <Td>{caja ? nombreSucursal(caja.sucursal_id) : "—"}</Td>
                       <Td>
                         {m.tipo === "entrada" ? (
                           <span className="rounded-[5px] bg-ok-bg px-[7px] py-[2px] text-[11px] font-medium text-ok">
@@ -610,7 +588,6 @@ export default async function ReporteCajaPage({
               <thead>
                 <tr>
                   <Th>Fecha</Th>
-                  <Th>Sucursal</Th>
                   <Th>Resolución</Th>
                   <Th>Se devolvió con</Th>
                   <Th>Quién</Th>
@@ -622,7 +599,6 @@ export default async function ReporteCajaPage({
                 {devoluciones.map((d) => (
                   <Tr key={d.id}>
                     <Td>{formatoFechaHora.format(new Date(d.fecha))}</Td>
-                    <Td>{nombreSucursal(d.sucursal_id)}</Td>
                     <Td>
                       <span className="text-text">
                         {RESOLUCION_LABEL[d.resolucion] ?? d.resolucion}
@@ -682,7 +658,6 @@ export default async function ReporteCajaPage({
               <thead>
                 <tr>
                   <Th>Fecha</Th>
-                  <Th>Sucursal</Th>
                   <Th>Descripción</Th>
                   <Th>Quién vendió</Th>
                   <Th align="right">Cantidad</Th>
@@ -693,7 +668,6 @@ export default async function ReporteCajaPage({
                 {particulares.map((p) => (
                   <Tr key={p.id}>
                     <Td>{p.venta ? formatoFechaHora.format(new Date(p.venta.fecha)) : "—"}</Td>
-                    <Td>{p.venta ? nombreSucursal(p.venta.sucursal_id) : "—"}</Td>
                     <Td>
                       <span className="font-medium text-text">
                         {p.descripcion ?? "Sin descripción"}

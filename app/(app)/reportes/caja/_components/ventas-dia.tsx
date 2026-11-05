@@ -28,7 +28,6 @@ export type LineaVenta = {
 export type VentaDelDia = {
   id: string;
   hora: string;
-  sucursal: string;
   usuario: string;
   medios: string;
   total: number;
@@ -44,7 +43,6 @@ export function VentasDia({ ventas }: { ventas: VentaDelDia[] }) {
       <thead>
         <tr>
           <Th>Hora</Th>
-          <Th>Sucursal</Th>
           <Th>Quién vendió</Th>
           <Th>Con qué pagó</Th>
           <Th align="right">Productos</Th>
@@ -70,7 +68,6 @@ export function VentasDia({ ventas }: { ventas: VentaDelDia[] }) {
                 </span>
                 <span className="tabular-nums text-text">{v.hora}</span>
               </Td>
-              <Td>{v.sucursal}</Td>
               <Td>{v.usuario}</Td>
               <Td>
                 {v.medios}
@@ -101,7 +98,7 @@ export function VentasDia({ ventas }: { ventas: VentaDelDia[] }) {
 
             abiertaEsta ? (
               <tr key={`${v.id}:detalle`} className="border-b border-[#F1F1F3] bg-bg-2">
-                <td colSpan={7} className="px-[14px] pb-[11px] pt-[2px]">
+                <td colSpan={6} className="px-[14px] pb-[11px] pt-[2px]">
                   <div className="flex flex-col gap-[4px]">
                     {v.items.map((i, idx) => (
                       <div
