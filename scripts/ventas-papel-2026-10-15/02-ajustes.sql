@@ -136,8 +136,30 @@ insert into papel (orden, nombre, cantidad) values
 
 create temp table elecciones (orden int primary key, codigo_interno text not null);
 
--- insert into elecciones (orden, codigo_interno) values
---   (62, 'VINO-TRUMPETER-MALBEC-750');
+-- Elecciones manuales 2026-11-05, repasando el diagnostico: estos 5 casos
+-- el match automatico los eligio mal, o no encontro nada (ver el chat
+-- para el detalle de cada uno).
+insert into elecciones (orden, codigo_interno) values
+  -- "Hijos Red Wine": el catalogo lo tiene como "Hijos MALBEC" (00127),
+  -- sin la palabra "wine" ni "red" -- por eso el automatico no encontro
+  -- ningun candidato.
+  (31, '00127'),
+  -- "Cynar 70" y "Cynar clasico": ningun SKU dice eso literal; el
+  -- automatico empato con Absolut y con Sur Clasico (gin) por longitud de
+  -- texto. Las dos lineas son el Cynar de siempre.
+  (13, '00067'),
+  (14, '00067'),
+  -- "Heineken 710ml": el automatico elegia 00659 ("Heineken 710"), que
+  -- esta dado de baja (SKU INACTIVO). Este es el reemplazo activo, mismo
+  -- volumen y presentacion.
+  (29, 'CERVEZA-LATA-HEINEKEN-710-UN'),
+  -- "Las Perdices Malbec": hay un SKU con el nombre exacto del papel; el
+  -- automatico eligio "Partridge MALBEC" (otra linea del mismo
+  -- fabricante) por empate de longitud de texto.
+  (36, '00336'),
+  -- "Schweppes clasica 1.5 litros": ningun SKU dice "clasica"; en el
+  -- mostrador "clasica" es la Tonica, no la Citrus que eligio el empate.
+  (55, 'GASEOSA-SCHWEPPES-1500');
 
 -- ---------------------------------------------------------------------
 -- 3. Resolución nombre en papel -> SKU
