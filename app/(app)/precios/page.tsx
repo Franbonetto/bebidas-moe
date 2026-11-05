@@ -12,6 +12,8 @@ import { PromocionesVigentesPanel } from "./_components/promociones-vigentes-pan
 import type { PromocionSkuOpcion } from "./_components/promocion-form";
 import { PreciosTabs } from "./_components/precios-tabs";
 import { PinProvider } from "@/app/(app)/_components/pin-gate";
+import { AvisosPrecioLapridaPanel } from "@/app/(app)/_components/avisos-precio-laprida-panel";
+import { avisosPrecioLapridaPendientes } from "@/lib/avisos-precio-laprida";
 
 type SkuFila = {
   id: string;
@@ -236,8 +238,14 @@ export default async function PreciosPage() {
       })
     : [];
 
+  // Avisos de "falta cambiar el cartel" (pedido del usuario 2026-11-05):
+  // solo tienen sentido para quien no ve costos, es decir Laprida.
+  const avisosLaprida = !puedeVerCostos ? await avisosPrecioLapridaPendientes(supabase) : [];
+
   const tabPrecios = (
     <>
+      {!puedeVerCostos && avisosLaprida.length > 0 && <AvisosPrecioLapridaPanel avisos={avisosLaprida} />}
+
       <PreciosTable
         sucursales={sucursalesList}
         filas={filas}

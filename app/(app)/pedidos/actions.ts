@@ -2,6 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { verificarPinOperaciones } from "@/lib/pin";
+import { operaSucursal } from "@/lib/permisos";
+import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 
 export type LineaPedido = {
   sku_id: string;
@@ -18,6 +21,130 @@ function validarLineasPedido(lineas: LineaPedido[]): string | null {
       return "La cantidad tiene que ser un entero mayor a cero.";
   }
   return null;
+}
+
+export type SugerenciaSkuDTO = {
+  sku_id: string;
+  stock_actual: number;
+  en_transito: number;
+  pendiente_pedidos_abiertos: number;
+  stock_objetivo: number;
+  arrastre: number;
+  sugerido: number;
+  vendido_desde_ultimo_envio: number;
+  sku: {
+    codigo_interno: string;
+    tipo_presentacion: "unidad" | "pack" | "cajon" | "estuche";
+    volumen: number;
+    unidad_volumen: string;
+    unidades_contenidas: number;
+    producto: { nombre: string; marca: { nombre: string } | null } | null;
+  };
+};
+
+// Trae todo lo que necesita /pedidos/nuevo (sugerencia + ventas de Laprida
+// desde el último envío) detrás del PIN de operaciones (pedido del usuario
+// 2026-11-05: "hay datos sensibles"). A diferencia del resto de las
+// pantallas con PIN, acá el PIN no solo frena un botón de guardar: frena
+// que los datos se traigan del servidor. Por eso /pedidos/nuevo/page.tsx
+// ya no hace el fetch directo -- lo pide esta acción, recién cuando llega
+// un PIN correcto.
+export async function obtenerSugerenciaPedido(
+  pin: string,
+): Promise<{ error: string } | { filas: SugerenciaSkuDTO[]; ultimoDespacho: string | null }> {
+  const pinOk = verificarPinOperaciones(pin);
+  if ("error" in pinOk) return pinOk;
+
+  const supabase = await createClient();
+
+  const { data: laprida } = await supabase.from("sucursales").select("id").eq("es_central", false).single();
+  if (!laprida) return { error: "No se encontró la sucursal Laprida." };
+
+  if (!(await operaSucursal(supabase, laprida.id))) {
+    return { error: "No tenés permiso para ver el pedido semanal de Laprida." };
+  }
+
+  const [{ data: sugerencias }, { data: skus }, { data: ultimaTransferencia }] = await Promise.all([
+    supabase.rpc("sugerir_pedido", { p_sucursal_destino_id: laprida.id }),
+    traerTodo(
+      supabase
+        .from("skus")
+        .select(
+          `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+           producto:productos ( nombre, marca:marcas ( nombre ) )`,
+        )
+        .eq("activo", true),
+    ),
+    supabase
+      .from("transferencias")
+      .select("fecha_despacho")
+      .eq("sucursal_destino_id", laprida.id)
+      .order("fecha_despacho", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const ultimoDespacho = ultimaTransferencia?.fecha_despacho ?? null;
+
+  // Vendido en Laprida desde el último envío (o todo el historial, si
+  // todavía no se despachó nunca) -- pedido del usuario 2026-11-05: la
+  // encargada de Olavarría necesita saber qué se vendió, no solo cuánto
+  // stock queda, para decidir qué mandar. Mismo patrón de agregación que
+  // /reportes/stock (ventas confirmadas -> venta_items por lotes).
+  let ventasQuery = supabase.from("ventas").select("id").eq("sucursal_id", laprida.id).eq("estado", "confirmada");
+  if (ultimoDespacho) ventasQuery = ventasQuery.gte("fecha", ultimoDespacho);
+  const { data: ventasLaprida } = await traerTodo(ventasQuery);
+
+  const idsVentas = (ventasLaprida ?? []).map((v) => v.id);
+  const { data: itemsRaw } = idsVentas.length
+    ? await traerTodoPorLotes<{ sku_id: string | null; cantidad: number }>(idsVentas, (lote) =>
+        supabase.from("venta_items").select("sku_id, cantidad").in("venta_id", lote),
+      )
+    : { data: [] };
+
+  const vendidoPorSku = new Map<string, number>();
+  for (const it of itemsRaw ?? []) {
+    if (it.sku_id == null) continue;
+    vendidoPorSku.set(it.sku_id, (vendidoPorSku.get(it.sku_id) ?? 0) + it.cantidad);
+  }
+
+  type Sugerencia = {
+    sku_id: string;
+    stock_actual: number;
+    en_transito: number;
+    pendiente_pedidos_abiertos: number;
+    stock_objetivo: number;
+    arrastre: number;
+    sugerido: number;
+  };
+
+  const skuPorId = new Map((skus ?? []).map((s) => [s.id, s]));
+
+  const filas: SugerenciaSkuDTO[] = ((sugerencias ?? []) as Sugerencia[])
+    .map((s) => {
+      const sku = skuPorId.get(s.sku_id);
+      if (!sku) return null;
+      return {
+        ...s,
+        vendido_desde_ultimo_envio: vendidoPorSku.get(s.sku_id) ?? 0,
+        sku: sku as unknown as SugerenciaSkuDTO["sku"],
+      };
+    })
+    .filter((f): f is SugerenciaSkuDTO => f !== null);
+
+  filas.sort((a, b) => {
+    const marcaA = a.sku.producto?.marca?.nombre ?? "";
+    const marcaB = b.sku.producto?.marca?.nombre ?? "";
+    if (marcaA !== marcaB) return marcaA.localeCompare(marcaB, "es");
+
+    const productoA = a.sku.producto?.nombre ?? "";
+    const productoB = b.sku.producto?.nombre ?? "";
+    if (productoA !== productoB) return productoA.localeCompare(productoB, "es");
+
+    return a.sku.unidades_contenidas - b.sku.unidades_contenidas;
+  });
+
+  return { filas, ultimoDespacho };
 }
 
 export async function crearPedido(

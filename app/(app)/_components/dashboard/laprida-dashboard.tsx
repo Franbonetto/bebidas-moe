@@ -14,6 +14,8 @@ import {
   SectionHeader,
   StatRow,
 } from "./ui";
+import { AvisosPrecioLapridaPanel } from "../avisos-precio-laprida-panel";
+import { avisosPrecioLapridaPendientes } from "@/lib/avisos-precio-laprida";
 
 type SkuInfo = SkuPresentacion & {
   id: string;
@@ -46,6 +48,7 @@ export async function LapridaDashboard() {
     { data: sugerencias },
     { data: transferenciasEnTransito },
     { data: historial },
+    avisosLaprida,
   ] = await Promise.all([
     traerTodo(
       supabase
@@ -87,6 +90,7 @@ export async function LapridaDashboard() {
         .select("sku_id, cantidad, fecha, fecha_vencimiento")
         .order("fecha", { ascending: false }),
     ),
+    avisosPrecioLapridaPendientes(supabase),
   ]);
 
   const skusList = (skus ?? []) as unknown as SkuInfo[];
@@ -138,6 +142,8 @@ export async function LapridaDashboard() {
   return (
     <div className="flex flex-col gap-5">
       <Saludo texto={`${saludoDelMomento("equipo")}, equipo Moe`} />
+
+      {avisosLaprida.length > 0 && <AvisosPrecioLapridaPanel avisos={avisosLaprida} />}
 
       <div>
         <SectionHeader title="Necesita atención" />

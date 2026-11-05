@@ -11,7 +11,8 @@ export type CategoriaAlerta =
   | "costos"
   | "inmovilizado"
   | "rentabilidad"
-  | "envases";
+  | "envases"
+  | "precios_laprida";
 
 export function PreferenciasPanel({
   categorias,

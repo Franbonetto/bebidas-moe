@@ -14,6 +14,41 @@ function validarMonto(valor: number, etiqueta: string): string | null {
   return null;
 }
 
+// Id de Laprida, para decidir si un cambio de precio/promo necesita avisarle
+// (pedido del usuario 2026-11-05: "que se note que hay que cambiar el
+// cartel de góndola"). No se cachea entre llamadas: cada server action es
+// una invocación nueva.
+async function idLaprida(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string | null> {
+  const { data } = await supabase.from("sucursales").select("id").eq("es_central", false).limit(1).maybeSingle();
+  return data?.id ?? null;
+}
+
+// Mejor esfuerzo: si el aviso no se pudo generar, el precio ya se guardó
+// bien y no vale la pena hacer fallar la acción por esto.
+async function avisarPrecioLaprida(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  skuId: string,
+  descripcion: string,
+) {
+  await supabase.rpc("generar_aviso_precio_laprida", {
+    p_tipo: "precio",
+    p_descripcion: descripcion,
+    p_sku_id: skuId,
+  });
+}
+
+async function avisarPromocionLaprida(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  promocionId: string,
+  descripcion: string,
+) {
+  await supabase.rpc("generar_aviso_precio_laprida", {
+    p_tipo: "promocion",
+    p_descripcion: descripcion,
+    p_promocion_id: promocionId,
+  });
+}
+
 export async function guardarPrecioBase(skuId: string, precioBase: number, pin: string): Promise<Resultado> {
   const pinOk = verificarPinOperaciones(pin);
   if ("error" in pinOk) return pinOk;
@@ -28,6 +63,10 @@ export async function guardarPrecioBase(skuId: string, precioBase: number, pin: 
     .upsert({ sku_id: skuId, precio_base: precioBase }, { onConflict: "sku_id" });
 
   if (error) return { error: error.message };
+
+  // El precio base afecta a Laprida siempre (es base + recargo salvo que
+  // tenga su propia excepción), así que avisa sin preguntar por sucursal.
+  await avisarPrecioLaprida(supabase, skuId, "Precio base");
 
   revalidatePath("/precios");
   return { ok: true };
@@ -56,6 +95,10 @@ export async function guardarOverride(
 
   if (error) return { error: error.message };
 
+  if (sucursalId === (await idLaprida(supabase))) {
+    await avisarPrecioLaprida(supabase, skuId, "Precio de excepción");
+  }
+
   revalidatePath("/precios");
   return { ok: true };
 }
@@ -73,6 +116,10 @@ export async function eliminarOverride(sucursalId: string, skuId: string, pin: s
     .eq("sku_id", skuId);
 
   if (error) return { error: error.message };
+
+  if (sucursalId === (await idLaprida(supabase))) {
+    await avisarPrecioLaprida(supabase, skuId, "Se sacó el precio de excepción: vuelve a base + recargo");
+  }
 
   revalidatePath("/precios");
   return { ok: true };
@@ -105,6 +152,10 @@ export async function guardarPrecioEfectivo(
 
   if (error) return { error: error.message };
 
+  if (sucursalId === (await idLaprida(supabase))) {
+    await avisarPrecioLaprida(supabase, skuId, "Precio en efectivo");
+  }
+
   revalidatePath("/precios");
   revalidatePath("/vender");
   return { ok: true };
@@ -129,6 +180,10 @@ export async function eliminarPrecioEfectivo(
     .eq("sku_id", skuId);
 
   if (error) return { error: error.message };
+
+  if (sucursalId === (await idLaprida(supabase))) {
+    await avisarPrecioLaprida(supabase, skuId, "Se sacó el precio en efectivo propio");
+  }
 
   revalidatePath("/precios");
   revalidatePath("/vender");
@@ -309,7 +364,7 @@ export async function guardarPromocion(input: GuardarPromocionInput, pin: string
 
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc("guardar_promocion", {
+  const { data, error } = await supabase.rpc("guardar_promocion", {
     p_id: input.id,
     p_nombre: input.nombre,
     p_tipo: input.tipo,
@@ -329,6 +384,13 @@ export async function guardarPromocion(input: GuardarPromocionInput, pin: string
 
   if (error) return { error: error.message };
 
+  // Avisa a Laprida solo si la promo corre ahí (tiene un precio cargado
+  // para su sucursal, sea porque es de las dos o porque es puntual de ella).
+  const laprida = await idLaprida(supabase);
+  if (laprida && data && input.precios.some((p) => p.sucursalId === laprida)) {
+    await avisarPromocionLaprida(supabase, data as string, `Promoción: ${input.nombre}`);
+  }
+
   revalidatePath("/precios");
   return { ok: true };
 }
@@ -341,6 +403,25 @@ export async function activarPromocion(id: string, activo: boolean, pin: string)
 
   const { error } = await supabase.from("promociones").update({ activo }).eq("id", id);
   if (error) return { error: error.message };
+
+  const laprida = await idLaprida(supabase);
+  if (laprida) {
+    const { data: precios } = await supabase
+      .from("promocion_precios")
+      .select("sucursal_id")
+      .eq("promocion_id", id);
+    const corraEnLaprida = (precios ?? []).some((p) => p.sucursal_id === laprida);
+
+    if (corraEnLaprida) {
+      const { data: promo } = await supabase.from("promociones").select("nombre").eq("id", id).maybeSingle();
+      const nombre = promo?.nombre ?? "promoción";
+      await avisarPromocionLaprida(
+        supabase,
+        id,
+        activo ? `Promoción activada: ${nombre}` : `Promoción desactivada, sacar el cartel: ${nombre}`,
+      );
+    }
+  }
 
   revalidatePath("/precios");
   return { ok: true };

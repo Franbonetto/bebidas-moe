@@ -1,19 +1,15 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal } from "@/lib/permisos";
-import { SugerenciaForm, type SugerenciaSku } from "../_components/sugerencia-form";
+import { PinProvider } from "@/app/(app)/_components/pin-gate";
+import { PedidoSemanalGate } from "../_components/pedido-semanal-gate";
 
-type Sugerencia = {
-  sku_id: string;
-  stock_actual: number;
-  en_transito: number;
-  pendiente_pedidos_abiertos: number;
-  stock_objetivo: number;
-  arrastre: number;
-  sugerido: number;
-};
-
+// El pedido semanal (sugerencia + ventas de Laprida) queda detrás del PIN
+// de operaciones (pedido del usuario 2026-11-05: "hay datos sensibles").
+// Esta pantalla ya no trae los datos acá: el permiso de operar Laprida se
+// sigue chequeando server-side antes de mostrar nada, pero la sugerencia y
+// las ventas las pide PedidoSemanalGate recién con el PIN correcto (ver
+// obtenerSugerenciaPedido en ../actions.ts).
 export default async function NuevoPedidoPage() {
   const supabase = await createClient();
 
@@ -27,43 +23,9 @@ export default async function NuevoPedidoPage() {
     redirect("/pedidos");
   }
 
-  const [{ data: sugerencias }, { data: skus }] = await Promise.all([
-    supabase.rpc("sugerir_pedido", { p_sucursal_destino_id: laprida.id }),
-    traerTodo(
-      supabase
-        .from("skus")
-        .select(
-          `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-           producto:productos ( nombre, marca:marcas ( nombre ) )`,
-        )
-        .eq("activo", true),
-    ),
-  ]);
-
-  const skuPorId = new Map((skus ?? []).map((s) => [s.id, s]));
-
-  const filas: SugerenciaSku[] = ((sugerencias ?? []) as Sugerencia[])
-    .map((s) => {
-      const sku = skuPorId.get(s.sku_id);
-      if (!sku) return null;
-      return { ...s, sku: sku as unknown as SugerenciaSku["sku"] };
-    })
-    .filter((f): f is SugerenciaSku => f !== null);
-
-  // Ordenado en JS (no en la query) porque involucra dos niveles de join
-  // embebido (sku -> producto -> marca). Marca primero para que las
-  // presentaciones de un mismo producto queden agrupadas.
-  filas.sort((a, b) => {
-    const marcaA = a.sku.producto?.marca?.nombre ?? "";
-    const marcaB = b.sku.producto?.marca?.nombre ?? "";
-    if (marcaA !== marcaB) return marcaA.localeCompare(marcaB, "es");
-
-    const productoA = a.sku.producto?.nombre ?? "";
-    const productoB = b.sku.producto?.nombre ?? "";
-    if (productoA !== productoB) return productoA.localeCompare(productoB, "es");
-
-    return a.sku.unidades_contenidas - b.sku.unidades_contenidas;
-  });
-
-  return <SugerenciaForm filas={filas} />;
+  return (
+    <PinProvider>
+      <PedidoSemanalGate />
+    </PinProvider>
+  );
 }

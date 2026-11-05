@@ -7,6 +7,8 @@ import { calcularPrecioVenta, type SkuParaPrecio, type SucursalParaPrecio } from
 import { calcularCostosQueSubieron, haceDias } from "../../_components/dashboard/lib";
 import { AlertRow, Badge, Card, EmptyState, SectionHeader } from "../../_components/dashboard/ui";
 import { PreferenciasPanel, type CategoriaAlerta } from "./_components/preferencias-panel";
+import { AvisosPrecioLapridaPanel } from "../../_components/avisos-precio-laprida-panel";
+import { avisosPrecioLapridaPendientes } from "@/lib/avisos-precio-laprida";
 
 // docs/arquitectura.md 1.12: "producto inmovilizado" ya usa 90 dias
 // (dueno-dashboard.tsx). No hay un numero definido para "envases sin
@@ -209,6 +211,10 @@ export default async function AlertasPage() {
       : Promise.resolve({ data: [] }),
   ]);
 
+  // Avisos de "falta cambiar el cartel" (pedido del usuario 2026-11-05):
+  // solo le aplican a Laprida.
+  const avisosLaprida = rol === "laprida" ? await avisosPrecioLapridaPendientes(supabase) : [];
+
   const skusList = (skus ?? []) as unknown as SkuInfo[];
   const skuPorId = new Map(skusList.map((s) => [s.id, s]));
   const sucursalNombrePorId = new Map(sucursalesList.map((s) => [s.id, s.nombre]));
@@ -387,6 +393,8 @@ export default async function AlertasPage() {
   const mostrarInmovilizado = esDuenoRol && inmovilizados.length > 0 && !ocultas.has("inmovilizado");
   const mostrarRentabilidad = esDuenoRol && margenBajoAlertas.length > 0 && !ocultas.has("rentabilidad");
   const mostrarEnvases = rol === "olavarria" && envasesSinDevolver.length > 0 && !ocultas.has("envases");
+  const mostrarPreciosLaprida =
+    rol === "laprida" && avisosLaprida.length > 0 && !ocultas.has("precios_laprida");
 
   const hayAlgunaAlerta =
     mostrarStock ||
@@ -395,7 +403,8 @@ export default async function AlertasPage() {
     mostrarCostos ||
     mostrarInmovilizado ||
     mostrarRentabilidad ||
-    mostrarEnvases;
+    mostrarEnvases ||
+    mostrarPreciosLaprida;
 
   const categoriasDisponibles: { id: CategoriaAlerta; label: string }[] = [
     { id: "stock", label: "Stock crítico" },
@@ -409,6 +418,9 @@ export default async function AlertasPage() {
         ]
       : []),
     ...(rol === "olavarria" ? [{ id: "envases" as const, label: "Envases sin devolver" }] : []),
+    ...(rol === "laprida"
+      ? [{ id: "precios_laprida" as const, label: "Precios y promos sin aplicar" }]
+      : []),
   ];
 
   return (
@@ -424,6 +436,13 @@ export default async function AlertasPage() {
       </div>
 
       {!hayAlgunaAlerta && <EmptyState title="Todo al día" sub="No hay alertas activas en este momento." />}
+
+      {mostrarPreciosLaprida && (
+        <div>
+          <SectionHeader title="Precios y promos" />
+          <AvisosPrecioLapridaPanel avisos={avisosLaprida} />
+        </div>
+      )}
 
       {mostrarStock && (
         <div>

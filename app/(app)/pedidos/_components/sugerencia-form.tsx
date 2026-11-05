@@ -16,13 +16,22 @@ export type SugerenciaSku = {
   stock_objetivo: number;
   arrastre: number;
   sugerido: number;
+  vendido_desde_ultimo_envio: number;
   sku: SkuPresentacion & {
     codigo_interno: string;
     producto: { nombre: string; marca: { nombre: string } | null } | null;
   };
 };
 
-export function SugerenciaForm({ filas }: { filas: SugerenciaSku[] }) {
+const formatoFecha = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "2-digit" });
+
+export function SugerenciaForm({
+  filas,
+  ultimoDespacho,
+}: {
+  filas: SugerenciaSku[];
+  ultimoDespacho: string | null;
+}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [cantidades, setCantidades] = useState<Record<string, number>>(
@@ -67,6 +76,9 @@ export function SugerenciaForm({ filas }: { filas: SugerenciaSku[] }) {
           }`}
         >
           {f.stock_actual}
+        </td>
+        <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
+          {f.vendido_desde_ultimo_envio}
         </td>
         <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
           {f.stock_objetivo}
@@ -138,9 +150,10 @@ export function SugerenciaForm({ filas }: { filas: SugerenciaSku[] }) {
         Encontramos {conSugerencia.length} producto{conSugerencia.length === 1 ? "" : "s"} que
         podrían necesitar reposición, precargados con la cantidad sugerida. La sugerencia
         descuenta lo que ya está en camino y lo que sigue pendiente de pedidos abiertos, y suma lo
-        que quedó sin resolver del último pedido cerrado. Debajo está el resto del catálogo por si
-        necesitás pedir algo que el sistema no detectó. Podés cambiar cualquier cantidad antes de
-        confirmar.
+        que quedó sin resolver del último pedido cerrado. La columna "Vendido" es lo que Laprida
+        vendió desde el último envío, para decidir qué mandar mirando la demanda real y no solo el
+        stock. Debajo está el resto del catálogo por si necesitás pedir algo que el sistema no
+        detectó. Podés cambiar cualquier cantidad antes de confirmar.
       </div>
 
       <div className="overflow-hidden rounded-card border border-border bg-bg">
@@ -182,6 +195,16 @@ export function SugerenciaForm({ filas }: { filas: SugerenciaSku[] }) {
                   <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                     Stock
                   </th>
+                  <th
+                    className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2"
+                    title={
+                      ultimoDespacho
+                        ? `Vendido en Laprida desde el último envío (${formatoFecha.format(new Date(ultimoDespacho))})`
+                        : "Vendido en Laprida: todavía no se le despachó nada, es todo el historial"
+                    }
+                  >
+                    Vendido
+                  </th>
                   <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                     Objetivo
                   </th>
@@ -208,7 +231,7 @@ export function SugerenciaForm({ filas }: { filas: SugerenciaSku[] }) {
                 {restoFiltrado.length > 0 && (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="border-b border-border bg-bg-2 px-[14px] py-[6px] text-[11.5px] font-medium text-text-2"
                     >
                       Resto del catálogo
