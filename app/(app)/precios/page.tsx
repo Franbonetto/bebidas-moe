@@ -297,7 +297,7 @@ export default async function PreciosPage() {
           />
 
           <DescuentosEfectivoPanel
-            sucursalCentral={sucursalCentral}
+            sucursal={sucursalCentral}
             categorias={categoriasList}
             descuentos={(descuentosEfectivo ?? []) as {
               sucursal_id: string;
@@ -307,6 +307,20 @@ export default async function PreciosPage() {
             }[]}
             puedeEditar={puedeEditarPoliticas}
           />
+
+          {sucursalLaprida && (
+            <DescuentosEfectivoPanel
+              sucursal={sucursalLaprida}
+              categorias={categoriasList}
+              descuentos={(descuentosEfectivo ?? []) as {
+                sucursal_id: string;
+                categoria_id: string;
+                porcentaje: number;
+                actualizado_en: string;
+              }[]}
+              puedeEditar={puedeEditarPoliticas}
+            />
+          )}
         </>
       )}
     </>

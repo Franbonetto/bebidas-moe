@@ -81,12 +81,12 @@ function Fila({
 }
 
 export function DescuentosEfectivoPanel({
-  sucursalCentral,
+  sucursal,
   categorias,
   descuentos,
   puedeEditar,
 }: {
-  sucursalCentral: Sucursal;
+  sucursal: Sucursal;
   categorias: Categoria[];
   descuentos: Descuento[];
   puedeEditar: boolean;
@@ -96,7 +96,7 @@ export function DescuentosEfectivoPanel({
   return (
     <div className="overflow-hidden rounded-card border border-border bg-bg">
       <div className="border-b border-border px-[14px] py-[11px]">
-        <h2 className="text-[13px] font-semibold text-text">Descuento por efectivo — {sucursalCentral.nombre}</h2>
+        <h2 className="text-[13px] font-semibold text-text">Descuento por efectivo — {sucursal.nombre}</h2>
         <p className="mt-[2px] text-[11.5px] text-text-3">
           Billete en mano, no débito/crédito/transferencia. Distinto de las promociones (combo, 2x,
           promocional): son dos mecanismos separados que pueden coexistir.
@@ -122,9 +122,9 @@ export function DescuentosEfectivoPanel({
               <Fila
                 key={categoria.id}
                 categoria={categoria}
-                sucursalId={sucursalCentral.id}
+                sucursalId={sucursal.id}
                 descuentoExistente={descuentos.find(
-                  (d) => d.sucursal_id === sucursalCentral.id && d.categoria_id === categoria.id,
+                  (d) => d.sucursal_id === sucursal.id && d.categoria_id === categoria.id,
                 )}
                 puedeEditar={puedeEditar}
               />
