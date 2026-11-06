@@ -14,12 +14,69 @@ import {
   presentacionLabel,
   type SkuPresentacion,
 } from "@/app/(app)/productos/_lib/presentacion";
+import { fechaOperativa } from "@/lib/fecha";
 import { ProveedorForm } from "../../_components/proveedor-form";
 import type { Proveedor } from "../../_components/proveedores-table";
 import {
   registrarAjusteCuentaProveedor,
   type TipoAjusteCuentaProveedor,
 } from "../../actions";
+
+// Ventanas rápidas para "Vendido desde" (pedido del usuario 2026-11-06: en
+// vez de los 30 días fijos, el dueño elige 1 semana, 30 días o cualquier
+// otro día puntual). El valor en la URL es `desde` (AAAA-MM-DD, día
+// operativo de Argentina) -- así se puede guardar el link, igual que el
+// período de los reportes.
+const VENTANAS_RAPIDAS = [
+  { dias: 7, label: "7 días" },
+  { dias: 30, label: "30 días" },
+  { dias: 90, label: "90 días" },
+] as const;
+
+function desdeHaceNDias(dias: number): string {
+  return fechaOperativa(new Date(Date.now() - dias * 86_400_000));
+}
+
+function SelectorVentanaVendido({ proveedorId, ventanaDesde }: { proveedorId: string; ventanaDesde: string }) {
+  return (
+    <div className="mt-[8px] flex flex-wrap items-center gap-2">
+      {VENTANAS_RAPIDAS.map((v) => {
+        const desde = desdeHaceNDias(v.dias);
+        const activo = desde === ventanaDesde;
+        return (
+          <Link
+            key={v.dias}
+            href={`/proveedores/${proveedorId}?desde=${desde}`}
+            className={`rounded-[6px] border px-[9px] py-[3px] text-[12px] font-medium ${
+              activo ? "border-moe bg-moe-soft text-moe" : "border-border bg-bg text-text-2 hover:bg-bg-2"
+            }`}
+          >
+            {v.label}
+          </Link>
+        );
+      })}
+      <form action={`/proveedores/${proveedorId}`} method="get" className="flex items-center gap-[6px]">
+        <label htmlFor="desde-vendido" className="text-[12px] text-text-3">
+          Desde
+        </label>
+        <input
+          id="desde-vendido"
+          type="date"
+          name="desde"
+          defaultValue={ventanaDesde}
+          max={fechaOperativa()}
+          className="rounded-[6px] border border-border bg-bg px-[8px] py-[3px] text-[12px] text-text outline-none focus:border-moe"
+        />
+        <button
+          type="submit"
+          className="rounded-[6px] border border-border bg-bg px-[9px] py-[3px] text-[12px] font-medium text-text hover:bg-bg-2"
+        >
+          Ver
+        </button>
+      </form>
+    </div>
+  );
+}
 
 // Los dos tipos manuales (lo único que carga el dueño a mano) más los dos
 // que genera el sistema solo, cuando se paga de más una boleta puntual o se
@@ -66,7 +123,7 @@ export type ProductoProveedor = {
   costo_referencia: number | null;
   activo: boolean;
   stock: number;
-  vendido_30d: number;
+  vendido_ventana: number;
   sku:
     | (SkuPresentacion & {
         id: string;
@@ -391,6 +448,7 @@ export function ProveedorDetalle({
   prestamos,
   sucursalCentralNombre,
   esDueno,
+  ventanaVendidoDesde,
 }: {
   proveedor: Proveedor;
   compras: Compra[];
@@ -399,6 +457,7 @@ export function ProveedorDetalle({
   prestamos: PrestamoProveedor[];
   sucursalCentralNombre: string | null;
   esDueno: boolean;
+  ventanaVendidoDesde: string;
 }) {
   const [editando, setEditando] = useState(false);
 
@@ -457,9 +516,10 @@ export function ProveedorDetalle({
           </h3>
           <p className="mt-[2px] text-[11.5px] text-text-3">
             Incluye lo asociado a mano y lo que se le compró de hecho. Costo de referencia = el
-            último precio pagado cuando no hay uno cargado a mano. Vendido = últimos 30 días,
-            Olavarría y Laprida juntas.
+            último precio pagado cuando no hay uno cargado a mano. Vendido = Olavarría y Laprida
+            juntas, desde la fecha elegida abajo.
           </p>
+          <SelectorVentanaVendido proveedorId={proveedor.id} ventanaDesde={ventanaVendidoDesde} />
         </div>
 
         {productos.length === 0 ? (
@@ -481,7 +541,7 @@ export function ProveedorDetalle({
                     Stock
                   </th>
                   <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
-                    Vendido (30 días)
+                    Vendido desde {formatoFecha.format(new Date(`${ventanaVendidoDesde}T12:00:00`))}
                   </th>
                 </tr>
               </thead>
@@ -499,7 +559,7 @@ export function ProveedorDetalle({
                       {p.stock}
                     </td>
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text">
-                      {p.vendido_30d}
+                      {p.vendido_ventana}
                     </td>
                   </tr>
                 ))}

@@ -13,9 +13,29 @@ import {
   type ProductoProveedor,
 } from "./_components/proveedor-detalle";
 
-export default async function ProveedorDetallePage({ params }: { params: Promise<{ id: string }> }) {
+const VENTANA_VENDIDO_DIAS_DEFAULT = 30;
+const FORMATO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+export default async function ProveedorDetallePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ desde?: string }>;
+}) {
   const { id } = await params;
+  const { desde: desdeParam } = await searchParams;
   const supabase = await createClient();
+
+  // "Vendido desde": el dueño elige la ventana (pedido del usuario
+  // 2026-11-06, en vez de los 30 días fijos que había antes) -- un día
+  // puntual en la URL, día operativo de Argentina, igual criterio que el
+  // período de los reportes. Si no viene o viene mal formado, 30 días.
+  const ventanaVendidoDesde =
+    desdeParam && FORMATO_FECHA.test(desdeParam) && desdeParam <= fechaOperativa()
+      ? desdeParam
+      : fechaOperativa(new Date(Date.now() - VENTANA_VENDIDO_DIAS_DEFAULT * 86_400_000));
+  const cutoffVendido = `${ventanaVendidoDesde}T00:00:00-03:00`;
 
   const { data: proveedor } = await supabase
     .from("proveedores")
@@ -121,15 +141,12 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
 
   const skuIds = [...skuIdsProveedorSkus, ...skuIdsSoloCompras];
 
-  // Vendido en los últimos 30 días, Olavarría y Laprida juntas (pedido del
-  // usuario 2026-11-06, mismo criterio de ventana que el resto de la
-  // auditoría de /reportes/stock): ventas confirmadas de cualquier
-  // sucursal, sin filtrar por SKU en la consulta -- se filtra después al
-  // armar `productos`, mismo patrón que lib.ts/pedidos usan para "más
-  // vendidos".
-  const vendido30dPorSkuId = new Map<string, number>();
+  // Vendido desde `ventanaVendidoDesde`, Olavarría y Laprida juntas: ventas
+  // confirmadas de cualquier sucursal, sin filtrar por SKU en la consulta
+  // -- se filtra después al armar `productos`, mismo patrón que
+  // lib.ts/pedidos usan para "más vendidos".
+  const vendidoVentanaPorSkuId = new Map<string, number>();
   if (skuIds.length > 0) {
-    const cutoffVendido = new Date(Date.now() - 30 * 86_400_000).toISOString();
     const { data: ventasRecientes } = await traerTodo(
       supabase.from("ventas").select("id").eq("estado", "confirmada").gte("fecha", cutoffVendido),
     );
@@ -143,7 +160,7 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
 
     for (const it of itemsVendidosRaw ?? []) {
       if (it.sku_id == null) continue;
-      vendido30dPorSkuId.set(it.sku_id, (vendido30dPorSkuId.get(it.sku_id) ?? 0) + it.cantidad);
+      vendidoVentanaPorSkuId.set(it.sku_id, (vendidoVentanaPorSkuId.get(it.sku_id) ?? 0) + it.cantidad);
     }
   }
 
@@ -205,7 +222,7 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
         activo: ps.activo,
         sku,
         stock: stockPorSkuId.get(ps.sku_id) ?? 0,
-        vendido_30d: vendido30dPorSkuId.get(ps.sku_id) ?? 0,
+        vendido_ventana: vendidoVentanaPorSkuId.get(ps.sku_id) ?? 0,
       } as ProductoProveedor;
     })
     .filter((p): p is ProductoProveedor => p !== null);
@@ -221,7 +238,7 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
     activo: true,
     sku,
     stock: stockPorSkuId.get(sku.id) ?? 0,
-    vendido_30d: vendido30dPorSkuId.get(sku.id) ?? 0,
+    vendido_ventana: vendidoVentanaPorSkuId.get(sku.id) ?? 0,
   })) as ProductoProveedor[];
 
   const productos = [...productosConAsociacion, ...productosSoloCompra];
@@ -268,6 +285,7 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
       prestamos={prestamos}
       sucursalCentralNombre={sucursalCentral?.nombre ?? null}
       esDueno={esDuenoActual}
+      ventanaVendidoDesde={ventanaVendidoDesde}
     />
   );
 }
