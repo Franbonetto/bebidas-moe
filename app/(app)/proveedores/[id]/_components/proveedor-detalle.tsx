@@ -456,7 +456,9 @@ export function ProveedorDetalle({
             Productos de este proveedor{sucursalCentralNombre ? ` en ${sucursalCentralNombre}` : ""}
           </h3>
           <p className="mt-[2px] text-[11.5px] text-text-3">
-            Vendido = últimos 30 días, Olavarría y Laprida juntas.
+            Incluye lo asociado a mano y lo que se le compró de hecho. Costo de referencia = el
+            último precio pagado cuando no hay uno cargado a mano. Vendido = últimos 30 días,
+            Olavarría y Laprida juntas.
           </p>
         </div>
 

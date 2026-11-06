@@ -74,7 +74,52 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
   ]);
 
   const compraIds = (compras ?? []).map((c) => c.id);
-  const skuIds = (proveedorSkus ?? []).map((ps) => ps.sku_id);
+
+  // SKUs asociados a mano en proveedor_skus (arquitectura.md 1.6) **más**
+  // los SKUs que de hecho se compraron a este proveedor: cargar una compra
+  // no escribe proveedor_skus (es una asociación aparte, para costo de
+  // referencia), así que sin esto un proveedor con compras reales pero sin
+  // esa asociación manual aparecía con "no tiene productos asociados"
+  // (pedido del usuario 2026-11-06, visto con Coca-Cola).
+  const fechaFacturaPorCompraId = new Map<string, string>(
+    (compras ?? []).map((c) => [c.id, c.fecha_factura ?? ""]),
+  );
+  const { data: compraItems } =
+    compraIds.length > 0
+      ? await traerTodoPorLotes<{ sku_id: string; costo_unitario: number; compra_id: string }>(
+          compraIds,
+          (lote) => supabase.from("compra_items").select("sku_id, costo_unitario, compra_id").in("compra_id", lote),
+        )
+      : { data: [] as { sku_id: string; costo_unitario: number; compra_id: string }[] };
+
+  const ultimoCostoCompradoPorSkuId = new Map<string, { costo: number; fecha: string }>();
+  for (const item of compraItems ?? []) {
+    const fecha = fechaFacturaPorCompraId.get(item.compra_id) ?? "";
+    const actual = ultimoCostoCompradoPorSkuId.get(item.sku_id);
+    if (!actual || fecha > actual.fecha) {
+      ultimoCostoCompradoPorSkuId.set(item.sku_id, { costo: item.costo_unitario, fecha });
+    }
+  }
+
+  const skuIdsProveedorSkus = new Set((proveedorSkus ?? []).map((ps) => ps.sku_id));
+  const skuIdsSoloCompras = [...ultimoCostoCompradoPorSkuId.keys()].filter(
+    (skuId) => !skuIdsProveedorSkus.has(skuId),
+  );
+
+  const { data: skusSoloCompras } =
+    skuIdsSoloCompras.length > 0
+      ? await traerTodoPorLotes(skuIdsSoloCompras, (lote) =>
+          supabase
+            .from("skus")
+            .select(
+              `id, nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
+               producto:productos ( nombre, marca:marcas ( nombre ) )`,
+            )
+            .in("id", lote),
+        )
+      : { data: [] as unknown[] };
+
+  const skuIds = [...skuIdsProveedorSkus, ...skuIdsSoloCompras];
 
   // Vendido en los últimos 30 días, Olavarría y Laprida juntas (pedido del
   // usuario 2026-11-06, mismo criterio de ventana que el resto de la
@@ -150,7 +195,7 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
     stockPorSkuId.set(s.sku_id, (stockPorSkuId.get(s.sku_id) ?? 0) + s.cantidad);
   }
 
-  const productos = (proveedorSkus ?? [])
+  const productosConAsociacion = (proveedorSkus ?? [])
     .map((ps) => {
       const sku = (ps as unknown as { sku: ProductoProveedor["sku"] | null }).sku;
       if (!sku) return null;
@@ -164,6 +209,22 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
       } as ProductoProveedor;
     })
     .filter((p): p is ProductoProveedor => p !== null);
+
+  // SKUs que solo aparecen porque se compraron (sin asociación manual en
+  // proveedor_skus): el "costo de referencia" que se muestra acá es el
+  // último costo pagado, no un valor cargado a mano.
+  const productosSoloCompra = ((skusSoloCompras ?? []) as unknown as (ProductoProveedor["sku"] & {
+    id: string;
+  })[]).map((sku) => ({
+    sku_id: sku.id,
+    costo_referencia: ultimoCostoCompradoPorSkuId.get(sku.id)?.costo ?? null,
+    activo: true,
+    sku,
+    stock: stockPorSkuId.get(sku.id) ?? 0,
+    vendido_30d: vendido30dPorSkuId.get(sku.id) ?? 0,
+  })) as ProductoProveedor[];
+
+  const productos = [...productosConAsociacion, ...productosSoloCompra];
 
   // Supabase devuelve la relación anidada como objeto o como array según el
   // caso; se normaliza acá para no ensuciar el resto.
