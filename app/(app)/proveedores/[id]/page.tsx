@@ -76,6 +76,32 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
   const compraIds = (compras ?? []).map((c) => c.id);
   const skuIds = (proveedorSkus ?? []).map((ps) => ps.sku_id);
 
+  // Vendido en los últimos 30 días, Olavarría y Laprida juntas (pedido del
+  // usuario 2026-11-06, mismo criterio de ventana que el resto de la
+  // auditoría de /reportes/stock): ventas confirmadas de cualquier
+  // sucursal, sin filtrar por SKU en la consulta -- se filtra después al
+  // armar `productos`, mismo patrón que lib.ts/pedidos usan para "más
+  // vendidos".
+  const vendido30dPorSkuId = new Map<string, number>();
+  if (skuIds.length > 0) {
+    const cutoffVendido = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const { data: ventasRecientes } = await traerTodo(
+      supabase.from("ventas").select("id").eq("estado", "confirmada").gte("fecha", cutoffVendido),
+    );
+    const idsVentasRecientes = (ventasRecientes ?? []).map((v) => v.id);
+    const { data: itemsVendidosRaw } =
+      idsVentasRecientes.length > 0
+        ? await traerTodoPorLotes<{ sku_id: string | null; cantidad: number }>(idsVentasRecientes, (lote) =>
+            supabase.from("venta_items").select("sku_id, cantidad").in("venta_id", lote),
+          )
+        : { data: [] as { sku_id: string | null; cantidad: number }[] };
+
+    for (const it of itemsVendidosRaw ?? []) {
+      if (it.sku_id == null) continue;
+      vendido30dPorSkuId.set(it.sku_id, (vendido30dPorSkuId.get(it.sku_id) ?? 0) + it.cantidad);
+    }
+  }
+
   // El historial de pagos, los ajustes de cuenta y el estado de cada boleta
   // son privados del dueño (pedido del usuario 2026-10-30): a Olavarría ni
   // se le piden -- RLS los bloquearía de todos modos.
@@ -134,6 +160,7 @@ export default async function ProveedorDetallePage({ params }: { params: Promise
         activo: ps.activo,
         sku,
         stock: stockPorSkuId.get(ps.sku_id) ?? 0,
+        vendido_30d: vendido30dPorSkuId.get(ps.sku_id) ?? 0,
       } as ProductoProveedor;
     })
     .filter((p): p is ProductoProveedor => p !== null);

@@ -66,6 +66,7 @@ export type ProductoProveedor = {
   costo_referencia: number | null;
   activo: boolean;
   stock: number;
+  vendido_30d: number;
   sku:
     | (SkuPresentacion & {
         id: string;
@@ -454,6 +455,9 @@ export function ProveedorDetalle({
           <h3 className="text-[13px] font-semibold text-text">
             Productos de este proveedor{sucursalCentralNombre ? ` en ${sucursalCentralNombre}` : ""}
           </h3>
+          <p className="mt-[2px] text-[11.5px] text-text-3">
+            Vendido = últimos 30 días, Olavarría y Laprida juntas.
+          </p>
         </div>
 
         {productos.length === 0 ? (
@@ -474,6 +478,9 @@ export function ProveedorDetalle({
                   <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
                     Stock
                   </th>
+                  <th className="whitespace-nowrap border-b border-border bg-bg-2 px-[14px] py-[7px] text-right text-[11.5px] font-medium text-text-2">
+                    Vendido (30 días)
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -488,6 +495,9 @@ export function ProveedorDetalle({
                     </td>
                     <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text">
                       {p.stock}
+                    </td>
+                    <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text">
+                      {p.vendido_30d}
                     </td>
                   </tr>
                 ))}
