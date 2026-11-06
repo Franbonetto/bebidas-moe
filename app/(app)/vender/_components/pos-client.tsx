@@ -165,7 +165,7 @@ function ticketVacio(id: string): Ticket {
 // El orden del array es el de los botones en pantalla: se mueven junto con
 // la tecla, para que lo que se ve siga el orden F1, F2, F3... y no haya que
 // buscar cuál es cuál.
-const MEDIOS: { id: MedioPago; label: string; tecla?: string }[] = [
+const MEDIOS_BASE: { id: MedioPago; label: string; tecla?: string }[] = [
   { id: "efectivo", label: "Efectivo", tecla: "F1" },
   { id: "mercado_pago", label: "Mercado Pago", tecla: "F2" },
   { id: "cuenta_dni", label: "Cuenta DNI", tecla: "F3" },
@@ -174,6 +174,14 @@ const MEDIOS: { id: MedioPago; label: string; tecla?: string }[] = [
   { id: "debito", label: "Débito" },
   { id: "credito", label: "Crédito" },
 ];
+
+// Mercado Pago y Transferencia, solo en Laprida (pedido del usuario
+// 2026-11-06): esa sucursal no los usa y se saca la opción del mostrador,
+// no de la base -- una venta vieja con alguno de los dos sigue intacta y
+// confirmar_venta() sigue aceptándolos si llegaran por otra vía.
+function mediosPago(esCentral: boolean) {
+  return esCentral ? MEDIOS_BASE : MEDIOS_BASE.filter((m) => m.id !== "mercado_pago" && m.id !== "transferencia");
+}
 
 const ORIGEN_LABEL: Record<Tramo["origen"], string> = {
   combo: "Promo combo",
@@ -282,6 +290,7 @@ export function PosClient({
   esCentral?: boolean;
 }) {
   const router = useRouter();
+  const medios = useMemo(() => mediosPago(esCentral), [esCentral]);
   const [tickets, setTickets] = useState<Ticket[]>(() => [ticketVacio("1")]);
   const [ticketActivoId, setTicketActivoId] = useState("1");
   const contadorTicketRef = useRef(1);
@@ -660,7 +669,7 @@ export function PosClient({
     if (pagos.length === 0 || pagos.length >= 3) return;
     const sumaActual = pagos.reduce((acc, p) => acc + p.monto, 0);
     const restanteAgregar = Math.max(0, Math.round((totalOtroMedio - sumaActual) * 100) / 100);
-    const medioLibre = MEDIOS.find((m) => !pagos.some((p) => p.medioPago === m.id))?.id ?? "debito";
+    const medioLibre = medios.find((m) => !pagos.some((p) => p.medioPago === m.id))?.id ?? "debito";
     actualizarTicketActivo((t) => ({ ...t, pagos: [...t.pagos, { medioPago: medioLibre, monto: restanteAgregar }] }));
   }
 
@@ -1107,7 +1116,12 @@ export function PosClient({
           F4: "qr",
           F5: "transferencia",
         } as const;
-        elegirMedioUnico(medio[e.key]);
+        // Laprida no tiene botón para Mercado Pago ni Transferencia: el
+        // atajo tampoco los deja elegir, si no la tecla seguiría
+        // habilitando lo que el mostrador esconde.
+        const medioElegido = medio[e.key];
+        if (!medios.some((m) => m.id === medioElegido)) return;
+        elegirMedioUnico(medioElegido);
         return;
       }
       if (e.key === "F6") {
@@ -1166,7 +1180,7 @@ export function PosClient({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lineas, lineaSeleccionada, pagos, restante, tickets, ticketActivoId, cajaId, mostrarPago]);
+  }, [lineas, lineaSeleccionada, pagos, restante, tickets, ticketActivoId, cajaId, mostrarPago, medios]);
 
   if (estadoCaja === "sin_abrir") {
     return (
@@ -1187,7 +1201,7 @@ export function PosClient({
     if (pagos.length === 0) {
       return (
         <div className="mb-2 grid grid-cols-2 gap-[7px]">
-          {MEDIOS.map((m, i) => (
+          {medios.map((m, i) => (
             <button
               key={m.id}
               ref={i === 0 ? refPrimerBoton : undefined}
@@ -1216,7 +1230,7 @@ export function PosClient({
               onChange={(e) => cambiarMedioPago(i, e.target.value as MedioPago)}
               className="rounded-[6px] border border-border bg-bg px-[6px] py-[5px] text-[14px] text-text outline-none focus:border-moe"
             >
-              {MEDIOS.map((m) => (
+              {medios.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.label}
                 </option>

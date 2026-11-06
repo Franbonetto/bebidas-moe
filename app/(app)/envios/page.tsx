@@ -164,6 +164,7 @@ export default async function EnviosPage({
         cantidadTicketsHoy={cantidadTicketsHoy}
         empleados={empleados ?? []}
         modoEnvio
+        esCentral={sucursal.es_central}
       />
     </div>
   );
