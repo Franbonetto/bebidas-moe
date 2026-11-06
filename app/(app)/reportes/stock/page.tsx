@@ -29,6 +29,7 @@ import { ReporteHeader } from "../_components/reporte-header";
 import { Tabla, Td, Th, Tr } from "../_components/tabla";
 import { desdePeriodo, leerPeriodo } from "../_lib/periodo";
 import { exigirDueno } from "../_lib/permiso";
+import { ProductosRotacion, type RotacionRow } from "./_components/productos-rotacion";
 
 // Reporte de productos y stock: la contracara del de caja
 // (reorganización pedida por el usuario 2026-10-19). Acá no hay plata
@@ -219,9 +220,42 @@ export default async function ReporteStockPage({
     acum.importe += it.cantidad * Number(it.precio_unitario);
     vendidoPorSku.set(it.sku_id, acum);
   }
-  const masVendidos = [...vendidoPorSku.entries()]
+  function filaRotacion(
+    skuId: string,
+    sku: SkuInfo | undefined,
+    datos: { unidades: number; importe: number },
+  ): RotacionRow {
+    return {
+      skuId,
+      nombre: nombreSku(sku),
+      marcaNombre: sku?.producto?.marca?.nombre ?? null,
+      presentacion: sku
+        ? {
+            tipo_presentacion: sku.tipo_presentacion,
+            volumen: sku.volumen,
+            unidad_volumen: sku.unidad_volumen,
+            unidades_contenidas: sku.unidades_contenidas,
+          }
+        : null,
+      categoriaNombre: sku?.producto?.categoria?.nombre ?? null,
+      unidades: datos.unidades,
+      importe: datos.importe,
+    };
+  }
+
+  // Más vendidos: solo lo que tuvo alguna venta en el período, de mayor a
+  // menor (como antes). Menos vendidos: todo el catálogo activo, de menor
+  // a mayor -- lo que no vendió nada en el período entra con 0 unidades,
+  // que es justo lo que se quiere ver ahí (pedido del usuario 2026-11-06).
+  // Las dos sin recortar: el tope de 30 y el filtro por categoría los
+  // aplica ProductosRotacion en el cliente.
+  const masVendidosRows = [...vendidoPorSku.entries()]
     .sort((a, b) => b[1].unidades - a[1].unidades)
-    .slice(0, 15);
+    .map(([skuId, datos]) => filaRotacion(skuId, skuPorId.get(skuId), datos));
+
+  const menosVendidosRows = skusList
+    .map((sku) => filaRotacion(sku.id, sku, vendidoPorSku.get(sku.id) ?? { unidades: 0, importe: 0 }))
+    .sort((a, b) => a.unidades - b.unidades || a.nombre.localeCompare(b.nombre, "es"));
 
   // Stock por SKU y por sucursal.
   const stockPorSku = new Map<string, Record<string, number>>();
@@ -463,51 +497,12 @@ export default async function ReporteStockPage({
 
       <div>
         <SectionHeader title="Más vendidos" meta="Del período elegido, las dos sucursales juntas" />
-        <Card title={`Top ${masVendidos.length} por unidades`}>
-          {masVendidos.length === 0 ? (
-            <EmptyState
-              title="Sin ventas en el período"
-              sub="Todavía no hay ventas confirmadas en este rango."
-            />
-          ) : (
-            <Tabla>
-              <thead>
-                <tr>
-                  <Th align="right">#</Th>
-                  <Th>Producto</Th>
-                  <Th>Presentación</Th>
-                  <Th align="right">Unidades</Th>
-                  <Th align="right">Importe</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {masVendidos.map(([skuId, datos], i) => {
-                  const sku = skuPorId.get(skuId);
-                  return (
-                    <Tr key={skuId}>
-                      <Td align="right" numero mute>
-                        {i + 1}
-                      </Td>
-                      <Td>
-                        <span className="font-medium text-text">{nombreSku(sku)}</span>
-                        {sku?.producto?.marca?.nombre && (
-                          <span className="text-text-3"> · {sku.producto.marca.nombre}</span>
-                        )}
-                      </Td>
-                      <Td mute>{sku ? presentacionLabel(sku) : "—"}</Td>
-                      <Td align="right" numero>
-                        {datos.unidades}
-                      </Td>
-                      <Td align="right" numero>
-                        {formatoMoneda.format(datos.importe)}
-                      </Td>
-                    </Tr>
-                  );
-                })}
-              </tbody>
-            </Tabla>
-          )}
-        </Card>
+        <ProductosRotacion rows={masVendidosRows} orden="mas" />
+      </div>
+
+      <div>
+        <SectionHeader title="Menos vendidos" meta="Del período elegido, las dos sucursales juntas" />
+        <ProductosRotacion rows={menosVendidosRows} orden="menos" />
       </div>
 
       <div>
