@@ -99,16 +99,18 @@ export function calcularPrecioVenta(
   //      sucursal. Le gana a todo, incluso al override -- es la instruccion
   //      mas puntual que existe sobre cuanto se cobra en efectivo (mismo
   //      criterio que recargos_sku sobre recargos_sucursal).
-  //   2. descuentos_efectivo: porcentaje de la categoria. No se aplica
-  //      sobre un override: el override es la ultima palabra del dueño y no
-  //      se le descuenta nada encima.
+  //   2. descuentos_efectivo: porcentaje de la categoria, sobre el precio
+  //      de lista que haya quedado (calculado por formula o cargado como
+  //      excepcion/override -- el override define el precio de lista, pero
+  //      el % de efectivo de la categoria sigue aplicando encima, igual que
+  //      a cualquier otro precio) (2026-11-07).
   //   3. Sin ninguno de los dos, en efectivo se paga el precio de lista.
   let precioEfectivo = precioBase;
   const efectivoEsPropio = precioBase != null && ctx.precioEfectivoSku != null;
 
   if (efectivoEsPropio) {
     precioEfectivo = ctx.precioEfectivoSku;
-  } else if (!esExcepcion && precioBase != null && ctx.descuentoEfectivoPct != null) {
+  } else if (precioBase != null && ctx.descuentoEfectivoPct != null) {
     precioEfectivo = precioBase * (1 - ctx.descuentoEfectivoPct / 100);
   }
 

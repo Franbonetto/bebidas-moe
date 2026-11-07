@@ -295,6 +295,15 @@ rigiendo el **porcentaje por categoría** (`descuentos_efectivo`, ej. Vinos en O
 10%), igual que antes. Mismo criterio de "lo más específico gana" que `recargos_sku`
 sobre `recargos_sucursal`.
 
+**El % de categoría se aplica sobre cualquier precio de lista, incluida una excepción
+(2026-11-07).** Antes, un SKU con `precio_override` en `precios_sucursal` (típico en
+Laprida, donde casi todo el vino se carga a mano) quedaba afuera del % de efectivo de su
+categoría y pagaba el mismo precio por cualquier medio. Ahora el % sigue aplicando sobre
+ese precio cargado a mano, igual que sobre uno calculado por fórmula — el override define
+el precio de lista, no el de efectivo. Sigue sin aplicar solo cuando el SKU tiene su
+propio precio en efectivo fijo (`precios_efectivo`), que es más específico que el % de
+categoría.
+
 - Se carga desde `/precios` y también desde **carga inicial**, con el producto en la
   mano. En carga inicial las dos ofertas son **excluyentes** (decisión del usuario
   2026-10-14): un producto tiene precio propio en efectivo **o** promo por cantidad, se

@@ -10,6 +10,7 @@ import {
 } from "../actions";
 import type { PrecioSkuRow, Sucursal } from "./precios-table";
 import { presentacionLabel } from "../../productos/_lib/presentacion";
+import { formatoMoneda } from "../_lib/formato";
 import {
   HojaModal,
   inputHoja as inputClass,
@@ -181,21 +182,33 @@ export function PrecioSkuForm({
             Monto fijo para este producto. Pisa el descuento por efectivo de la categoría.
             Vacío = sigue el de la categoría.
           </p>
-          {sucursales.map((s) => (
-            <div key={s.id} className="mb-2">
-              <label className={labelClass}>{s.nombre}</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step="1"
-                className={`${inputClass} tabular-nums`}
-                value={efectivos[s.id] ?? ""}
-                onChange={(e) => setEfectivos((prev) => ({ ...prev, [s.id]: e.target.value }))}
-                placeholder="Sin precio propio"
-              />
-            </div>
-          ))}
+          {sucursales.map((s) => {
+            const precio = fila.porSucursal[s.id];
+            // Si no tiene un precio en efectivo propio, lo que paga en
+            // efectivo sale del % de la categoría (ya aplicado sobre el
+            // precio de lista, sea calculado o cargado como excepción). Se
+            // muestra como referencia en el placeholder, no precargado en el
+            // campo, para no guardarlo de rebote como un monto fijo.
+            const calculado =
+              !precio?.efectivoEsPropio && precio?.precioEfectivo != null
+                ? formatoMoneda.format(precio.precioEfectivo)
+                : null;
+            return (
+              <div key={s.id} className="mb-2">
+                <label className={labelClass}>{s.nombre}</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="1"
+                  className={`${inputClass} tabular-nums`}
+                  value={efectivos[s.id] ?? ""}
+                  onChange={(e) => setEfectivos((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                  placeholder={calculado ? `Hoy sale ${calculado}` : "Sin precio propio"}
+                />
+              </div>
+            );
+          })}
         </div>
 
         <div className="border-t border-border pt-3">
