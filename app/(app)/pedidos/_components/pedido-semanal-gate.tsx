@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 import { obtenerSugerenciaPedido } from "../actions";
+import { EnvioLapridaForm } from "./envio-laprida-form";
 import { SugerenciaForm, type SugerenciaSku } from "./sugerencia-form";
 
 // Puerta de PIN para TODA la pantalla, no solo para confirmar un guardado
@@ -76,12 +77,11 @@ export function PedidoSemanalGate() {
     );
   }
 
-  return (
-    <SugerenciaForm
-      filas={filas}
-      ultimoDespacho={ultimoDespacho}
-      puedeDespachar={puedeDespachar}
-      hoy={hoy}
-    />
-  );
+  // Olavarría arma el envío mirando lo vendido; Laprida arma su pedido con
+  // la sugerencia.
+  if (puedeDespachar) {
+    return <EnvioLapridaForm filas={filas} ultimoDespacho={ultimoDespacho} hoy={hoy} />;
+  }
+
+  return <SugerenciaForm filas={filas} ultimoDespacho={ultimoDespacho} hoy={hoy} />;
 }

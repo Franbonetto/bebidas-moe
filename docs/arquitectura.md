@@ -125,6 +125,9 @@ mirando lo que Laprida vendió en un rango de fechas elegido en la pantalla del 
   despachado) y llama a `despachar_pedido()`. No hay estados intermedios, pero sí el mismo circuito:
   descuenta Olavarría al despachar, queda en tránsito, y **Laprida suma su stock recién al confirmar
   la recepción** (con motivo si llegó menos). Al recibir, el pedido se cierra solo.
+- La pantalla de Olavarría es una lista de **lo que Laprida vendió en el rango elegido**, con
+  cuánto le queda a Laprida y cuánto hay en Olavarría; al tocar un producto, un modal pregunta
+  cuántas unidades se envían. No muestra sugerido/objetivo/arrastre (eso es del pedido de Laprida).
 - No se puede enviar más de lo que hay en Olavarría (misma regla que `despachar_pedido()`), y todo
   ocurre en una transacción. Lo despacha la encargada de Olavarría, con PIN; el dueño solo visualiza.
 
