@@ -34,11 +34,13 @@ function grupoDe(estado: EstadoPedido): Grupo {
 export function PedidosTable({
   pedidos,
   puedeCrear,
+  textoCrear = "Nuevo pedido",
   agruparPorRecepcion = false,
   entregadoPorPedido,
 }: {
   pedidos: PedidoRow[];
   puedeCrear: boolean;
+  textoCrear?: string;
   // Solo tiene sentido del lado de Laprida: distinguir lo que ya le llegó
   // (recibidos) de lo que salió de Olavarría y todavía está en camino
   // (enviados), además de lo que sigue en preparación.
@@ -120,7 +122,7 @@ export function PedidosTable({
               href="/pedidos/nuevo"
               className="whitespace-nowrap rounded-[6px] bg-moe px-[12px] py-[6px] text-[13px] font-medium text-white hover:bg-moe/90"
             >
-              Nuevo pedido
+              {textoCrear}
             </Link>
           )}
         </div>

@@ -441,29 +441,29 @@ export function SugerenciaForm({
             <b className="text-text">{totalUnidades} unidades</b>
           </span>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => guardar(false)}
-              disabled={pending}
-              className="rounded-[6px] border border-border bg-bg px-[14px] py-[7px] text-[13px] font-medium text-text hover:bg-bg-2 disabled:opacity-60"
-            >
-              Guardar borrador
-            </button>
-            {/* Con el envío directo disponible, "Enviar pedido" (el pedido
-                que Laprida le hace a Olavarría) pasa a secundario: el botón
-                rojo es uno solo por pantalla. */}
-            <button
-              type="button"
-              onClick={() => guardar(true)}
-              disabled={pending}
-              className={
-                puedeDespachar
-                  ? "rounded-[6px] border border-border bg-bg px-[14px] py-[7px] text-[13px] font-medium text-text hover:bg-bg-2 disabled:opacity-60"
-                  : "rounded-[6px] bg-moe px-[14px] py-[7px] text-[13px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
-              }
-            >
-              Enviar pedido
-            </button>
+            {/* El pedido de Laprida (borrador / enviar) lo arma quien opera
+                Laprida: Olavarría no puede enviarlo, así que ahí se ofrece
+                solo el envío directo. */}
+            {!puedeDespachar && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => guardar(false)}
+                  disabled={pending}
+                  className="rounded-[6px] border border-border bg-bg px-[14px] py-[7px] text-[13px] font-medium text-text hover:bg-bg-2 disabled:opacity-60"
+                >
+                  Guardar borrador
+                </button>
+                <button
+                  type="button"
+                  onClick={() => guardar(true)}
+                  disabled={pending}
+                  className="rounded-[6px] bg-moe px-[14px] py-[7px] text-[13px] font-medium text-white hover:bg-moe/90 disabled:opacity-60"
+                >
+                  Enviar pedido
+                </button>
+              </>
+            )}
             {puedeDespachar && (
               <button
                 type="button"

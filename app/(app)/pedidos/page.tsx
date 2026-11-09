@@ -69,6 +69,9 @@ export default async function PedidosPage({
   // tiene que recibir lo que le manda la encargada").
   const esDuenoActual = await esDueno(supabase);
   const puedeCrearPedidoLaprida = !sucursal.es_central && !esDuenoActual;
+  // Olavarría arma el envío a Laprida y lo despacha directo (2026-11-09). Es
+  // la misma pantalla que el pedido semanal de Laprida (/pedidos/nuevo).
+  const puedeArmarEnvio = sucursal.es_central && !esDuenoActual;
 
   let pedidosCompra: PedidoCompraRow[] = [];
   if (sucursal.es_central && (await veCostos(supabase))) {
@@ -115,7 +118,8 @@ export default async function PedidosPage({
         {(!sucursal.es_central || !esDuenoActual) && (
           <PedidosTable
             pedidos={pedidos}
-            puedeCrear={puedeCrearPedidoLaprida}
+            puedeCrear={puedeCrearPedidoLaprida || puedeArmarEnvio}
+            textoCrear={puedeArmarEnvio ? "Armar envío a Laprida" : "Nuevo pedido"}
             agruparPorRecepcion={!sucursal.es_central}
             entregadoPorPedido={entregadoPorPedido}
           />

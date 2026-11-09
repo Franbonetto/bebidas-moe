@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { operaSucursal } from "@/lib/permisos";
+import { operaCentral, operaSucursal } from "@/lib/permisos";
 import { PinProvider } from "@/app/(app)/_components/pin-gate";
 import { PedidoSemanalGate } from "../_components/pedido-semanal-gate";
 
@@ -19,7 +19,12 @@ export default async function NuevoPedidoPage() {
     .eq("es_central", false)
     .single();
 
-  if (!laprida || !(await operaSucursal(supabase, laprida.id))) {
+  // Entra quien opera Laprida (arma el pedido) o quien opera Olavarría (arma
+  // y despacha el envío directo, 2026-11-09).
+  if (
+    !laprida ||
+    !((await operaSucursal(supabase, laprida.id)) || (await operaCentral(supabase)))
+  ) {
     redirect("/pedidos");
   }
 

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { verificarPinOperaciones } from "@/lib/pin";
-import { esDueno, operaSucursal } from "@/lib/permisos";
+import { esDueno, operaCentral, operaSucursal } from "@/lib/permisos";
 import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import { fechaOperativa } from "@/lib/fecha";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -116,7 +116,7 @@ export async function obtenerVendidoPorRango(
   const { data: laprida } = await supabase.from("sucursales").select("id").eq("es_central", false).single();
   if (!laprida) return { error: "No se encontró la sucursal Laprida." };
 
-  if (!(await operaSucursal(supabase, laprida.id))) {
+  if (!(await operaSucursal(supabase, laprida.id)) && !(await operaCentral(supabase))) {
     return { error: "No tenés permiso para ver las ventas de Laprida." };
   }
 
@@ -144,7 +144,7 @@ export async function obtenerSugerenciaPedido(pin: string): Promise<
   ]);
   if (!laprida || !central) return { error: "No se encontraron las sucursales." };
 
-  if (!(await operaSucursal(supabase, laprida.id))) {
+  if (!(await operaSucursal(supabase, laprida.id)) && !(await operaCentral(supabase))) {
     return { error: "No tenés permiso para ver el pedido semanal de Laprida." };
   }
 
