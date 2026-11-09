@@ -40,3 +40,32 @@ export function diaSiguiente(dia: string): string {
 export function fechaDelDia(dia: string): Date {
   return mediodia(dia);
 }
+
+// --- Rango de días (cierre por fechas, 2026-11-09) ------------------------
+// ?desde=AAAA-MM-DD&hasta=AAAA-MM-DD, los dos inclusive. Sirve para cerrar
+// una semana ("de lunes a lunes") o cualquier tramo que elija el dueño.
+
+// null si falta alguno, si vienen rotos o si "desde" es posterior a "hasta".
+export function leerRango(
+  desde: string | undefined,
+  hasta: string | undefined,
+): { desde: string; hasta: string } | null {
+  const d = leerDia(desde);
+  const h = leerDia(hasta);
+  if (!d || !h || d > h) return null;
+  return { desde: d, hasta: h };
+}
+
+// Lunes de la semana (lunes a domingo) que contiene el día. A las 12:00 de
+// Argentina el día de la semana en UTC es el mismo, así que getUTCDay()
+// sirve.
+export function lunesDe(dia: string): string {
+  const dow = mediodia(dia).getUTCDay(); // 0 = domingo
+  const atras = dow === 0 ? 6 : dow - 1;
+  return fechaOperativa(new Date(mediodia(dia).getTime() - atras * 86_400_000));
+}
+
+// Cuántos días entran en [desde, hasta], ambos incluidos.
+export function cantidadDias(desde: string, hasta: string): number {
+  return Math.round((mediodia(hasta).getTime() - mediodia(desde).getTime()) / 86_400_000) + 1;
+}

@@ -9,9 +9,11 @@ import { Tabla, Td, Th, Tr } from "../_components/tabla";
 import { desdePeriodo, leerPeriodo } from "../_lib/periodo";
 import { exigirDueno } from "../_lib/permiso";
 import { CajaDia } from "./_components/caja-dia";
+import { CajaRango } from "./_components/caja-rango";
 import { SelectorDia } from "./_components/selector-dia";
+import { SelectorRango } from "./_components/selector-rango";
 import { SelectorSucursal } from "./_components/selector-sucursal";
-import { fechaDelDia, leerDia } from "./_lib/dia";
+import { cantidadDias, fechaDelDia, leerDia, leerRango } from "./_lib/dia";
 
 // Reporte de caja y dinero: todo lo que entró y salió (reorganización
 // pedida por el usuario 2026-10-19 -- antes estos datos estaban
@@ -117,14 +119,91 @@ function nombreRel(rel: { nombre: string } | { nombre: string }[] | null): strin
 export default async function ReporteCajaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; dia?: string; sucursal?: string }>;
+  searchParams: Promise<{
+    periodo?: string;
+    dia?: string;
+    desde?: string;
+    hasta?: string;
+    sucursal?: string;
+  }>;
 }) {
-  const { periodo: periodoParam, dia: diaParam, sucursal: sucursalParam } = await searchParams;
+  const {
+    periodo: periodoParam,
+    dia: diaParam,
+    desde: desdeParam,
+    hasta: hastaParam,
+    sucursal: sucursalParam,
+  } = await searchParams;
   const supabase = await createClient();
   await exigirDueno(supabase);
 
   const hoy = fechaOperativa();
   const dia = leerDia(diaParam);
+
+  // Cierre por fechas (2026-11-09): un rango de días elegido a mano, ej. de
+  // lunes a lunes. No hay caja del futuro, así que "hasta" se topea en hoy.
+  const rangoPedido = leerRango(desdeParam, hastaParam);
+  const rango =
+    rangoPedido && rangoPedido.desde <= hoy
+      ? { desde: rangoPedido.desde, hasta: rangoPedido.hasta > hoy ? hoy : rangoPedido.hasta }
+      : null;
+
+  if (rango) {
+    const { data: sucursalesRango } = await traerTodo(
+      supabase
+        .from("sucursales")
+        .select("id, nombre, es_central")
+        .eq("activo", true)
+        .order("es_central", { ascending: false }),
+    );
+    const listaRango = (sucursalesRango ?? []) as { id: string; nombre: string; es_central: boolean }[];
+    const elegidaRango =
+      listaRango.find((s) => s.id === sucursalParam) ?? listaRango.find((s) => s.es_central) ?? listaRango[0];
+
+    if (!elegidaRango) {
+      return <EmptyState title="Faltan sucursales configuradas" sub="No hay ninguna sucursal activa." />;
+    }
+
+    const dias = cantidadDias(rango.desde, rango.hasta);
+
+    return (
+      <div className="flex flex-col gap-6">
+        <ReporteHeader
+          titulo="Caja y dinero"
+          bajada={`El cierre de ${elegidaRango.nombre} entre dos fechas: todos los medios de pago día por día, el arqueo del efectivo y lo que salió del cajón.`}
+          base="/reportes/caja"
+          periodo={null}
+          sucursal={elegidaRango.id}
+          extra={
+            <>
+              <SelectorSucursal
+                base="/reportes/caja"
+                sucursales={listaRango}
+                actual={elegidaRango.id}
+                queryExtra={`desde=${rango.desde}&hasta=${rango.hasta}`}
+              />
+              <SelectorRango
+                base="/reportes/caja"
+                hoy={hoy}
+                sucursal={elegidaRango.id}
+                desde={rango.desde}
+                hasta={rango.hasta}
+              />
+              <SelectorDia base="/reportes/caja" dia={null} hoy={hoy} sucursal={elegidaRango.id} />
+            </>
+          }
+          meta={`Del ${formatoFecha.format(fechaDelDia(rango.desde))} al ${formatoFecha.format(fechaDelDia(rango.hasta))} · ${dias} día${dias === 1 ? "" : "s"}`}
+        />
+        <CajaRango
+          supabase={supabase}
+          desde={rango.desde}
+          hasta={rango.hasta}
+          sucursalId={elegidaRango.id}
+          sucursalNombre={elegidaRango.nombre}
+        />
+      </div>
+    );
+  }
 
   // Un día puntual reemplaza al reporte por período: es otra pregunta
   // ("qué pasó el martes") y mezclarla con el rango dejaba dos totales
@@ -160,6 +239,13 @@ export default async function ReporteCajaPage({
                 sucursales={listaDia}
                 actual={elegidaDia.id}
                 queryExtra={`dia=${dia}`}
+              />
+              <SelectorRango
+                base="/reportes/caja"
+                hoy={hoy}
+                sucursal={elegidaDia.id}
+                desde={null}
+                hasta={null}
               />
               <SelectorDia base="/reportes/caja" dia={dia} hoy={hoy} sucursal={elegidaDia.id} />
             </>
@@ -358,6 +444,13 @@ export default async function ReporteCajaPage({
               sucursales={sucursalesList}
               actual={sucursalSeleccionada.id}
               queryExtra={`periodo=${periodo}`}
+            />
+            <SelectorRango
+              base="/reportes/caja"
+              hoy={hoy}
+              sucursal={sucursalSeleccionada.id}
+              desde={null}
+              hasta={null}
             />
             <SelectorDia base="/reportes/caja" dia={null} hoy={hoy} sucursal={sucursalSeleccionada.id} />
           </>
