@@ -39,7 +39,7 @@ export default async function PedidosPage({
   const { data: pedidosRaw } = await traerTodo(
     supabase
       .from("pedidos")
-      .select("id, numero, estado, fecha_creacion, fecha_envio, pedido_items ( cantidad_solicitada )")
+      .select("id, numero, estado, fecha_creacion, fecha_envio, iniciado_por_origen, pedido_items ( cantidad_solicitada )")
       .order("fecha_creacion", { ascending: false }),
   );
 

@@ -113,6 +113,21 @@ EN_TRANSITO → RECIBIDA
   - **Diferencia de preparación** (Olavarría no tenía stock) — se sabe antes de despachar.
   - **Diferencia de recepción** (llegó menos de lo despachado) — rotura, error de conteo.
 
+### Despacho directo de Olavarría (2026-11-09)
+
+Además del pedido que arma Laprida, **Olavarría puede armar el envío y despacharlo directo**,
+mirando lo que Laprida vendió en un rango de fechas elegido en la pantalla del pedido semanal
+(ej. de lunes a lunes, ambos días inclusive, día de Argentina). Decisión del usuario: se saltea
+"Laprida pide, Olavarría despacha" y **los dos caminos conviven**.
+
+- Lo resuelve `despachar_directo()` (`supabase/migrations/20261109090000_despacho_directo_olavarria.sql`):
+  crea un pedido ya en `despachado` (marcado `iniciado_por_origen`, con solicitado = preparado =
+  despachado) y llama a `despachar_pedido()`. No hay estados intermedios, pero sí el mismo circuito:
+  descuenta Olavarría al despachar, queda en tránsito, y **Laprida suma su stock recién al confirmar
+  la recepción** (con motivo si llegó menos). Al recibir, el pedido se cierra solo.
+- No se puede enviar más de lo que hay en Olavarría (misma regla que `despachar_pedido()`), y todo
+  ocurre en una transacción. Lo despacha la encargada de Olavarría, con PIN; el dueño solo visualiza.
+
 ### Sugerencia automática del pedido semanal
 
 Etapa 1 (v1): `sugerido = stock objetivo − stock disponible efectivo + arrastre pendiente`

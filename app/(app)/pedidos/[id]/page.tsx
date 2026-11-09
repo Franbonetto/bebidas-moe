@@ -11,7 +11,7 @@ export default async function PedidoDetallePage({ params }: { params: Promise<{ 
   const { data: pedido } = await supabase
     .from("pedidos")
     .select(
-      `id, numero, estado, fecha_creacion, fecha_envio, fecha_cierre, motivo_cierre_manual,
+      `id, numero, estado, fecha_creacion, fecha_envio, fecha_cierre, motivo_cierre_manual, iniciado_por_origen,
        sucursal_origen_id, sucursal_destino_id,
        pedido_items (
          id, sku_id, cantidad_solicitada, cantidad_preparada, cantidad_pendiente, observacion_encargado,

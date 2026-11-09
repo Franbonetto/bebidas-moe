@@ -15,6 +15,8 @@ export function PedidoSemanalGate() {
   const [estado, setEstado] = useState<"pidiendo" | "bloqueado" | "listo">("pidiendo");
   const [filas, setFilas] = useState<SugerenciaSku[]>([]);
   const [ultimoDespacho, setUltimoDespacho] = useState<string | null>(null);
+  const [puedeDespachar, setPuedeDespachar] = useState(false);
+  const [hoy, setHoy] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const cargar = useCallback(async () => {
@@ -36,6 +38,8 @@ export function PedidoSemanalGate() {
 
     setFilas(resultado.filas as unknown as SugerenciaSku[]);
     setUltimoDespacho(resultado.ultimoDespacho);
+    setPuedeDespachar(resultado.puedeDespachar);
+    setHoy(resultado.hoy);
     setEstado("listo");
   }, [pedirPin]);
 
@@ -72,5 +76,12 @@ export function PedidoSemanalGate() {
     );
   }
 
-  return <SugerenciaForm filas={filas} ultimoDespacho={ultimoDespacho} />;
+  return (
+    <SugerenciaForm
+      filas={filas}
+      ultimoDespacho={ultimoDespacho}
+      puedeDespachar={puedeDespachar}
+      hoy={hoy}
+    />
+  );
 }

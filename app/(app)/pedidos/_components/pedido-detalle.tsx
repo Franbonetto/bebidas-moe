@@ -61,6 +61,7 @@ export type PedidoDetalleData = {
   fecha_envio: string | null;
   fecha_cierre: string | null;
   motivo_cierre_manual: string | null;
+  iniciado_por_origen: boolean;
   pedido_items: PedidoItemDetalle[];
   transferencias: TransferenciaDetalle[];
 };
@@ -168,6 +169,11 @@ export function PedidoDetalle({
               {pedido.fecha_envio ? ` · Enviado ${formatoFechaHora.format(new Date(pedido.fecha_envio))}` : ""}
               {pedido.fecha_cierre ? ` · Cerrado ${formatoFechaHora.format(new Date(pedido.fecha_cierre))}` : ""}
             </p>
+            {pedido.iniciado_por_origen && (
+              <p className="mt-[4px] text-[12.5px] text-text-2">
+                Envío armado y despachado por Olavarría, sin pedido previo de Laprida.
+              </p>
+            )}
             {valorTotal != null && (
               <p className="mt-[4px] text-[13px] text-text-2">
                 Valor a costo:{" "}

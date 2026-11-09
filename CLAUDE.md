@@ -216,6 +216,10 @@ TRANSFERENCIA: en_transito → recibida     (nace al despachar)
   Laprida **al recibir**.
 - Faltantes quedan abiertos en el pedido y se suman automáticamente a la sugerencia de
   la semana siguiente.
+- **Despacho directo (2026-11-09):** Olavarría también puede armar y despachar el envío sin que
+  Laprida lo pida, mirando lo vendido en un rango de fechas. Convive con el pedido de Laprida.
+  Descuenta Olavarría al despachar y Laprida suma al confirmar la recepción. Ver
+  `docs/arquitectura.md` 1.5, *Despacho directo de Olavarría*.
 
 ### Retornables
 Stock de envases vacíos **por tipo de envase** (no por producto). Un tipo puede ser

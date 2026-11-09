@@ -11,6 +11,9 @@ export type PedidoRow = {
   estado: EstadoPedido;
   fecha_creacion: string;
   fecha_envio: string | null;
+  // true si lo armó y despachó Olavarría directo (2026-11-09), sin que
+  // Laprida lo pidiera.
+  iniciado_por_origen: boolean;
   pedido_items: { cantidad_solicitada: number }[];
 };
 
@@ -69,6 +72,11 @@ export function PedidosTable({
         <td className="px-0 py-0">
           <Link href={`/pedidos/${p.id}`} className="block px-[14px] py-[9px] font-medium text-text">
             {p.numero}
+            {p.iniciado_por_origen && (
+              <span className="ml-[8px] rounded-[4px] bg-bg-2 px-[6px] py-[1px] text-[11px] font-normal text-text-2">
+                Enviado por Olavarría
+              </span>
+            )}
           </Link>
         </td>
         <td className="px-[14px] py-[9px] align-middle">
