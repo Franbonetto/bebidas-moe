@@ -28,7 +28,8 @@ export default async function PedidoCompraDetallePage({
        creador:usuarios!pedidos_compra_usuario_creador_id_fkey ( nombre ),
        resolutor:usuarios!pedidos_compra_usuario_resolucion_id_fkey ( nombre ),
        pedidos_compra_items (
-         id, sku_id, cantidad_sugerida, cantidad_solicitada,
+         id, sku_id, cantidad_sugerida, cantidad_solicitada, proveedor_id, nota,
+         proveedor:proveedores ( id, razon_social, nombre_comercial ),
          sku:skus ( nombre, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
                     producto:productos ( nombre, marca:marcas ( nombre ) ) )
        )`,

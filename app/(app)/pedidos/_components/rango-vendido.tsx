@@ -101,11 +101,26 @@ export function useRangoVendido({
 
 export type RangoVendido = ReturnType<typeof useRangoVendido>;
 
-export function SelectorRangoVendido({ rango }: { rango: RangoVendido }) {
+// Lo mínimo que necesita la barra de fechas: así también la usa el pedido de
+// compra de Olavarría, que arma su propio estado.
+export type RangoControl = Pick<
+  RangoVendido,
+  "desde" | "setDesde" | "hasta" | "setHasta" | "rangoAplicado" | "cargando" | "error" | "leyenda" | "aplicar" | "volver"
+>;
+
+export function SelectorRangoVendido({
+  rango,
+  etiquetaDesde = "Vendido desde",
+  textoVolver = 'Volver a "desde el último envío"',
+}: {
+  rango: RangoControl;
+  etiquetaDesde?: string;
+  textoVolver?: string;
+}) {
   return (
     <div className="flex flex-wrap items-end gap-3 border-b border-border bg-bg-2 px-[14px] py-[10px]">
       <label className="flex flex-col gap-[3px] text-[11.5px] font-medium text-text-2">
-        Vendido desde
+        {etiquetaDesde}
         <input
           type="date"
           value={rango.desde}
@@ -138,7 +153,7 @@ export function SelectorRangoVendido({ rango }: { rango: RangoVendido }) {
           onClick={rango.volver}
           className="px-[4px] py-[5px] text-[12.5px] font-medium text-moe hover:underline"
         >
-          Volver a "desde el último envío"
+          {textoVolver}
         </button>
       )}
       <p className="pb-[6px] text-[12px] text-text-3">{rango.leyenda}</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -34,12 +34,57 @@ export type PedidoCompraDetalleData = {
     sku_id: string;
     cantidad_sugerida: number;
     cantidad_solicitada: number;
+    // Proveedor que eligió quien armó el pedido y su nota (desde 2026-11-10).
+    // Los pedidos anteriores no lo tienen: ahí se deduce de proveedor_skus.
+    proveedor_id: string | null;
+    nota: string | null;
+    proveedor: { id: string; razon_social: string; nombre_comercial: string | null } | null;
     sku: SkuInfo | null;
   }[];
 };
 
 type Proveedor = { id: string; nombre: string };
 const SIN_PROVEEDOR_ID = "__sin_proveedor__";
+
+// Copia la lista de un proveedor como texto plano, lista para pegar en un
+// WhatsApp o un mail: "N x Producto (Marca — presentación)" y la nota si hay.
+function BotonCopiarLista({
+  nombre,
+  items,
+}: {
+  nombre: string;
+  items: PedidoCompraDetalleData["pedidos_compra_items"];
+}) {
+  const [copiado, setCopiado] = useState(false);
+
+  async function copiar() {
+    const lineas = items.map((item) => {
+      const producto = item.sku?.producto?.nombre ?? item.sku?.nombre ?? "SKU eliminado";
+      const detalle = [item.sku?.producto?.marca?.nombre, item.sku ? presentacionLabel(item.sku) : ""]
+        .filter(Boolean)
+        .join(" — ");
+      const nota = item.nota ? ` (${item.nota})` : "";
+      return `${item.cantidad_solicitada} x ${producto}${detalle ? ` (${detalle})` : ""}${nota}`;
+    });
+    try {
+      await navigator.clipboard.writeText(`Pedido para ${nombre}:\n${lineas.join("\n")}`);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch {
+      // Sin permiso de portapapeles: no hay nada más que hacer acá.
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copiar}
+      className="rounded-[6px] border border-border bg-bg px-[8px] py-[2px] text-[11.5px] font-medium text-text-2 hover:bg-bg-2"
+    >
+      {copiado ? "Copiado ✓" : "Copiar lista"}
+    </button>
+  );
+}
 
 export function PedidoCompraDetalle({
   pedido,
@@ -57,14 +102,26 @@ export function PedidoCompraDetalle({
 
   const totalUnidades = pedido.pedidos_compra_items.reduce((acc, i) => acc + i.cantidad_solicitada, 0);
 
-  // Mismo criterio que al armar el pedido: un ítem con más de un proveedor
-  // aparece repetido en cada grupo, y sin proveedor cargado va aparte.
+  // Cada línea va al proveedor que eligió quien armó el pedido. Los pedidos
+  // viejos (sin proveedor elegido) se agrupan como antes: un ítem con más de
+  // un proveedor aparece repetido en cada grupo, y sin proveedor cargado va
+  // aparte.
   const grupos = useMemo(() => {
     const porProveedor = new Map<
       string,
       { proveedor: Proveedor; items: PedidoCompraDetalleData["pedidos_compra_items"] }
     >();
     for (const item of pedido.pedidos_compra_items) {
+      if (item.proveedor) {
+        const elegido: Proveedor = {
+          id: item.proveedor.id,
+          nombre: item.proveedor.nombre_comercial ?? item.proveedor.razon_social,
+        };
+        const grupo = porProveedor.get(elegido.id) ?? { proveedor: elegido, items: [] };
+        grupo.items.push(item);
+        porProveedor.set(elegido.id, grupo);
+        continue;
+      }
       const proveedores = proveedoresPorSku[item.sku_id];
       if (!proveedores || proveedores.length === 0) {
         const grupo = porProveedor.get(SIN_PROVEEDOR_ID) ?? {
@@ -115,6 +172,12 @@ export function PedidoCompraDetalle({
                 ? ` · Resuelto por ${pedido.resolutor?.nombre ?? "—"} el ${formatoFechaHora.format(new Date(pedido.fecha_resolucion))}`
                 : ""}
             </p>
+            {pedido.observaciones && (
+              <p className="mt-[8px] whitespace-pre-line rounded-[6px] bg-bg-2 px-[10px] py-[7px] text-[13px] text-text">
+                <span className="mb-[2px] block text-[11.5px] font-medium text-text-3">Nota</span>
+                {pedido.observaciones}
+              </p>
+            )}
           </div>
           <span
             className={`inline-block rounded-[4px] px-[8px] py-[2px] text-[11.5px] font-medium ${
@@ -180,7 +243,14 @@ export function PedidoCompraDetalle({
                         g.proveedor.id === SIN_PROVEEDOR_ID ? "bg-warn-bg text-warn" : "bg-bg-2 text-text"
                       }`}
                     >
-                      {g.proveedor.nombre} · {g.items.length} producto{g.items.length === 1 ? "" : "s"}
+                      <span className="flex items-center justify-between gap-3">
+                        <span>
+                          {g.proveedor.nombre} · {g.items.length} producto{g.items.length === 1 ? "" : "s"}
+                        </span>
+                        {g.proveedor.id !== SIN_PROVEEDOR_ID && (
+                          <BotonCopiarLista nombre={g.proveedor.nombre} items={g.items} />
+                        )}
+                      </span>
                     </td>
                   </tr>
                   {g.items.map((item) => (
@@ -192,6 +262,9 @@ export function PedidoCompraDetalle({
                         <p className="text-[11.5px] text-text-3">
                           {item.sku?.producto?.marca?.nombre} — {item.sku ? presentacionLabel(item.sku) : ""}
                         </p>
+                        {item.nota && (
+                          <p className="mt-[2px] text-[12px] italic text-text-2">Nota: {item.nota}</p>
+                        )}
                       </td>
                       <td className="px-[14px] py-[9px] text-right align-middle tabular-nums text-text-2">
                         {item.cantidad_sugerida}

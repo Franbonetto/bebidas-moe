@@ -4,9 +4,9 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { verificarPinOperaciones } from "@/lib/pin";
 import { esDueno, operaCentral, operaSucursal } from "@/lib/permisos";
-import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
+import { traerTodo } from "@/lib/supabase/traer-todo";
 import { fechaOperativa } from "@/lib/fecha";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { enviadoPorSku, limitesDeRango, vendidoPorSku } from "./_lib/vendido";
 
 export type LineaPedido = {
   sku_id: string;
@@ -47,45 +47,6 @@ export type SugerenciaSkuDTO = {
   };
 };
 
-// Trae todo lo que necesita /pedidos/nuevo (sugerencia + ventas de Laprida
-// desde el último envío) detrás del PIN de operaciones (pedido del usuario
-// 2026-11-05: "hay datos sensibles"). A diferencia del resto de las
-// pantallas con PIN, acá el PIN no solo frena un botón de guardar: frena
-// que los datos se traigan del servidor. Por eso /pedidos/nuevo/page.tsx
-// ya no hace el fetch directo -- lo pide esta acción, recién cuando llega
-// un PIN correcto.
-// Unidades vendidas por SKU en Laprida (ventas confirmadas) dentro de
-// [desdeIso, hastaIso). Cualquiera de los dos puede ser null (sin tope).
-// Mismo patrón de agregación que /reportes/stock (ventas confirmadas ->
-// venta_items por lotes).
-async function vendidoPorSku(
-  supabase: SupabaseClient,
-  lapridaId: string,
-  desdeIso: string | null,
-  hastaIso: string | null,
-): Promise<Map<string, number>> {
-  let ventasQuery = supabase.from("ventas").select("id").eq("sucursal_id", lapridaId).eq("estado", "confirmada");
-  if (desdeIso) ventasQuery = ventasQuery.gte("fecha", desdeIso);
-  if (hastaIso) ventasQuery = ventasQuery.lt("fecha", hastaIso);
-  const { data: ventasLaprida } = await traerTodo(ventasQuery);
-
-  const idsVentas = (ventasLaprida ?? []).map((v: { id: string }) => v.id);
-  const { data: itemsRaw } = idsVentas.length
-    ? await traerTodoPorLotes<{ sku_id: string | null; cantidad: number }>(idsVentas, (lote) =>
-        supabase.from("venta_items").select("sku_id, cantidad").in("venta_id", lote),
-      )
-    : { data: [] };
-
-  const vendido = new Map<string, number>();
-  for (const it of itemsRaw ?? []) {
-    if (it.sku_id == null) continue;
-    vendido.set(it.sku_id, (vendido.get(it.sku_id) ?? 0) + it.cantidad);
-  }
-  return vendido;
-}
-
-const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
-
 // Vendido en Laprida entre dos días (pedido del usuario 2026-11-09: elegir
 // "desde cuándo hasta cuándo", ej. lunes a lunes). Los dos días son
 // inclusivos y se toman como días de Argentina, no del servidor (ver
@@ -98,18 +59,8 @@ export async function obtenerVendidoPorRango(
   const pinOk = verificarPinOperaciones(pin);
   if ("error" in pinOk) return pinOk;
 
-  if (!FECHA_ISO.test(desde) || !FECHA_ISO.test(hasta)) {
-    return { error: "Elegí las dos fechas." };
-  }
-  if (desde > hasta) {
-    return { error: "La fecha \"desde\" no puede ser posterior a \"hasta\"." };
-  }
-
-  const inicio = new Date(`${desde}T00:00:00-03:00`);
-  const finExclusivo = new Date(new Date(`${hasta}T00:00:00-03:00`).getTime() + 86_400_000);
-  if (Number.isNaN(inicio.getTime()) || Number.isNaN(finExclusivo.getTime())) {
-    return { error: "Fecha inválida." };
-  }
+  const limites = limitesDeRango(desde, hasta);
+  if ("error" in limites) return limites;
 
   const supabase = await createClient();
 
@@ -120,10 +71,17 @@ export async function obtenerVendidoPorRango(
     return { error: "No tenés permiso para ver las ventas de Laprida." };
   }
 
-  const mapa = await vendidoPorSku(supabase, laprida.id, inicio.toISOString(), finExclusivo.toISOString());
+  const mapa = await vendidoPorSku(supabase, laprida.id, limites.desdeIso, limites.hastaIso);
   return { vendido: Object.fromEntries(mapa) };
 }
 
+// Trae todo lo que necesita /pedidos/nuevo (sugerencia + ventas de Laprida
+// desde el último envío) detrás del PIN de operaciones (pedido del usuario
+// 2026-11-05: "hay datos sensibles"). A diferencia del resto de las
+// pantallas con PIN, acá el PIN no solo frena un botón de guardar: frena
+// que los datos se traigan del servidor. Por eso /pedidos/nuevo/page.tsx
+// ya no hace el fetch directo -- lo pide esta acción, recién cuando llega
+// un PIN correcto.
 export async function obtenerSugerenciaPedido(pin: string): Promise<
   | { error: string }
   | {
@@ -454,10 +412,15 @@ export type LineaPedidoCompra = {
   sku_id: string;
   cantidad_sugerida: number;
   cantidad_solicitada: number;
+  // A qué proveedor se le pide esta línea y una nota sobre ella (2026-11-10).
+  // Los dos son opcionales.
+  proveedor_id: string | null;
+  nota: string | null;
 };
 
 export async function crearPedidoCompra(
   lineas: LineaPedidoCompra[],
+  observaciones: string | null = null,
 ): Promise<{ error: string } | { id: string }> {
   const supabase = await createClient();
 
@@ -478,7 +441,11 @@ export async function crearPedidoCompra(
 
   const { data: pedidoCompra, error: pedidoError } = await supabase
     .from("pedidos_compra")
-    .insert({ sucursal_id: central.id, usuario_creador_id: user.id })
+    .insert({
+      sucursal_id: central.id,
+      usuario_creador_id: user.id,
+      observaciones: observaciones?.trim() ? observaciones.trim() : null,
+    })
     .select("id")
     .single();
 
@@ -492,6 +459,8 @@ export async function crearPedidoCompra(
       sku_id: l.sku_id,
       cantidad_sugerida: l.cantidad_sugerida,
       cantidad_solicitada: l.cantidad_solicitada,
+      proveedor_id: l.proveedor_id || null,
+      nota: l.nota?.trim() ? l.nota.trim() : null,
     })),
   );
 
@@ -499,6 +468,34 @@ export async function crearPedidoCompra(
 
   revalidatePath("/pedidos");
   return { id: pedidoCompra.id };
+}
+
+// Lo vendido en Olavarría y lo que se mandó a Laprida entre dos días, para
+// armar el pedido de compra (pedido del usuario 2026-11-10: "todo lo vendido
+// en la semana"). Mismos días inclusivos y de Argentina que en el envío a
+// Laprida. Sin PIN: son las ventas del propio local de quien arma el pedido.
+export async function obtenerMovimientoCompraPorRango(
+  desde: string,
+  hasta: string,
+): Promise<{ error: string } | { vendido: Record<string, number>; aLaprida: Record<string, number> }> {
+  const limites = limitesDeRango(desde, hasta);
+  if ("error" in limites) return limites;
+
+  const supabase = await createClient();
+
+  const { data: central } = await supabase.from("sucursales").select("id").eq("es_central", true).single();
+  if (!central) return { error: "No se encontró la sucursal central." };
+
+  if (!(await operaSucursal(supabase, central.id))) {
+    return { error: "No tenés permiso para ver las ventas de Olavarría." };
+  }
+
+  const [vendido, aLaprida] = await Promise.all([
+    vendidoPorSku(supabase, central.id, limites.desdeIso, limites.hastaIso),
+    enviadoPorSku(supabase, central.id, limites.desdeIso, limites.hastaIso),
+  ]);
+
+  return { vendido: Object.fromEntries(vendido), aLaprida: Object.fromEntries(aLaprida) };
 }
 
 export async function resolverPedidoCompra(
