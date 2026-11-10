@@ -385,6 +385,39 @@ export function PedidoCompraForm({
   const sinResultados = vendidos.length === 0 && otros.length === 0;
   const hayFiltros = Boolean(query.trim() || categoria || proveedor);
 
+  // Con un proveedor elegido, explicar por qué no hay nada: si todavía no
+  // tiene productos asociados, o si los tiene pero ninguno se vendió en el
+  // período.
+  const proveedorElegido =
+    proveedor && proveedor !== SIN_PROVEEDOR_ID ? nombreProveedor.get(proveedor) ?? null : null;
+  const productosDelProveedor = proveedorElegido
+    ? filas.filter((f) => (proveedoresPorSku[f.sku_id] ?? []).some((p) => p.id === proveedor)).length
+    : 0;
+  const textoSinResultados = (() => {
+    if (proveedorElegido && productosDelProveedor === 0) {
+      return {
+        titulo: `${proveedorElegido} todavía no tiene productos`,
+        sub: "No tiene productos asociados ni compras cargadas. Se asocian desde Productos, al editar un producto, o aparecen solos cuando se le carga una compra.",
+      };
+    }
+    if (proveedorElegido && !query.trim() && !categoria) {
+      return {
+        titulo: `Ningún producto de ${proveedorElegido} se vendió en este período`,
+        sub: `Tiene ${productosDelProveedor} producto${productosDelProveedor === 1 ? "" : "s"}. Probá con otras fechas, o marcá "Ver también lo que no se vendió" para cargarlos igual.`,
+      };
+    }
+    if (hayFiltros) {
+      return {
+        titulo: "No encontramos productos",
+        sub: "Probá con otra categoría, proveedor o búsqueda, o limpiá los filtros.",
+      };
+    }
+    return {
+      titulo: "No se vendió nada en este período",
+      sub: 'Probá con otras fechas, o marcá "Ver también lo que no se vendió" para cargar cualquier producto.',
+    };
+  })();
+
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-card border border-border bg-bg p-4 text-[12.5px] text-text-2">
@@ -478,14 +511,8 @@ export function PedidoCompraForm({
           </div>
         ) : sinResultados ? (
           <div className="px-[14px] py-[26px] text-center">
-            <p className="mb-[3px] text-[13.5px] font-semibold text-text">
-              {hayFiltros ? "No encontramos productos" : "No se vendió nada en este período"}
-            </p>
-            <p className="text-[12.5px] text-text-3">
-              {hayFiltros
-                ? "Probá con otra categoría, proveedor o búsqueda, o limpiá los filtros."
-                : 'Probá con otras fechas, o marcá "Ver también lo que no se vendió" para cargar cualquier producto.'}
-            </p>
+            <p className="mb-[3px] text-[13.5px] font-semibold text-text">{textoSinResultados.titulo}</p>
+            <p className="text-[12.5px] text-text-3">{textoSinResultados.sub}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">

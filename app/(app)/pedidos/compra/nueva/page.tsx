@@ -27,8 +27,15 @@ export default async function NuevoPedidoCompraPage() {
   // con lo vendido desde el lunes, y la encargada puede cambiar las fechas.
   const lunes = inicioDeSemana();
 
-  const [{ data: sugerencias }, { data: skus }, { data: proveedorSkus }, { data: todosProveedores }, vendido, aLaprida] =
-    await Promise.all([
+  const [
+    { data: sugerencias },
+    { data: skus },
+    { data: proveedorSkus },
+    { data: todosProveedores },
+    { data: comprados },
+    vendido,
+    aLaprida,
+  ] = await Promise.all([
     supabase.rpc("sugerir_compra_semanal"),
     traerTodo(
       supabase
@@ -50,6 +57,13 @@ export default async function NuevoPedidoCompraPage() {
     // todavía no lo tenga asociado.
     traerTodo(
       supabase.from("proveedores").select("id, razon_social, nombre_comercial").eq("activo", true),
+    ),
+    // Lo que de hecho se le compró a cada proveedor: cargar una compra no
+    // escribe proveedor_skus, así que sin esto un proveedor con compras
+    // reales pero sin la asociación manual no mostraba productos (mismo caso
+    // que la ficha del proveedor, 2026-11-06, visto con Coca-Cola).
+    traerTodo(
+      supabase.from("compra_items").select("id, sku_id, compra:compras!inner ( proveedor_id, estado )"),
     ),
     vendidoPorSku(supabase, central.id, lunes.toISOString(), null),
     enviadoPorSku(supabase, central.id, lunes.toISOString(), null),
@@ -77,6 +91,22 @@ export default async function NuevoPedidoCompraPage() {
     if (!fila.proveedor) continue;
     const lista = proveedoresPorSku.get(fila.sku_id) ?? [];
     lista.push({ id: fila.proveedor.id, nombre: fila.proveedor.nombre_comercial ?? fila.proveedor.razon_social });
+    proveedoresPorSku.set(fila.sku_id, lista);
+  }
+
+  const proveedoresActivos = new Map(
+    (todosProveedores ?? []).map((p) => [p.id, p.nombre_comercial ?? p.razon_social] as const),
+  );
+  for (const fila of (comprados ?? []) as unknown as {
+    sku_id: string;
+    compra: { proveedor_id: string; estado: string } | null;
+  }[]) {
+    if (!fila.compra || fila.compra.estado === "borrador") continue;
+    const nombre = proveedoresActivos.get(fila.compra.proveedor_id);
+    if (!nombre) continue;
+    const lista = proveedoresPorSku.get(fila.sku_id) ?? [];
+    if (lista.some((p) => p.id === fila.compra!.proveedor_id)) continue;
+    lista.push({ id: fila.compra.proveedor_id, nombre });
     proveedoresPorSku.set(fila.sku_id, lista);
   }
 
