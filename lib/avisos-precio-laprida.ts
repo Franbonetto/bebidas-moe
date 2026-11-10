@@ -13,9 +13,31 @@ import { traerTodo } from "./supabase/traer-todo";
 export type AvisoPrecioLaprida = {
   id: string;
   ids: string[];
+  // De qué es el cartel: un SKU o una promoción (uno solo de los dos). Lo usa
+  // el botón "Ver precio" para buscar el precio que rige hoy.
+  skuId: string | null;
+  promocionId: string | null;
   titulo: string;
   descripcion: string;
   generadoEn: string;
+};
+
+// Lo que muestra "Ver precio": el precio que rige HOY en Laprida, no el que
+// había cuando se generó el aviso (el aviso no guarda precio anterior ni
+// nuevo, ver 20261105090000_avisos_precio_laprida.sql). Nunca lleva costos.
+export type PrecioParaCartel = {
+  // Precio de lista (el que pagan débito, crédito, transferencia y QR).
+  precio: number | null;
+  // Precio en efectivo, solo si es distinto del de lista.
+  precioEfectivo: number | null;
+  promociones: {
+    nombre: string;
+    detalle: string;
+    total: number | null;
+    // "hasta dd/mm/aaaa" o null si es permanente.
+    vigencia: string | null;
+    vigente: boolean;
+  }[];
 };
 
 type AvisoFila = {
@@ -57,6 +79,8 @@ export async function avisosPrecioLapridaPendientes(
       grupos.set(clave, {
         id: a.id,
         ids: [a.id],
+        skuId: a.sku_id,
+        promocionId: a.promocion_id,
         titulo: a.sku?.nombre ?? a.promocion?.nombre ?? "Producto eliminado",
         descripcion: a.descripcion,
         generadoEn: a.generado_en,
