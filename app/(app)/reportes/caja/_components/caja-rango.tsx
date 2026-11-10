@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
@@ -131,7 +132,7 @@ export async function CajaRango({
     traerTodo(
       supabase
         .from("devoluciones")
-        .select("resolucion, medio_reembolso, monto_reembolsado")
+        .select("caja_id, resolucion, medio_reembolso, monto_reembolsado")
         .in("caja_id", idsCajas),
     ),
   ]);
@@ -176,7 +177,7 @@ export async function CajaRango({
   const declaradoTotal = cajas.reduce((acc, c) => acc + Number(c.efectivo_declarado ?? 0), 0);
   const ticketsCajas = cajas.reduce((acc, c) => acc + Number(c.cantidad_tickets ?? 0), 0);
 
-  const movimientos = (movimientosRaw ?? []) as { tipo: string; monto: number }[];
+  const movimientos = (movimientosRaw ?? []) as { caja_id: string; tipo: string; monto: number }[];
   const salidas = movimientos
     .filter((m) => m.tipo === "salida")
     .reduce((acc, m) => acc + Number(m.monto), 0);
@@ -185,6 +186,7 @@ export async function CajaRango({
     .reduce((acc, m) => acc + Number(m.monto), 0);
 
   const devoluciones = (devolucionesRaw ?? []) as {
+    caja_id: string;
     resolucion: string;
     medio_reembolso: string | null;
     monto_reembolsado: number | null;
@@ -196,10 +198,49 @@ export async function CajaRango({
     .filter((d) => d.resolucion === "dinero" && d.medio_reembolso === "efectivo")
     .reduce((acc, d) => acc + Number(d.monto_reembolsado ?? 0), 0);
 
+  // --- Egresos de efectivo (pedido del usuario 2026-11-10) -------------
+  // Lo que salió del cajón en efectivo: salidas de caja + devoluciones
+  // pagadas en efectivo (las de posnet/transferencia/QR no tocan el cajón).
+  // Mismo criterio que cerrar_caja() para el efectivo esperado. Cada egreso
+  // va al día de la caja en la que ocurrió. Las entradas no se suman al neto.
+  const egresosPorDia = new Map<string, number>();
+  const sumarEgreso = (cajaId: string, monto: number) => {
+    const dia = fechaDeCaja.get(cajaId);
+    if (!dia) return;
+    egresosPorDia.set(dia, (egresosPorDia.get(dia) ?? 0) + monto);
+  };
+  for (const m of movimientos) {
+    if (m.tipo === "salida") sumarEgreso(m.caja_id, Number(m.monto));
+  }
+  for (const d of devoluciones) {
+    if (d.resolucion === "dinero" && d.medio_reembolso === "efectivo") {
+      sumarEgreso(d.caja_id, Number(d.monto_reembolsado ?? 0));
+    }
+  }
+  const egresosEfectivo = salidas + devueltoEfectivo;
+  const efectivoCobrado = totalPorMedio.get("efectivo") ?? 0;
+  const efectivoNeto = efectivoCobrado - egresosEfectivo;
+
   const abiertas = cajas.length - cerradas.length;
 
   return (
     <div className="flex flex-col gap-6">
+      <div>
+        <SectionHeader
+          title="Resumen del efectivo"
+          meta="Lo cobrado en billete menos lo que salió del cajón"
+        />
+        <KpiGrid>
+          <Kpi label="Efectivo cobrado" value={formatoMoneda.format(efectivoCobrado)} />
+          <Kpi
+            label="Egresos de efectivo"
+            value={formatoMoneda.format(egresosEfectivo)}
+            sub={`${formatoMoneda.format(salidas)} de salidas de caja · ${formatoMoneda.format(devueltoEfectivo)} de devoluciones en efectivo`}
+          />
+          <Kpi label="Efectivo neto" value={formatoMoneda.format(efectivoNeto)} sub="Cobrado menos egresos" />
+        </KpiGrid>
+      </div>
+
       <KpiGrid>
         <Kpi
           label="Vendido"
@@ -238,9 +279,10 @@ export async function CajaRango({
               <tr>
                 <Th>Día</Th>
                 {medios.map((m) => (
-                  <Th key={m} align="right">
-                    {labelMedio(m)}
-                  </Th>
+                  <Fragment key={m}>
+                    <Th align="right">{labelMedio(m)}</Th>
+                    {m === "efectivo" && <Th align="right">Egresos efectivo</Th>}
+                  </Fragment>
                 ))}
                 <Th align="right">Total</Th>
               </tr>
@@ -261,10 +303,18 @@ export async function CajaRango({
                     </Td>
                     {medios.map((m) => {
                       const monto = delDia?.get(m) ?? 0;
+                      const egreso = egresosPorDia.get(dia) ?? 0;
                       return (
-                        <Td key={m} align="right" numero mute={monto === 0}>
-                          {monto === 0 ? "—" : formatoMoneda.format(monto)}
-                        </Td>
+                        <Fragment key={m}>
+                          <Td align="right" numero mute={monto === 0}>
+                            {monto === 0 ? "—" : formatoMoneda.format(monto)}
+                          </Td>
+                          {m === "efectivo" && (
+                            <Td align="right" numero mute={egreso === 0}>
+                              {egreso === 0 ? "—" : `−${formatoMoneda.format(egreso)}`}
+                            </Td>
+                          )}
+                        </Fragment>
                       );
                     })}
                     <Td align="right" numero>
@@ -278,9 +328,16 @@ export async function CajaRango({
                 {medios.map((m) => {
                   const monto = totalPorMedio.get(m) ?? 0;
                   return (
-                    <Td key={m} align="right" numero mute={monto === 0}>
-                      {monto === 0 ? "—" : formatoMoneda.format(monto)}
-                    </Td>
+                    <Fragment key={m}>
+                      <Td align="right" numero mute={monto === 0}>
+                        {monto === 0 ? "—" : formatoMoneda.format(monto)}
+                      </Td>
+                      {m === "efectivo" && (
+                        <Td align="right" numero mute={egresosEfectivo === 0}>
+                          {egresosEfectivo === 0 ? "—" : `−${formatoMoneda.format(egresosEfectivo)}`}
+                        </Td>
+                      )}
+                    </Fragment>
                   );
                 })}
                 <Td align="right" numero>

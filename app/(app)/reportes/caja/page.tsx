@@ -76,6 +76,7 @@ type DevolucionFila = {
   id: string;
   fecha: string;
   sucursal_id: string;
+  caja_id: string | null;
   resolucion: string;
   // Con qué se le devolvió la plata. null en un cambio por otro producto.
   medio_reembolso: string | null;
@@ -313,7 +314,7 @@ export default async function ReporteCajaPage({
         supabase
           .from("devoluciones")
           .select(
-            "id, fecha, sucursal_id, resolucion, medio_reembolso, monto_reembolsado, venta_id, usuario:usuarios ( nombre )",
+            "id, fecha, sucursal_id, caja_id, resolucion, medio_reembolso, monto_reembolsado, venta_id, usuario:usuarios ( nombre )",
           )
           .eq("sucursal_id", sucursalSeleccionada.id)
           .gte("fecha", desde.toISOString())
@@ -416,6 +417,27 @@ export default async function ReporteCajaPage({
     .filter((m) => m.tipo === "entrada")
     .reduce((acc, m) => acc + Number(m.monto), 0);
 
+  // Egresos de efectivo por caja (pedido del usuario 2026-11-10): salidas de
+  // caja + devoluciones pagadas en efectivo, el mismo criterio que
+  // cerrar_caja() para el efectivo esperado. Las entradas no se suman.
+  const egresosPorCaja = new Map<string, number>();
+  const sumarEgreso = (cajaId: string | null, monto: number) => {
+    if (!cajaId || !idsCajas.includes(cajaId)) return;
+    egresosPorCaja.set(cajaId, (egresosPorCaja.get(cajaId) ?? 0) + monto);
+  };
+  for (const m of movimientos) {
+    if (m.tipo === "salida") sumarEgreso(m.caja_id, Number(m.monto));
+  }
+  for (const d of devolucionesDinero) {
+    if (d.medio_reembolso === "efectivo") sumarEgreso(d.caja_id, Number(d.monto_reembolsado ?? 0));
+  }
+  const egresosEfectivo = [...egresosPorCaja.values()].reduce((a, b) => a + b, 0);
+  const efectivoCobrado = porMedio.get("efectivo") ?? 0;
+  const efectivoNeto = efectivoCobrado - egresosEfectivo;
+  const egresosSalidas = movimientos
+    .filter((m) => m.tipo === "salida" && idsCajas.includes(m.caja_id))
+    .reduce((acc, m) => acc + Number(m.monto), 0);
+
   const particulares = ((particularesRaw ?? []) as unknown as ParticularFila[])
     .filter(
       (p) =>
@@ -456,6 +478,22 @@ export default async function ReporteCajaPage({
           </>
         }
       />
+
+      <div>
+        <SectionHeader
+          title="Resumen del efectivo"
+          meta="Lo cobrado en billete menos lo que salió del cajón"
+        />
+        <KpiGrid>
+          <Kpi label="Efectivo cobrado" value={formatoMoneda.format(efectivoCobrado)} />
+          <Kpi
+            label="Egresos de efectivo"
+            value={formatoMoneda.format(egresosEfectivo)}
+            sub={`${formatoMoneda.format(egresosSalidas)} de salidas de caja · ${formatoMoneda.format(egresosEfectivo - egresosSalidas)} de devoluciones en efectivo`}
+          />
+          <Kpi label="Efectivo neto" value={formatoMoneda.format(efectivoNeto)} sub="Cobrado menos egresos" />
+        </KpiGrid>
+      </div>
 
       <KpiGrid>
         <Kpi
@@ -537,6 +575,7 @@ export default async function ReporteCajaPage({
                   <Th>Abrió</Th>
                   <Th>Cerró</Th>
                   <Th align="right">Apertura</Th>
+                  <Th align="right">Egresos efectivo</Th>
                   <Th align="right">Según sistema</Th>
                   <Th align="right">Contado</Th>
                   <Th align="right">Diferencia</Th>
@@ -572,6 +611,11 @@ export default async function ReporteCajaPage({
                     </Td>
                     <Td align="right" numero>
                       {formatoMoneda.format(c.monto_apertura ?? 0)}
+                    </Td>
+                    <Td align="right" numero mute={!egresosPorCaja.get(c.id)}>
+                      {egresosPorCaja.get(c.id)
+                        ? `−${formatoMoneda.format(egresosPorCaja.get(c.id) ?? 0)}`
+                        : "—"}
                     </Td>
                     <Td align="right" numero mute={c.efectivo_sistema == null}>
                       {c.efectivo_sistema == null ? "—" : formatoMoneda.format(c.efectivo_sistema)}
