@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import { fechaOperativa, inicioDeSemana, inicioDelDia, inicioDelMes } from "@/lib/fecha";
-import { formatoFecha, formatoFechaHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
+import { formatoFecha, formatoFechaHora, formatoHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import { BarRow, Card, EmptyState, Kpi, KpiGrid, SectionHeader } from "../../_components/dashboard/ui";
 import { ReporteHeader } from "../_components/reporte-header";
 import { Tabla, Td, Th, Tr } from "../_components/tabla";
@@ -10,6 +10,8 @@ import { desdePeriodo, leerPeriodo } from "../_lib/periodo";
 import { exigirDueno } from "../_lib/permiso";
 import { CajaDia } from "./_components/caja-dia";
 import { CajaRango } from "./_components/caja-rango";
+import { EgresosEfectivo } from "./_components/egresos-efectivo";
+import { agruparEgresos, type EgresoEfectivo } from "./_lib/egresos";
 import { SelectorDia } from "./_components/selector-dia";
 import { SelectorRango } from "./_components/selector-rango";
 import { SelectorSucursal } from "./_components/selector-sucursal";
@@ -77,6 +79,7 @@ type DevolucionFila = {
   fecha: string;
   sucursal_id: string;
   caja_id: string | null;
+  observaciones: string | null;
   resolucion: string;
   // Con qué se le devolvió la plata. null en un cambio por otro producto.
   medio_reembolso: string | null;
@@ -314,7 +317,7 @@ export default async function ReporteCajaPage({
         supabase
           .from("devoluciones")
           .select(
-            "id, fecha, sucursal_id, caja_id, resolucion, medio_reembolso, monto_reembolsado, venta_id, usuario:usuarios ( nombre )",
+            "id, fecha, sucursal_id, caja_id, observaciones, resolucion, medio_reembolso, monto_reembolsado, venta_id, usuario:usuarios ( nombre )",
           )
           .eq("sucursal_id", sucursalSeleccionada.id)
           .gte("fecha", desde.toISOString())
@@ -421,16 +424,39 @@ export default async function ReporteCajaPage({
   // caja + devoluciones pagadas en efectivo, el mismo criterio que
   // cerrar_caja() para el efectivo esperado. Las entradas no se suman.
   const egresosPorCaja = new Map<string, number>();
-  const sumarEgreso = (cajaId: string | null, monto: number) => {
-    if (!cajaId || !idsCajas.includes(cajaId)) return;
-    egresosPorCaja.set(cajaId, (egresosPorCaja.get(cajaId) ?? 0) + monto);
+  const fechaDeCaja = new Map(cajas.map((c) => [c.id, c.fecha]));
+  const detalleEgresos: EgresoEfectivo[] = [];
+  const sumarEgreso = (cajaId: string | null, egreso: Omit<EgresoEfectivo, "dia">) => {
+    const dia = cajaId ? fechaDeCaja.get(cajaId) : undefined;
+    if (!cajaId || !dia) return;
+    egresosPorCaja.set(cajaId, (egresosPorCaja.get(cajaId) ?? 0) + egreso.monto);
+    detalleEgresos.push({ ...egreso, dia });
   };
   for (const m of movimientos) {
-    if (m.tipo === "salida") sumarEgreso(m.caja_id, Number(m.monto));
+    if (m.tipo !== "salida") continue;
+    sumarEgreso(m.caja_id, {
+      creadoEn: m.creado_en,
+      hora: formatoHora.format(new Date(m.creado_en)),
+      tipo: "salida",
+      nota: m.motivo,
+      quien: nombreRel(m.usuario) ?? "—",
+      monto: Number(m.monto),
+      ventaId: null,
+    });
   }
   for (const d of devolucionesDinero) {
-    if (d.medio_reembolso === "efectivo") sumarEgreso(d.caja_id, Number(d.monto_reembolsado ?? 0));
+    if (d.medio_reembolso !== "efectivo") continue;
+    sumarEgreso(d.caja_id, {
+      creadoEn: d.fecha,
+      hora: formatoHora.format(new Date(d.fecha)),
+      tipo: "devolucion",
+      nota: d.observaciones?.trim() || "Devolución al cliente",
+      quien: nombreRel(d.usuario) ?? "—",
+      monto: Number(d.monto_reembolsado ?? 0),
+      ventaId: d.venta_id,
+    });
   }
+  const gruposEgresos = agruparEgresos(detalleEgresos);
   const egresosEfectivo = [...egresosPorCaja.values()].reduce((a, b) => a + b, 0);
   const efectivoCobrado = porMedio.get("efectivo") ?? 0;
   const efectivoNeto = efectivoCobrado - egresosEfectivo;
@@ -486,10 +512,10 @@ export default async function ReporteCajaPage({
         />
         <KpiGrid>
           <Kpi label="Efectivo cobrado" value={formatoMoneda.format(efectivoCobrado)} />
-          <Kpi
-            label="Egresos de efectivo"
-            value={formatoMoneda.format(egresosEfectivo)}
+          <EgresosEfectivo
+            total={egresosEfectivo}
             sub={`${formatoMoneda.format(egresosSalidas)} de salidas de caja · ${formatoMoneda.format(egresosEfectivo - egresosSalidas)} de devoluciones en efectivo`}
+            grupos={gruposEgresos}
           />
           <Kpi label="Efectivo neto" value={formatoMoneda.format(efectivoNeto)} sub="Cobrado menos egresos" />
         </KpiGrid>

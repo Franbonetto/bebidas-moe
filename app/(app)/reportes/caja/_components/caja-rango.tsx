@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { traerTodo, traerTodoPorLotes } from "@/lib/supabase/traer-todo";
 import { ZONA_ARGENTINA } from "@/lib/fecha";
-import { formatoMoneda } from "@/app/(app)/compras/_lib/formato";
+import { formatoHora, formatoMoneda } from "@/app/(app)/compras/_lib/formato";
 import {
   BarRow,
   Card,
@@ -14,6 +14,8 @@ import {
 } from "@/app/(app)/_components/dashboard/ui";
 import { Tabla, Td, Th, Tr } from "../../_components/tabla";
 import { fechaDelDia } from "../_lib/dia";
+import { agruparEgresos, type EgresoEfectivo } from "../_lib/egresos";
+import { EgresosEfectivo } from "./egresos-efectivo";
 
 // La caja de un RANGO de días de una sucursal (pedido del usuario
 // 2026-11-09: cerrar de lunes a lunes, o los días que elija, y ver la caja
@@ -127,12 +129,17 @@ export async function CajaRango({
         )
       : Promise.resolve({ data: [], error: null }),
     traerTodo(
-      supabase.from("movimientos_caja").select("caja_id, tipo, monto").in("caja_id", idsCajas),
+      supabase
+        .from("movimientos_caja")
+        .select("caja_id, tipo, monto, motivo, creado_en, usuario:usuarios ( nombre )")
+        .in("caja_id", idsCajas),
     ),
     traerTodo(
       supabase
         .from("devoluciones")
-        .select("caja_id, resolucion, medio_reembolso, monto_reembolsado")
+        .select(
+          "caja_id, fecha, venta_id, observaciones, resolucion, medio_reembolso, monto_reembolsado, usuario:usuarios ( nombre )",
+        )
         .in("caja_id", idsCajas),
     ),
   ]);
@@ -177,7 +184,14 @@ export async function CajaRango({
   const declaradoTotal = cajas.reduce((acc, c) => acc + Number(c.efectivo_declarado ?? 0), 0);
   const ticketsCajas = cajas.reduce((acc, c) => acc + Number(c.cantidad_tickets ?? 0), 0);
 
-  const movimientos = (movimientosRaw ?? []) as { caja_id: string; tipo: string; monto: number }[];
+  const movimientos = (movimientosRaw ?? []) as unknown as {
+    caja_id: string;
+    tipo: string;
+    monto: number;
+    motivo: string;
+    creado_en: string;
+    usuario: { nombre: string } | { nombre: string }[] | null;
+  }[];
   const salidas = movimientos
     .filter((m) => m.tipo === "salida")
     .reduce((acc, m) => acc + Number(m.monto), 0);
@@ -185,8 +199,12 @@ export async function CajaRango({
     .filter((m) => m.tipo === "entrada")
     .reduce((acc, m) => acc + Number(m.monto), 0);
 
-  const devoluciones = (devolucionesRaw ?? []) as {
+  const devoluciones = (devolucionesRaw ?? []) as unknown as {
     caja_id: string;
+    fecha: string;
+    venta_id: string;
+    observaciones: string | null;
+    usuario: { nombre: string } | { nombre: string }[] | null;
     resolucion: string;
     medio_reembolso: string | null;
     monto_reembolsado: number | null;
@@ -204,19 +222,38 @@ export async function CajaRango({
   // Mismo criterio que cerrar_caja() para el efectivo esperado. Cada egreso
   // va al día de la caja en la que ocurrió. Las entradas no se suman al neto.
   const egresosPorDia = new Map<string, number>();
-  const sumarEgreso = (cajaId: string, monto: number) => {
+  const detalleEgresos: EgresoEfectivo[] = [];
+  const sumarEgreso = (cajaId: string, egreso: Omit<EgresoEfectivo, "dia">) => {
     const dia = fechaDeCaja.get(cajaId);
     if (!dia) return;
-    egresosPorDia.set(dia, (egresosPorDia.get(dia) ?? 0) + monto);
+    egresosPorDia.set(dia, (egresosPorDia.get(dia) ?? 0) + egreso.monto);
+    detalleEgresos.push({ ...egreso, dia });
   };
   for (const m of movimientos) {
-    if (m.tipo === "salida") sumarEgreso(m.caja_id, Number(m.monto));
+    if (m.tipo !== "salida") continue;
+    sumarEgreso(m.caja_id, {
+      creadoEn: m.creado_en,
+      hora: formatoHora.format(new Date(m.creado_en)),
+      tipo: "salida",
+      nota: m.motivo,
+      quien: nombreRel(m.usuario) ?? "—",
+      monto: Number(m.monto),
+      ventaId: null,
+    });
   }
   for (const d of devoluciones) {
-    if (d.resolucion === "dinero" && d.medio_reembolso === "efectivo") {
-      sumarEgreso(d.caja_id, Number(d.monto_reembolsado ?? 0));
-    }
+    if (d.resolucion !== "dinero" || d.medio_reembolso !== "efectivo") continue;
+    sumarEgreso(d.caja_id, {
+      creadoEn: d.fecha,
+      hora: formatoHora.format(new Date(d.fecha)),
+      tipo: "devolucion",
+      nota: d.observaciones?.trim() || "Devolución al cliente",
+      quien: nombreRel(d.usuario) ?? "—",
+      monto: Number(d.monto_reembolsado ?? 0),
+      ventaId: d.venta_id,
+    });
   }
+  const gruposEgresos = agruparEgresos(detalleEgresos);
   const egresosEfectivo = salidas + devueltoEfectivo;
   const efectivoCobrado = totalPorMedio.get("efectivo") ?? 0;
   const efectivoNeto = efectivoCobrado - egresosEfectivo;
@@ -232,10 +269,10 @@ export async function CajaRango({
         />
         <KpiGrid>
           <Kpi label="Efectivo cobrado" value={formatoMoneda.format(efectivoCobrado)} />
-          <Kpi
-            label="Egresos de efectivo"
-            value={formatoMoneda.format(egresosEfectivo)}
+          <EgresosEfectivo
+            total={egresosEfectivo}
             sub={`${formatoMoneda.format(salidas)} de salidas de caja · ${formatoMoneda.format(devueltoEfectivo)} de devoluciones en efectivo`}
+            grupos={gruposEgresos}
           />
           <Kpi label="Efectivo neto" value={formatoMoneda.format(efectivoNeto)} sub="Cobrado menos egresos" />
         </KpiGrid>
