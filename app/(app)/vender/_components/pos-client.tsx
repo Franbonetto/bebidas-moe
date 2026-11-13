@@ -19,8 +19,10 @@ import {
   type LineaVenta,
   type PagoVenta,
 } from "../actions";
+import { liquidarConsignacionSinVenta } from "../consignaciones/actions";
 import { formatoMoneda } from "../_lib/formato";
 import { AbrirCajaForm, type EmpleadoOpcion } from "./abrir-caja-form";
+import { PinProvider, usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 
 export type SkuPos = {
   id: string;
@@ -65,6 +67,12 @@ type LineaTicket = {
   cantidad: number;
   precioManual: number | null;
   recargoFrio: number;
+  // Liquidación de consignación (2026-11-12): no null cuando esta unidad
+  // viene de "Liquidar consignación" -- esa unidad ya salió del stock al
+  // entregarse, así que confirmar_venta() no la descuenta de nuevo, y la
+  // cantidad de esta línea no puede superar lo pendiente de ese item (ver
+  // ConsignacionTicket más abajo).
+  consignacionItemId: string | null;
 };
 
 function tieneAjustePrecio(l: LineaTicket) {
@@ -122,6 +130,18 @@ type ParticularTicket = { id: string; descripcion: string; precio: number; canti
 // -- decisión de negocio confirmada, no se prorratea por línea.
 type Pago = { medioPago: MedioPago; monto: number };
 
+// Consignación que se está liquidando en este ticket (2026-11-12, ver
+// supabase/migrations/20261112090000_consignaciones.sql). `items` es la
+// foto de lo pendiente al momento de cargarla: fija el tope de cada línea
+// tagueada, no se recalcula mientras se edita el ticket.
+export type ConsignacionTicket = {
+  id: string;
+  clienteNombre: string;
+  items: { itemId: string; skuId: string; skuNombre: string; cantidadPendiente: number }[];
+};
+
+export type ConsignacionPosOpcion = ConsignacionTicket;
+
 type Ticket = {
   id: string;
   lineas: LineaTicket[];
@@ -135,6 +155,9 @@ type Ticket = {
   // ¿Ya está pago? (2026-10-19) null = la cajera todavía no eligió, y sin
   // elegir no se puede cobrar.
   envioPagado: boolean | null;
+  // Consignación que se liquida con este ticket, si corresponde. Null en
+  // un ticket de venta normal.
+  consignacion: ConsignacionTicket | null;
 };
 
 function ticketVacio(id: string): Ticket {
@@ -147,6 +170,7 @@ function ticketVacio(id: string): Ticket {
     motomandado: "",
     direccionEnvio: "",
     envioPagado: null,
+    consignacion: null,
   };
 }
 
@@ -248,7 +272,19 @@ function PrecioProducto({
   );
 }
 
-export function PosClient({
+// PinProvider tiene que envolver desde AFUERA a quien llama
+// usePinOperaciones() -- por eso el componente exportado es un wrapper
+// fino y todo el POS real vive en PosClientInner. Liquidar una
+// consignación pide PIN igual que entregarla (2026-11-12).
+export function PosClient(props: Parameters<typeof PosClientInner>[0]) {
+  return (
+    <PinProvider>
+      <PosClientInner {...props} />
+    </PinProvider>
+  );
+}
+
+function PosClientInner({
   sucursalId,
   sucursalNombre,
   puedeFacturar,
@@ -262,6 +298,8 @@ export function PosClient({
   empleados,
   modoEnvio = false,
   esCentral = false,
+  consignacionesActivas = [],
+  consignacionInicialId = null,
 }: {
   sucursalId: string;
   sucursalNombre: string;
@@ -288,8 +326,15 @@ export function PosClient({
   // se muestra mirando esa sucursal, aunque quien ve costos pueda estar
   // parado en la pantalla de Laprida.
   esCentral?: boolean;
+  // Consignaciones activas de la central, para "Liquidar consignación"
+  // (2026-11-12). Vacío en /envios y para quien no ve costos.
+  consignacionesActivas?: ConsignacionPosOpcion[];
+  // Llegó por "Liquidar en el POS" desde /vender/consignaciones
+  // (?consignacion=id): se carga sola en el primer ticket al entrar.
+  consignacionInicialId?: string | null;
 }) {
   const router = useRouter();
+  const pedirPin = usePinOperaciones();
   const medios = useMemo(() => mediosPago(esCentral), [esCentral]);
   const [tickets, setTickets] = useState<Ticket[]>(() => [ticketVacio("1")]);
   const [ticketActivoId, setTicketActivoId] = useState("1");
@@ -400,6 +445,21 @@ export function PosClient({
   }, [hayFocoAjeno]);
 
   const skuPorId = useMemo(() => new Map(skus.map((s) => [s.id, s])), [skus]);
+
+  // Llegó desde "Liquidar en el POS" (/vender/consignaciones) con
+  // ?consignacion=id: se carga una sola vez al entrar y se limpia el query
+  // param para que un refresh no la vuelva a cargar en un ticket nuevo.
+  const consignacionInicialCargadaRef = useRef(false);
+  useEffect(() => {
+    if (consignacionInicialCargadaRef.current || !consignacionInicialId) return;
+    consignacionInicialCargadaRef.current = true;
+    cargarConsignacion(consignacionInicialId);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("consignacion");
+    const resto = params.toString();
+    router.replace(window.location.pathname + (resto ? `?${resto}` : ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const ticketActivo = tickets.find((t) => t.id === ticketActivoId) ?? tickets[0];
   const { lineas, particulares, envaseChecked, pagos, motomandado, direccionEnvio, envioPagado } =
@@ -608,13 +668,30 @@ export function PosClient({
     // siguiente, no por un temporizador -- ver el bloque del cartel.
     if (ventaConfirmada != null) setVentaConfirmada(null);
     actualizarTicketActivo((t) => {
+      // Si este SKU es parte de la consignación que se está liquidando en
+      // este ticket, la línea nace tagueada y topeada a lo pendiente -- no
+      // hay forma de que un producto de la consignación entre como venta
+      // normal por el buscador (2026-11-12).
+      const itemConsignacion = t.consignacion?.items.find((i) => i.skuId === sku.id) ?? null;
+      const tope = itemConsignacion?.cantidadPendiente;
+
       const idx = t.lineas.findIndex((l) => l.skuId === sku.id);
       let lineas: LineaTicket[];
       if (idx >= 0) {
         lineas = [...t.lineas];
-        lineas[idx] = { ...lineas[idx], cantidad: lineas[idx].cantidad + cantidad };
+        const nueva = lineas[idx].cantidad + cantidad;
+        lineas[idx] = { ...lineas[idx], cantidad: tope != null ? Math.min(tope, nueva) : nueva };
       } else {
-        lineas = [...t.lineas, { skuId: sku.id, cantidad, precioManual: null, recargoFrio: 0 }];
+        lineas = [
+          ...t.lineas,
+          {
+            skuId: sku.id,
+            cantidad: tope != null ? Math.min(tope, cantidad) : cantidad,
+            precioManual: null,
+            recargoFrio: 0,
+            consignacionItemId: itemConsignacion?.itemId ?? null,
+          },
+        ];
       }
       const envaseChecked =
         sku.esRetornable && !(sku.id in t.envaseChecked)
@@ -629,26 +706,124 @@ export function PosClient({
     searchInputRef.current?.focus();
   }
 
+  // El tope de una línea de consignación es lo pendiente AL CARGARLA (la
+  // foto en t.consignacion.items), no "lo que queda después de mis
+  // ediciones": eso es lo que ya garantiza que nunca se pueda vender más
+  // de lo que salió en esa consignación.
+  function topeConsignacion(t: Ticket, skuId: string) {
+    return t.consignacion?.items.find((i) => i.skuId === skuId)?.cantidadPendiente ?? null;
+  }
+
   function ajustarCantidad(skuId: string, delta: number) {
-    actualizarTicketActivo((t) => ({
-      ...t,
-      lineas: t.lineas.map((l) => (l.skuId === skuId ? { ...l, cantidad: l.cantidad + delta } : l)).filter((l) => l.cantidad > 0),
-    }));
+    actualizarTicketActivo((t) => {
+      const tope = topeConsignacion(t, skuId);
+      return {
+        ...t,
+        lineas: t.lineas
+          .map((l) => {
+            if (l.skuId !== skuId) return l;
+            const nueva = l.cantidad + delta;
+            return { ...l, cantidad: tope != null ? Math.min(tope, nueva) : nueva };
+          })
+          .filter((l) => l.cantidad > 0),
+      };
+    });
   }
 
   function fijarCantidad(skuId: string, cantidad: number) {
-    actualizarTicketActivo((t) => ({
-      ...t,
-      lineas:
-        cantidad > 0
-          ? t.lineas.map((l) => (l.skuId === skuId ? { ...l, cantidad } : l))
-          : t.lineas.filter((l) => l.skuId !== skuId),
-    }));
+    actualizarTicketActivo((t) => {
+      const tope = topeConsignacion(t, skuId);
+      const final = tope != null ? Math.min(tope, cantidad) : cantidad;
+      return {
+        ...t,
+        lineas:
+          final > 0
+            ? t.lineas.map((l) => (l.skuId === skuId ? { ...l, cantidad: final } : l))
+            : t.lineas.filter((l) => l.skuId !== skuId),
+      };
+    });
   }
 
   function quitarLinea(skuId: string) {
     actualizarTicketActivo((t) => ({ ...t, lineas: t.lineas.filter((l) => l.skuId !== skuId) }));
     setLineaSeleccionada(null);
+  }
+
+  // Carga una consignación activa en el ticket: si el ticket de hoy está
+  // vacío se usa ese, si no se abre uno nuevo (2026-11-12). Cada item
+  // entra como línea con cantidad = pendiente (todo vendido por default,
+  // la cajera baja lo que no se vendió) y tageada para que
+  // confirmar_venta() no descuente stock de nuevo.
+  function cargarConsignacion(consignacionId: string) {
+    const opcion = consignacionesActivas.find((c) => c.id === consignacionId);
+    if (!opcion) return;
+
+    const lineasIniciales: LineaTicket[] = opcion.items.map((item) => ({
+      skuId: item.skuId,
+      cantidad: item.cantidadPendiente,
+      precioManual: null,
+      recargoFrio: 0,
+      consignacionItemId: item.itemId,
+    }));
+
+    const ticketLibre =
+      ticketActivo.lineas.length === 0 &&
+      ticketActivo.particulares.length === 0 &&
+      ticketActivo.consignacion === null;
+
+    if (ticketLibre) {
+      actualizarTicketActivo((t) => ({ ...t, lineas: lineasIniciales, consignacion: opcion }));
+    } else {
+      contadorTicketRef.current += 1;
+      const id = String(contadorTicketRef.current);
+      setTickets((prev) => [
+        ...prev,
+        { ...ticketVacio(id), lineas: lineasIniciales, consignacion: opcion },
+      ]);
+      setTicketActivoId(id);
+    }
+    setLineaSeleccionada(null);
+    setQuery("");
+    searchInputRef.current?.focus();
+  }
+
+  // Se arrepintió / eligió la consignación equivocada: suelta el ticket
+  // sin tocar la consignación en la base (nada se grabó todavía).
+  function cancelarConsignacion() {
+    actualizarTicketActivo((t) => ({
+      ...t,
+      consignacion: null,
+      lineas: t.lineas.filter((l) => l.consignacionItemId == null),
+    }));
+  }
+
+  const [pendingSinVenta, startTransitionSinVenta] = useTransition();
+  const [errorSinVenta, setErrorSinVenta] = useState<string | null>(null);
+
+  // El cliente no vendió nada: devuelve todo. No hay cobro de por medio,
+  // así que no pasa por confirmar_venta() -- solo repone stock y cierra
+  // (ver liquidar_consignacion_sin_venta()).
+  async function devolverConsignacionSinVenta() {
+    const consignacionActiva = ticketActivo.consignacion;
+    if (!consignacionActiva) return;
+    setErrorSinVenta(null);
+
+    const pin = await pedirPin();
+    if (!pin) return;
+
+    startTransitionSinVenta(async () => {
+      const resultado = await liquidarConsignacionSinVenta(consignacionActiva.id, pin);
+      if ("error" in resultado) {
+        setErrorSinVenta(resultado.error);
+        return;
+      }
+      actualizarTicketActivo((t) => ({
+        ...t,
+        consignacion: null,
+        lineas: t.lineas.filter((l) => l.consignacionItemId == null),
+      }));
+      router.refresh();
+    });
   }
 
   function alternarEnvase(skuId: string) {
@@ -916,6 +1091,7 @@ export function PosClient({
           precio_lista_unitario: precio,
           promocion_id: null,
           con_envase: Boolean(sku?.esRetornable && envaseChecked[l.skuId]),
+          consignacion_item_id: l.consignacionItemId,
           ...rastroAjuste(l, sku),
         };
       }).concat(lineasParticulares());
@@ -940,6 +1116,7 @@ export function PosClient({
             : (sku.precioOtroMedio ?? t.precioUnitario),
           promocion_id: t.promocionId,
           con_envase: Boolean(sku.esRetornable && envaseChecked[l.skuId]),
+          consignacion_item_id: l.consignacionItemId,
           ...rastroAjuste(l, sku),
         });
       }
@@ -947,7 +1124,7 @@ export function PosClient({
     return resultado.concat(lineasParticulares());
   }
 
-  function confirmar() {
+  async function confirmar() {
     if (estadoCaja !== "abierta") {
       setError("La caja de hoy ya está cerrada.");
       return;
@@ -980,9 +1157,22 @@ export function PosClient({
 
     // Ya hay un cobro en vuelo: esto no es una venta nueva, es el mismo
     // cobro apretado dos veces (el Enter de la pistola, el dedo apoyado,
-    // la espera de ARCA que parece que se colgó). Se ignora.
+    // la espera de ARCA que parece que se colgó). Se ignora. Se marca ANTES
+    // de pedir el PIN de consignación, si corresponde: si no, el Enter con
+    // el que se confirma el PIN (que no le hace stopPropagation al atajo
+    // global) dispararía un segundo confirmar() mientras el primero espera.
     if (cobrandoRef.current) return;
     cobrandoRef.current = true;
+
+    const consignacionActiva = ticketActivo.consignacion;
+    let pinConsignacion: string | null = null;
+    if (consignacionActiva) {
+      pinConsignacion = await pedirPin();
+      if (!pinConsignacion) {
+        cobrandoRef.current = false;
+        return;
+      }
+    }
 
     const ticketCobrado = ticketActivoId;
     const claveCobro = (clavesCobroRef.current[ticketCobrado] ??= crypto.randomUUID());
@@ -1006,6 +1196,9 @@ export function PosClient({
                 direccionEnvio: direccionEnvio.trim(),
                 pagado: envioPagado,
               }
+            : undefined,
+          consignacionActiva && pinConsignacion
+            ? { id: consignacionActiva.id, pin: pinConsignacion }
             : undefined,
         );
         if ("error" in resultado) {
@@ -1301,6 +1494,33 @@ export function PosClient({
               Préstamos
             </Link>
           )}
+          {!modoEnvio && esCentral && puedeTocarPrecios && (
+            <Link
+              href="/vender/consignaciones"
+              className="rounded-[6px] border border-border bg-bg px-[10px] py-[4px] text-[13.5px] font-medium text-text-2 hover:bg-bg-2"
+            >
+              Consignaciones
+            </Link>
+          )}
+          {/* Liquidar una consignación activa: carga sus items pendientes
+              en el ticket (2026-11-12). No es un link porque necesita
+              elegir CUÁL antes de ir a ningún lado. */}
+          {!modoEnvio && esCentral && puedeTocarPrecios && consignacionesActivas.length > 0 && (
+            <select
+              value=""
+              onChange={(e) => {
+                if (e.target.value) cargarConsignacion(e.target.value);
+              }}
+              className="rounded-[6px] border border-border bg-bg px-[8px] py-[4px] text-[13.5px] font-medium text-text-2 hover:bg-bg-2"
+            >
+              <option value="">Liquidar consignación…</option>
+              {consignacionesActivas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.clienteNombre}
+                </option>
+              ))}
+            </select>
+          )}
           {!modoEnvio && (
             <Link
               href="/vender/devoluciones"
@@ -1422,6 +1642,39 @@ export function PosClient({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Liquidando una consignación (2026-11-12): las líneas de abajo ya
+          vienen cargadas con lo pendiente, topeadas para no vender más de
+          lo que salió. Lo que la cajera no marque como vendido se devuelve
+          solo al cobrar. */}
+      {!modoEnvio && ticketActivo.consignacion && (
+        <div className="mb-3 shrink-0 rounded-card border border-info/30 bg-info-bg px-[12px] py-[10px] text-[13.5px] text-info">
+          <div className="flex items-center justify-between gap-2">
+            <p>
+              Liquidando consignación de <strong>{ticketActivo.consignacion.clienteNombre}</strong>.
+              Bajá la cantidad de lo que no se vendió; lo que sobre se devuelve solo al cobrar.
+            </p>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={devolverConsignacionSinVenta}
+                disabled={pendingSinVenta}
+                className="whitespace-nowrap rounded-[6px] border border-info/40 bg-bg px-[10px] py-[4px] text-[12.5px] font-medium text-info hover:bg-bg-2 disabled:opacity-60"
+              >
+                {pendingSinVenta ? "Devolviendo…" : "No vendió nada, devolver todo"}
+              </button>
+              <button
+                type="button"
+                onClick={cancelarConsignacion}
+                className="whitespace-nowrap text-[12.5px] text-info underline hover:no-underline"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+          {errorSinVenta && <p className="mt-2 text-[12.5px] text-err">{errorSinVenta}</p>}
         </div>
       )}
 
@@ -1641,6 +1894,11 @@ export function PosClient({
                       </div>
                       <div className="min-w-0 text-[15px] font-medium leading-tight text-text">
                         {sku.nombre}
+                        {l.consignacionItemId && (
+                          <span className="ml-[6px] rounded-[4px] bg-info-bg px-[5px] py-[1px] text-[11px] font-medium text-info">
+                            Consignación
+                          </span>
+                        )}
                         <small className="mt-[1px] block text-[13px] font-normal text-text-3">
                           {sku.marcaNombre} · {presentacionLabel(sku.presentacion)} · {sku.codigoInterno} ·{" "}
                           <span className={sinStock ? "font-medium text-warn" : ""}>

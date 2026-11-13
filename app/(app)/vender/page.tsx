@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal, veCostos } from "@/lib/permisos";
 import { cargarDatosVenta } from "./_lib/cargar-datos-venta";
-import { PosClient } from "./_components/pos-client";
+import { PosClient, type ConsignacionPosOpcion } from "./_components/pos-client";
 
 // Cobrar ahora puede incluir el pedido de CAE a ARCA (facturación
 // automática de lo que no es efectivo, 2026-10-19): la llamada tiene un
@@ -32,9 +32,9 @@ export const maxDuration = 60;
 export default async function VenderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sucursal?: string }>;
+  searchParams: Promise<{ sucursal?: string; consignacion?: string }>;
 }) {
-  const { sucursal: sucursalParam } = await searchParams;
+  const { sucursal: sucursalParam, consignacion: consignacionParam } = await searchParams;
   const supabase = await createClient();
 
   const { data: sucursales } = await traerTodo(
@@ -80,6 +80,47 @@ export default async function VenderPage({
       .order("nombre"),
   );
 
+  // Consignaciones activas para "Liquidar consignación" en el POS
+  // (2026-11-12): solo existen en la central y solo las ve quien ve costos
+  // -- mismo criterio que préstamos a proveedores.
+  let consignacionesActivas: ConsignacionPosOpcion[] = [];
+  if (sucursal.es_central && puedeTocarPrecios) {
+    const { data: consignacionesRaw } = await traerTodo(
+      supabase
+        .from("consignaciones")
+        .select(
+          `id, cliente_nombre,
+           consignacion_items ( id, sku_id, cantidad_entregada, cantidad_vendida, cantidad_devuelta,
+             sku:skus ( nombre ) )`,
+        )
+        .eq("sucursal_id", sucursal.id)
+        .eq("estado", "activa")
+        .order("fecha_entrega", { ascending: true }),
+    );
+
+    const uno = <T,>(rel: T | T[] | null): T | null => (Array.isArray(rel) ? rel[0] ?? null : rel);
+
+    consignacionesActivas = (consignacionesRaw ?? []).map((c) => ({
+      id: c.id,
+      clienteNombre: c.cliente_nombre,
+      items: (c.consignacion_items ?? [])
+        .map((item: {
+          id: string;
+          sku_id: string;
+          cantidad_entregada: number;
+          cantidad_vendida: number;
+          cantidad_devuelta: number;
+          sku: unknown;
+        }) => ({
+          itemId: item.id,
+          skuId: item.sku_id,
+          skuNombre: (uno(item.sku) as { nombre: string } | null)?.nombre ?? "Producto",
+          cantidadPendiente: item.cantidad_entregada - item.cantidad_vendida - item.cantidad_devuelta,
+        }))
+        .filter((item) => item.cantidadPendiente > 0),
+    }));
+  }
+
   return (
     <div>
       {sucursalesOperables.length > 1 && (
@@ -116,6 +157,8 @@ export default async function VenderPage({
         cantidadTicketsHoy={cantidadTicketsHoy}
         empleados={empleados ?? []}
         esCentral={sucursal.es_central}
+        consignacionesActivas={consignacionesActivas}
+        consignacionInicialId={consignacionParam ?? null}
       />
     </div>
   );

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { facturarVentaAutomatica } from "./facturar/actions";
+import { verificarPinOperaciones } from "@/lib/pin";
 
 export type LineaVenta = {
   // null en un producto particular, que va con descripcion en su lugar
@@ -25,7 +26,17 @@ export type LineaVenta = {
   recargo_frio?: number;
   precio_editado?: boolean;
   precio_catalogo?: number | null;
+  // Liquidación de consignación (2026-11-12, ver
+  // 20261112090000_consignaciones.sql): esta unidad ya salió del stock al
+  // entregarse en consignación, así que confirmar_venta() no la descuenta
+  // de nuevo. Null en cualquier línea normal.
+  consignacion_item_id?: string | null;
 };
+
+// Datos de la consignación que se está liquidando en este cobro (ver
+// arriba). Pide PIN igual que entregarla -- no viaja en LineaVenta porque
+// es del ticket entero, no de una línea.
+export type ConsignacionLiquidacion = { id: string; pin: string };
 
 export type ComprobanteResumen = {
   tipoCbte: "A" | "B";
@@ -69,10 +80,20 @@ export async function confirmarVenta(
   // que un reintento no se cobre dos veces.
   claveCobro: string,
   envio?: DatosEnvio,
+  // Liquidación de consignación (2026-11-12): presente cuando el ticket
+  // viene de "Liquidar consignación" en el POS. Pide PIN como el resto de
+  // las pantallas que tocan stock fuera de una venta -- se valida acá, no
+  // en confirmar_venta().
+  consignacion?: ConsignacionLiquidacion,
 ): Promise<
   | { error: string }
   | { id: string; comprobante: ComprobanteResumen | null; avisoFacturacion: string | null }
 > {
+  if (consignacion) {
+    const pinOk = verificarPinOperaciones(consignacion.pin);
+    if ("error" in pinOk) return pinOk;
+  }
+
   const supabase = await createClient();
 
   const { data, error } = await supabase.rpc("confirmar_venta", {
@@ -84,6 +105,7 @@ export async function confirmarVenta(
     p_direccion_envio: envio?.direccionEnvio ?? null,
     p_envio_pagado: envio?.pagado ?? null,
     p_idempotency_key: claveCobro,
+    p_consignacion_id: consignacion?.id ?? null,
   });
 
   if (error) return { error: error.message };
