@@ -137,6 +137,10 @@ Débito, crédito y transferencia **no** cuentan como efectivo.
 Las promociones aplican solo pagando en efectivo.
 
 ### POS
+- **Apertura de caja fija (2026-11-16).** El monto de apertura es siempre
+  $10.000, en las dos sucursales, y no se puede tocar: `abrir_caja()` ya
+  no recibe el monto como parámetro, lo tiene hardcodeado. Al abrir la
+  caja solo se elige quién la abre (ver "Caja diaria por sucursal" abajo).
 - Medio de pago **al final**, antes de cobrar.
 - **Un cobro, una venta (2026-10-20).** El POS genera una clave por cobro y la
   repite si tiene que reintentar; `confirmar_venta()` tiene un unique index sobre

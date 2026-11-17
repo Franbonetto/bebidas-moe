@@ -16,7 +16,6 @@ export function AbrirCajaForm({
   empleados: EmpleadoOpcion[];
 }) {
   const router = useRouter();
-  const [monto, setMonto] = useState("");
   // Quién atiende, no con qué cuenta se entró al sistema: es el dato que
   // hace falta cuando al cierre la caja no da.
   const [empleadoId, setEmpleadoId] = useState("");
@@ -24,18 +23,13 @@ export function AbrirCajaForm({
   const [pending, startTransition] = useTransition();
 
   function abrir() {
-    const montoNum = Number(monto);
-    if (monto.trim() === "" || Number.isNaN(montoNum) || montoNum < 0) {
-      setError("Contá el efectivo que hay en la caja y cargá ese monto.");
-      return;
-    }
     if (!empleadoId) {
       setError("Elegí quién abre la caja.");
       return;
     }
     setError(null);
     startTransition(async () => {
-      const resultado = await abrirCaja(sucursalId, montoNum, empleadoId);
+      const resultado = await abrirCaja(sucursalId, empleadoId);
       if ("error" in resultado) {
         setError(resultado.error);
         return;
@@ -48,7 +42,7 @@ export function AbrirCajaForm({
     <div className="mx-auto max-w-[420px] rounded-card border border-border bg-bg p-6">
       <h1 className="mb-1 text-[15px] font-semibold text-text">Abrir caja — {sucursalNombre}</h1>
       <p className="mb-4 text-[12.5px] text-text-3">
-        Contá el efectivo que hay hoy en la caja antes de empezar a vender.
+        La apertura es siempre $10.000. Elegí quién abre la caja hoy.
       </p>
 
       <label className="mb-1 block text-[12px] font-medium text-text-2">¿Quién abre la caja?</label>
@@ -74,15 +68,10 @@ export function AbrirCajaForm({
       )}
 
       <label className="mb-1 block text-[12px] font-medium text-text-2">Monto de apertura</label>
-      <input
-        type="number"
-        min={0}
-        step="1"
-        value={monto}
-        onChange={(e) => setMonto(e.target.value)}
-        className="w-full rounded-[6px] border border-border bg-bg px-[10px] py-[7px] text-[14px] tabular-nums outline-none focus:border-moe"
-        placeholder="0"
-      />
+      <div className="flex items-center justify-between rounded-[6px] border border-border bg-bg-2 px-[10px] py-[7px] text-[14px] tabular-nums text-text">
+        <span>$10.000</span>
+        <span className="text-[11.5px] font-medium text-text-3">Fijo, no se puede cambiar</span>
+      </div>
 
       {error && <p className="mt-2 text-[12.5px] text-err">{error}</p>}
 

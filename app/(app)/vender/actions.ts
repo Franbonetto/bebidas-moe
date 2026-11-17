@@ -224,14 +224,12 @@ export async function confirmarDevolucion(input: {
 // a nadie. Mismo criterio que la merma.
 export async function abrirCaja(
   sucursalId: string,
-  montoApertura: number,
   empleadoId: string,
 ): Promise<{ error: string } | { ok: true }> {
   const supabase = await createClient();
 
   const { error } = await supabase.rpc("abrir_caja", {
     p_sucursal_id: sucursalId,
-    p_monto_apertura: montoApertura,
     p_empleado_id: empleadoId,
   });
 
