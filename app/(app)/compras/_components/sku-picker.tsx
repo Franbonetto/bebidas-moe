@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type KeyboardEvent } from "react";
+import { normalizarTexto } from "@/lib/promociones";
 import {
   presentacionLabel,
   type SkuPresentacion,
@@ -46,7 +47,7 @@ export function SkuPicker({
   const [errorAsignar, setErrorAsignar] = useState<string | null>(null);
 
   const resultados = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     if (!q) return [];
     return skus
       // Al asignar un código escaneado, un producto que ya está en la lista
@@ -56,9 +57,9 @@ export function SkuPicker({
       // normal de "agregar producto".
       .filter((s) => codigoPendiente || !excluirIds.has(s.id))
       .filter((s) => {
-        const producto = s.producto?.nombre.toLowerCase() ?? "";
-        const marca = s.producto?.marca?.nombre.toLowerCase() ?? "";
-        const codigo = s.codigo_interno.toLowerCase();
+        const producto = normalizarTexto(s.producto?.nombre ?? "");
+        const marca = normalizarTexto(s.producto?.marca?.nombre ?? "");
+        const codigo = normalizarTexto(s.codigo_interno);
         return producto.includes(q) || marca.includes(q) || codigo.includes(q);
       })
       .slice(0, 8);

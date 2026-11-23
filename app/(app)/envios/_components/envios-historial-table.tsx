@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { normalizarTexto } from "@/lib/promociones";
 import { formatoMoneda } from "../../vender/_lib/formato";
 import { formatoFechaHora } from "@/app/(app)/compras/_lib/formato";
 import { BADGE_DEVOLUCION, type EstadoDevolucion } from "../../vender/_lib/devolucion-estado";
@@ -27,13 +28,13 @@ export function EnviosHistorialTable({ envios }: { envios: EnvioRow[] }) {
   const [query, setQuery] = useState("");
 
   const filtrados = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     if (!q) return envios;
     return envios.filter(
       (e) =>
-        e.motomandado.toLowerCase().includes(q) ||
-        e.direccionEnvio.toLowerCase().includes(q) ||
-        e.sucursalNombre.toLowerCase().includes(q),
+        normalizarTexto(e.motomandado).includes(q) ||
+        normalizarTexto(e.direccionEnvio).includes(q) ||
+        normalizarTexto(e.sucursalNombre).includes(q),
     );
   }, [envios, query]);
 

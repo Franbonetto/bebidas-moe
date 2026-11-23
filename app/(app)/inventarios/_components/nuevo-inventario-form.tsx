@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { normalizarTexto } from "@/lib/promociones";
 import {
   presentacionLabel,
   type SkuPresentacion,
@@ -65,13 +66,13 @@ export function NuevoInventarioForm({
   }
 
   function coincide(s: CatalogoSku, q: string) {
-    const producto = s.producto?.nombre.toLowerCase() ?? "";
-    const marca = s.producto?.marca?.nombre.toLowerCase() ?? "";
-    return producto.includes(q) || marca.includes(q) || s.codigo_interno.toLowerCase().includes(q);
+    const producto = normalizarTexto(s.producto?.nombre ?? "");
+    const marca = normalizarTexto(s.producto?.marca?.nombre ?? "");
+    return producto.includes(q) || marca.includes(q) || normalizarTexto(s.codigo_interno).includes(q);
   }
 
   const { sugeridosFiltrados, restoFiltrado } = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     const filtrar = (arr: CatalogoSku[]) => (q ? arr.filter((s) => coincide(s, q)) : arr);
     return {
       sugeridosFiltrados: filtrar(skus.filter((s) => sugeridos.has(s.id))),

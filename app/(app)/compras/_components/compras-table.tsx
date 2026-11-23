@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { normalizarTexto } from "@/lib/promociones";
 import { formatoFecha, formatoMoneda } from "../_lib/formato";
 import {
   TIPO_COMPROBANTE_LABEL,
@@ -139,11 +140,11 @@ export function ComprasTable({
   const [query, setQuery] = useState("");
 
   const filtradas = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     if (!q) return compras;
     return compras.filter((c) => {
-      const proveedor = (c.proveedor?.nombre_comercial ?? c.proveedor?.razon_social ?? "").toLowerCase();
-      const factura = (c.numero_factura ?? "").toLowerCase();
+      const proveedor = normalizarTexto(c.proveedor?.nombre_comercial ?? c.proveedor?.razon_social ?? "");
+      const factura = normalizarTexto(c.numero_factura ?? "");
       return proveedor.includes(q) || factura.includes(q);
     });
   }, [compras, query]);

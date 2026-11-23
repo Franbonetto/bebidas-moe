@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { normalizarTexto } from "@/lib/promociones";
 import { ProveedorForm } from "./proveedor-form";
 
 export type Proveedor = {
@@ -25,13 +26,13 @@ export function ProveedoresTable({ proveedores }: { proveedores: Proveedor[] }) 
   const [mostrarAlta, setMostrarAlta] = useState(false);
 
   const filtrados = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     if (!q) return proveedores;
     return proveedores.filter((p) => {
       return (
-        p.razon_social.toLowerCase().includes(q) ||
-        (p.nombre_comercial ?? "").toLowerCase().includes(q) ||
-        (p.cuit ?? "").toLowerCase().includes(q)
+        normalizarTexto(p.razon_social).includes(q) ||
+        normalizarTexto(p.nombre_comercial ?? "").includes(q) ||
+        normalizarTexto(p.cuit ?? "").includes(q)
       );
     });
   }, [proveedores, query]);

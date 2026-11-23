@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { normalizarTexto } from "@/lib/promociones";
 import { presentacionLabel } from "@/app/(app)/productos/_components/productos-table";
 import { usePinOperaciones } from "@/app/(app)/_components/pin-gate";
 import { despacharDirecto, type LineaPedido } from "../actions";
@@ -50,31 +51,27 @@ export function EnvioLapridaForm({
   const [pending, startTransition] = useTransition();
 
   function coincide(f: SugerenciaSku, q: string) {
-    const producto = f.sku.producto?.nombre.toLowerCase() ?? "";
-    const marca = f.sku.producto?.marca?.nombre.toLowerCase() ?? "";
-    return producto.includes(q) || marca.includes(q) || f.sku.codigo_interno.toLowerCase().includes(q);
+    const producto = normalizarTexto(f.sku.producto?.nombre ?? "");
+    const marca = normalizarTexto(f.sku.producto?.marca?.nombre ?? "");
+    return producto.includes(q) || marca.includes(q) || normalizarTexto(f.sku.codigo_interno).includes(q);
   }
 
   // Lo vendido en el rango, más lo que ya tiene cantidad cargada (aunque al
   // cambiar de rango haya dejado de aparecer como vendido, para que no quede
-  // un envío "escondido").
+  // un envío "escondido"). Al buscar por nombre, marca o código, se busca en
+  // TODO el catálogo activo -- no solo en lo vendido -- para que un producto
+  // sin ventas en el rango (o sin stock cargado) igual aparezca si lo están
+  // buscando a propósito (pedido del usuario 2026-11-22).
   const vendidos = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return filas.filter(
-      (f) =>
-        ((vendido[f.sku_id] ?? 0) > 0 || (cantidades[f.sku_id] ?? 0) > 0) &&
-        (!q || coincide(f, q)),
-    );
+    const q = normalizarTexto(query.trim());
+    if (q) return filas.filter((f) => coincide(f, q));
+    return filas.filter((f) => (vendido[f.sku_id] ?? 0) > 0 || (cantidades[f.sku_id] ?? 0) > 0);
   }, [filas, vendido, cantidades, query]);
 
   const otros = useMemo(() => {
+    if (query.trim()) return [];
     if (!verTodos) return [];
-    const q = query.trim().toLowerCase();
-    return filas.filter(
-      (f) =>
-        !((vendido[f.sku_id] ?? 0) > 0 || (cantidades[f.sku_id] ?? 0) > 0) &&
-        (!q || coincide(f, q)),
-    );
+    return filas.filter((f) => !((vendido[f.sku_id] ?? 0) > 0 || (cantidades[f.sku_id] ?? 0) > 0));
   }, [filas, vendido, cantidades, query, verTodos]);
 
   const lineasAEnviar = filas.filter((f) => (cantidades[f.sku_id] ?? 0) > 0);

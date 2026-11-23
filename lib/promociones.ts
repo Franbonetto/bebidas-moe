@@ -151,8 +151,15 @@ export function resolverTicketEfectivo(
 
 const DIACRITICOS = new RegExp("[̀-ͯ]", "g");
 
-function normalizarTexto(s: string): string {
-  return s.toLowerCase().normalize("NFD").replace(DIACRITICOS, "");
+// Usado en todos los buscadores de la app: mayúsculas, acentos y puntos no
+// deben condicionar si algo aparece al buscar (pedido del usuario
+// 2026-11-22).
+export function normalizarTexto(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(DIACRITICOS, "")
+    .replace(/\./g, "");
 }
 
 function tandasDeIniciales(palabras: string[]): Set<string> {

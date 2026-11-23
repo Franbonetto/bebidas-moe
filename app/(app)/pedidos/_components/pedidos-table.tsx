@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useMemo, useState } from "react";
+import { normalizarTexto } from "@/lib/promociones";
 import { formatoFecha } from "../../compras/_lib/formato";
 import { EstadoPedidoBadge, type EstadoPedido } from "./estado-pedido-badge";
 
@@ -54,9 +55,9 @@ export function PedidosTable({
   const [query, setQuery] = useState("");
 
   const filtrados = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     if (!q) return pedidos;
-    return pedidos.filter((p) => p.numero.toLowerCase().includes(q));
+    return pedidos.filter((p) => normalizarTexto(p.numero).includes(q));
   }, [pedidos, query]);
 
   const grupos = useMemo(() => {

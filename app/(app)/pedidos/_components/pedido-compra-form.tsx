@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { normalizarTexto } from "@/lib/promociones";
 import {
   presentacionLabel,
   type SkuPresentacion,
@@ -179,7 +180,7 @@ export function PedidoCompraForm({
   const [pending, startTransition] = useTransition();
 
   const filtradas = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     return filas.filter((f) => {
       if (categoria && f.sku.producto?.categoria?.nombre !== categoria) return false;
       if (proveedor) {
@@ -191,9 +192,9 @@ export function PedidoCompraForm({
         }
       }
       if (q) {
-        const producto = f.sku.producto?.nombre.toLowerCase() ?? "";
-        const marca = f.sku.producto?.marca?.nombre.toLowerCase() ?? "";
-        if (!(producto.includes(q) || marca.includes(q) || f.sku.codigo_interno.toLowerCase().includes(q))) {
+        const producto = normalizarTexto(f.sku.producto?.nombre ?? "");
+        const marca = normalizarTexto(f.sku.producto?.marca?.nombre ?? "");
+        if (!(producto.includes(q) || marca.includes(q) || normalizarTexto(f.sku.codigo_interno).includes(q))) {
           return false;
         }
       }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { normalizarTexto } from "@/lib/promociones";
 import { formatoMoneda } from "../../_lib/formato";
 import { formatoFechaHora } from "@/app/(app)/compras/_lib/formato";
 import { BADGE_DEVOLUCION, type EstadoDevolucion } from "../../_lib/devolucion-estado";
@@ -46,9 +47,9 @@ export function BuscarVentaFacturarList({
   const [query, setQuery] = useState("");
 
   const filtradas = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     if (!q) return ventas;
-    return ventas.filter((v) => v.textoBusqueda.toLowerCase().includes(q));
+    return ventas.filter((v) => normalizarTexto(v.textoBusqueda).includes(q));
   }, [ventas, query]);
 
   return (

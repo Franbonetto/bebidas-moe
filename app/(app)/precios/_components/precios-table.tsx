@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { normalizarTexto } from "@/lib/promociones";
 import { presentacionLabel, type SkuPresentacion } from "../../productos/_lib/presentacion";
 import type { PrecioVenta } from "@/lib/precios";
 import { formatoMoneda } from "../_lib/formato";
@@ -112,15 +113,15 @@ export function PreciosTable({
   );
 
   const filtradas = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     return filas.filter((f) => {
       if (categoria && f.categoriaNombre !== categoria) return false;
       if (soloSinPrecio && f.precioBaseManual != null) return false;
       if (!q) return true;
       return (
-        f.nombre.toLowerCase().includes(q) ||
-        (f.marcaNombre ?? "").toLowerCase().includes(q) ||
-        f.codigoInterno.toLowerCase().includes(q)
+        normalizarTexto(f.nombre).includes(q) ||
+        normalizarTexto(f.marcaNombre ?? "").includes(q) ||
+        normalizarTexto(f.codigoInterno).includes(q)
       );
     });
   }, [filas, query, categoria, soloSinPrecio]);

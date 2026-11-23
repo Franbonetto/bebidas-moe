@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { normalizarTexto } from "@/lib/promociones";
 import {
   presentacionLabel,
   type SkuPresentacion,
@@ -64,18 +65,18 @@ export function SugerenciaForm({
   );
 
   function coincide(f: SugerenciaSku, q: string) {
-    const producto = f.sku.producto?.nombre.toLowerCase() ?? "";
-    const marca = f.sku.producto?.marca?.nombre.toLowerCase() ?? "";
-    return producto.includes(q) || marca.includes(q) || f.sku.codigo_interno.toLowerCase().includes(q);
+    const producto = normalizarTexto(f.sku.producto?.nombre ?? "");
+    const marca = normalizarTexto(f.sku.producto?.marca?.nombre ?? "");
+    return producto.includes(q) || marca.includes(q) || normalizarTexto(f.sku.codigo_interno).includes(q);
   }
 
   const sugeridasFiltradas = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     return q ? conSugerencia.filter((f) => coincide(f, q)) : conSugerencia;
   }, [conSugerencia, query]);
 
   const restoFiltrado = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     return q ? restoDelCatalogo.filter((f) => coincide(f, q)) : restoDelCatalogo;
   }, [restoDelCatalogo, query]);
 

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { normalizarTexto } from "@/lib/promociones";
 import {
   presentacionLabel,
   type SkuPresentacion,
@@ -79,13 +80,13 @@ export function ConteoForm({
   }, [items]);
 
   const filtrados = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     return items.filter((i) => {
       if (categoria && i.sku.producto?.categoria?.nombre !== categoria) return false;
       if (!q) return true;
-      const producto = i.sku.producto?.nombre.toLowerCase() ?? "";
-      const marca = i.sku.producto?.marca?.nombre.toLowerCase() ?? "";
-      return producto.includes(q) || marca.includes(q) || i.sku.codigo_interno.toLowerCase().includes(q);
+      const producto = normalizarTexto(i.sku.producto?.nombre ?? "");
+      const marca = normalizarTexto(i.sku.producto?.marca?.nombre ?? "");
+      return producto.includes(q) || marca.includes(q) || normalizarTexto(i.sku.codigo_interno).includes(q);
     });
   }, [items, query, categoria]);
 

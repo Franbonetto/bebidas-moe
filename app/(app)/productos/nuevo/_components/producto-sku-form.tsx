@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { normalizarTexto } from "@/lib/promociones";
 import { crearProductoYSku, editarSkuCompleto, type NuevoProductoInput } from "../../actions";
 
 export type MarcaOpcion = { id: string; nombre: string };
@@ -144,10 +145,10 @@ export function ProductoSkuForm({
   const [productoNombreNuevo, setProductoNombreNuevo] = useState(skuEditar?.productoNombre ?? "");
 
   const productosFiltrados = useMemo(() => {
-    const q = productoQuery.trim().toLowerCase();
+    const q = normalizarTexto(productoQuery.trim());
     if (!q) return [];
     return productos
-      .filter((p) => p.nombre.toLowerCase().includes(q) || (p.marca?.nombre ?? "").toLowerCase().includes(q))
+      .filter((p) => normalizarTexto(p.nombre).includes(q) || normalizarTexto(p.marca?.nombre ?? "").includes(q))
       .slice(0, 8);
   }, [productos, productoQuery]);
 
@@ -221,9 +222,9 @@ export function ProductoSkuForm({
   const [derivados, setDerivados] = useState<DerivadoForm[]>([]);
 
   const desarmaSkuResultados = useMemo(() => {
-    const q = desarmaQuery.trim().toLowerCase();
+    const q = normalizarTexto(desarmaQuery.trim());
     if (!q) return [];
-    return skus.filter((s) => skuLabel(s).toLowerCase().includes(q)).slice(0, 8);
+    return skus.filter((s) => normalizarTexto(skuLabel(s)).includes(q)).slice(0, 8);
   }, [skus, desarmaQuery]);
 
   const desarmaSkuSeleccionado = skus.find((s) => s.id === desarmaEnSkuId) ?? null;

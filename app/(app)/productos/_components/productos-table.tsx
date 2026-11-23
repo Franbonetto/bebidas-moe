@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { normalizarTexto } from "@/lib/promociones";
 import { presentacionLabel } from "../_lib/presentacion";
 import { useRouter } from "next/navigation";
 import { actualizarCodigoBarras, eliminarSku } from "../actions";
@@ -165,16 +166,16 @@ export function ProductosTable({
   }, [skus, query]);
 
   const filtrados = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizarTexto(query.trim());
     if (skuEscaneado) return [skuEscaneado];
     return skus.filter((sku) => {
       if (categoria && sku.producto?.categoria?.nombre !== categoria) return false;
       if (soloSinCodigo && sku.codigo_barras) return false;
       if (!q) return true;
-      const producto = sku.producto?.nombre.toLowerCase() ?? "";
-      const marca = sku.producto?.marca?.nombre.toLowerCase() ?? "";
-      const codigo = sku.codigo_interno.toLowerCase();
-      const barras = sku.codigo_barras?.toLowerCase() ?? "";
+      const producto = normalizarTexto(sku.producto?.nombre ?? "");
+      const marca = normalizarTexto(sku.producto?.marca?.nombre ?? "");
+      const codigo = normalizarTexto(sku.codigo_interno);
+      const barras = normalizarTexto(sku.codigo_barras ?? "");
       return (
         producto.includes(q) ||
         marca.includes(q) ||

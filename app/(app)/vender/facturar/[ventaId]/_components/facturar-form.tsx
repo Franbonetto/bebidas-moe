@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { normalizarTexto } from "@/lib/promociones";
 import { facturarVenta, guardarCliente, type Cliente } from "../../actions";
 import { errorDeCuit, formatearCuit, soloDigitos } from "@/lib/cuit";
 
@@ -58,13 +59,13 @@ export function FacturarForm({
   const condicionesDisponibles = condicionesParaTipo(condiciones, tipoCbte);
 
   const coincidencias = useMemo(() => {
-    const texto = busqueda.trim().toLowerCase();
+    const texto = normalizarTexto(busqueda.trim());
     if (!texto) return [];
     const digitos = soloDigitos(texto);
     return clientes
       .filter(
         (c) =>
-          c.razonSocial.toLowerCase().includes(texto) ||
+          normalizarTexto(c.razonSocial).includes(texto) ||
           (digitos.length > 0 && c.cuit.includes(digitos)),
       )
       .slice(0, 6);
