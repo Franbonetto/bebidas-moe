@@ -251,6 +251,12 @@ export function EnvioLapridaForm({
               placeholder="Buscar por producto, marca o código…"
               className="w-[240px] rounded-[6px] border border-border bg-bg-2 px-[10px] py-[5px] text-[13px] text-text outline-none focus:border-moe"
             />
+            <span
+              className="whitespace-nowrap text-[11.5px] text-text-3"
+              title="Total de SKU activos en el catálogo, tildes o filtros aparte -- tiene que coincidir con el contador de /productos"
+            >
+              {filas.length} en el catálogo
+            </span>
           </div>
         </div>
 
