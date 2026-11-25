@@ -22,7 +22,11 @@ export type SugerenciaSku = {
   stock_origen: number;
   sku: SkuPresentacion & {
     codigo_interno: string;
-    producto: { nombre: string; marca: { nombre: string } | null } | null;
+    producto: {
+      nombre: string;
+      marca: { nombre: string } | null;
+      categoria: { nombre: string } | null;
+    } | null;
   };
 };
 

@@ -39,6 +39,15 @@ export function EnvioLapridaForm({
   const pedirPin = usePinOperaciones();
   const [query, setQuery] = useState("");
   const [verTodos, setVerTodos] = useState(false);
+  const [categoria, setCategoria] = useState("");
+
+  const categorias = useMemo(() => {
+    const nombres = new Set<string>();
+    for (const f of filas) {
+      if (f.sku.producto?.categoria?.nombre) nombres.add(f.sku.producto.categoria.nombre);
+    }
+    return [...nombres].sort((a, b) => a.localeCompare(b, "es"));
+  }, [filas]);
 
   const vendidoInicial = useVendidoInicial(filas);
   const rango = useRangoVendido({ vendidoInicial, ultimoDespacho, hoy });
@@ -56,6 +65,10 @@ export function EnvioLapridaForm({
     return producto.includes(q) || marca.includes(q) || normalizarTexto(f.sku.codigo_interno).includes(q);
   }
 
+  function coincideCategoria(f: SugerenciaSku) {
+    return !categoria || f.sku.producto?.categoria?.nombre === categoria;
+  }
+
   // Lo vendido en el rango, más lo que ya tiene cantidad cargada (aunque al
   // cambiar de rango haya dejado de aparecer como vendido, para que no quede
   // un envío "escondido"). Al buscar por nombre, marca o código, se busca en
@@ -64,15 +77,21 @@ export function EnvioLapridaForm({
   // buscando a propósito (pedido del usuario 2026-11-22).
   const vendidos = useMemo(() => {
     const q = normalizarTexto(query.trim());
-    if (q) return filas.filter((f) => coincide(f, q));
-    return filas.filter((f) => (vendido[f.sku_id] ?? 0) > 0 || (cantidades[f.sku_id] ?? 0) > 0);
-  }, [filas, vendido, cantidades, query]);
+    const base = filas.filter(coincideCategoria);
+    if (q) return base.filter((f) => coincide(f, q));
+    return base.filter((f) => (vendido[f.sku_id] ?? 0) > 0 || (cantidades[f.sku_id] ?? 0) > 0);
+  }, [filas, vendido, cantidades, query, categoria]);
 
+  // Elegir una categoría muestra, dentro de ella, tanto lo vendido como lo
+  // que no se vendió -- no hace falta tildar "ver todos" aparte (pedido del
+  // usuario 2026-11-24).
   const otros = useMemo(() => {
     if (query.trim()) return [];
-    if (!verTodos) return [];
-    return filas.filter((f) => !((vendido[f.sku_id] ?? 0) > 0 || (cantidades[f.sku_id] ?? 0) > 0));
-  }, [filas, vendido, cantidades, query, verTodos]);
+    if (!verTodos && !categoria) return [];
+    return filas
+      .filter(coincideCategoria)
+      .filter((f) => !((vendido[f.sku_id] ?? 0) > 0 || (cantidades[f.sku_id] ?? 0) > 0));
+  }, [filas, vendido, cantidades, query, verTodos, categoria]);
 
   const lineasAEnviar = filas.filter((f) => (cantidades[f.sku_id] ?? 0) > 0);
   const totalUnidades = lineasAEnviar.reduce((acc, f) => acc + (cantidades[f.sku_id] ?? 0), 0);
@@ -213,6 +232,18 @@ export function EnvioLapridaForm({
               />
               Ver también lo que no se vendió
             </label>
+            <select
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value)}
+              className="rounded-[6px] border border-border bg-bg-2 px-[10px] py-[5px] text-[13px] text-text outline-none focus:border-moe"
+            >
+              <option value="">Categorías</option>
+              {categorias.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
             <input
               type="text"
               value={query}
@@ -228,12 +259,18 @@ export function EnvioLapridaForm({
         {sinVendidos ? (
           <div className="px-[14px] py-[26px] text-center">
             <p className="mb-[3px] text-[13.5px] font-semibold text-text">
-              {query.trim() ? "No encontramos productos" : "Laprida no vendió nada en este período"}
+              {query.trim()
+                ? "No encontramos productos"
+                : categoria
+                  ? "No hay productos en esta categoría"
+                  : "Laprida no vendió nada en este período"}
             </p>
             <p className="text-[12.5px] text-text-3">
               {query.trim()
                 ? "Probá con otra marca, producto o código."
-                : "Probá con otras fechas, o marcá \"Ver también lo que no se vendió\" para cargar cualquier producto."}
+                : categoria
+                  ? "Probá con otra categoría."
+                  : "Probá con otras fechas, o marcá \"Ver también lo que no se vendió\" para cargar cualquier producto."}
             </p>
           </div>
         ) : (

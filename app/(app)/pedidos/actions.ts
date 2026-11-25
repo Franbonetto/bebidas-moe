@@ -43,7 +43,11 @@ export type SugerenciaSkuDTO = {
     volumen: number;
     unidad_volumen: string;
     unidades_contenidas: number;
-    producto: { nombre: string; marca: { nombre: string } | null } | null;
+    producto: {
+      nombre: string;
+      marca: { nombre: string } | null;
+      categoria: { nombre: string } | null;
+    } | null;
   };
 };
 
@@ -112,13 +116,21 @@ export async function obtenerSugerenciaPedido(pin: string): Promise<
 
   const [{ data: sugerencias }, { data: skus }, { data: ultimaTransferencia }, { data: stockCentral }] =
     await Promise.all([
-      supabase.rpc("sugerir_pedido", { p_sucursal_destino_id: laprida.id }),
+      // sugerir_pedido() devuelve una fila por cada SKU activo: con mas de
+      // 1000 (el tope de PostgREST sin paginar) la respuesta cruda viene
+      // incompleta y faltan productos en la pantalla sin ningun error
+      // visible. Mismo motivo por el que la consulta de "skus" ya iba
+      // envuelta en traerTodo().
+      traerTodo(
+        supabase.rpc("sugerir_pedido", { p_sucursal_destino_id: laprida.id }),
+        "sku_id",
+      ),
       traerTodo(
         supabase
           .from("skus")
           .select(
             `id, codigo_interno, tipo_presentacion, volumen, unidad_volumen, unidades_contenidas,
-             producto:productos ( nombre, marca:marcas ( nombre ) )`,
+             producto:productos ( nombre, marca:marcas ( nombre ), categoria:categorias ( nombre ) )`,
           )
           .eq("activo", true),
       ),

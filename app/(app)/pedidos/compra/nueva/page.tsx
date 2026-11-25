@@ -36,7 +36,9 @@ export default async function NuevoPedidoCompraPage() {
     vendido,
     aLaprida,
   ] = await Promise.all([
-    supabase.rpc("sugerir_compra_semanal"),
+    // Una fila por cada SKU activo: sin paginar, mas de 1000 productos
+    // (el tope de PostgREST) dejarian faltantes afuera sin avisar.
+    traerTodo(supabase.rpc("sugerir_compra_semanal"), "sku_id"),
     traerTodo(
       supabase
         .from("skus")

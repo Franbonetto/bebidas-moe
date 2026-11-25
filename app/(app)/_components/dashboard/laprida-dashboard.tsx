@@ -71,7 +71,9 @@ export async function LapridaDashboard() {
       .order("fecha_creacion", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    supabase.rpc("sugerir_pedido", { p_sucursal_destino_id: laprida.id }),
+    // Una fila por cada SKU activo: sin paginar, mas de 1000 productos
+    // (el tope de PostgREST) dejarian faltantes afuera sin avisar.
+    traerTodo(supabase.rpc("sugerir_pedido", { p_sucursal_destino_id: laprida.id }), "sku_id"),
     traerTodo(
       supabase
         .from("transferencias")
