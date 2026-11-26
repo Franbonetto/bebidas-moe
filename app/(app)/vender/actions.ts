@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { facturarVentaAutomatica } from "./facturar/actions";
 import { verificarPinOperaciones } from "@/lib/pin";
+import { errorDeCuit, soloDigitos } from "@/lib/cuit";
 
 export type LineaVenta = {
   // null en un producto particular, que va con descripcion en su lugar
@@ -43,6 +44,18 @@ export type ComprobanteResumen = {
   numeroComprobante: number;
   cae: string;
   vencimientoCae: string;
+};
+
+// Pedido de Factura A al cobrar con un medio que no es efectivo (2026-11-26):
+// hasta ahora la facturación automática siempre mandaba Factura B a
+// Consumidor Final, sin preguntar. Si la cajera completa esto en el POS
+// antes de cobrar, facturarVentaAutomatica() emite A con estos datos en vez
+// de la B -- nunca se llega a pedir la B, así que no hace falta nota de
+// crédito (que todavía no existe) para corregir después.
+export type FacturaARequerida = {
+  cuit: string;
+  razonSocial: string;
+  condicionIvaReceptorId: string;
 };
 
 export type PagoVenta = {
@@ -85,6 +98,14 @@ export async function confirmarVenta(
   // las pantallas que tocan stock fuera de una venta -- se valida acá, no
   // en confirmar_venta().
   consignacion?: ConsignacionLiquidacion,
+  // Pedido de la tienda online que se está cobrando (tienda online, fase 2).
+  // El POS usa el id del pedido como claveCobro, así que cobrar dos veces el
+  // mismo pedido devuelve la misma venta. Acá, ya grabada la venta, se marca
+  // el pedido como cobrado (en camino si es con envío, entregado si retira).
+  pedidoWebId?: string,
+  // Ver el comentario de FacturaARequerida arriba. Null/undefined = como
+  // siempre (Factura B a Consumidor Final si el pago no es todo efectivo).
+  facturaA?: FacturaARequerida | null,
 ): Promise<
   | { error: string }
   | { id: string; comprobante: ComprobanteResumen | null; avisoFacturacion: string | null }
@@ -92,6 +113,22 @@ export async function confirmarVenta(
   if (consignacion) {
     const pinOk = verificarPinOperaciones(consignacion.pin);
     if ("error" in pinOk) return pinOk;
+  }
+
+  // Se valida ACÁ, antes de grabar la venta: un CUIT mal tipeado no tiene
+  // que cobrarle al cliente y recién ahí fallar. Nunca se confía en lo que
+  // ya validó el navegador.
+  let facturaAValidada: FacturaARequerida | null = null;
+  if (facturaA && (facturaA.cuit.trim() || facturaA.razonSocial.trim() || facturaA.condicionIvaReceptorId)) {
+    const problemaCuit = errorDeCuit(facturaA.cuit);
+    if (problemaCuit) return { error: `Factura A: ${problemaCuit}` };
+    if (!facturaA.razonSocial.trim()) return { error: "Factura A: falta la razón social del cliente." };
+    if (!facturaA.condicionIvaReceptorId) return { error: "Factura A: falta la condición de IVA del cliente." };
+    facturaAValidada = {
+      cuit: soloDigitos(facturaA.cuit),
+      razonSocial: facturaA.razonSocial.trim(),
+      condicionIvaReceptorId: facturaA.condicionIvaReceptorId,
+    };
   }
 
   const supabase = await createClient();
@@ -112,10 +149,36 @@ export async function confirmarVenta(
 
   const ventaId = (data as { id: string }).id;
 
+  // Vincular el pedido web va DESPUÉS de grabar la venta y ANTES de hablar
+  // con ARCA (que puede tardar). Si falla, la venta queda igual -- nunca se
+  // voltea -- y se avisa fuerte para que nadie vuelva a cargar el pedido: si
+  // lo hicieran, la clave de idempotencia devuelve esta misma venta, así que
+  // tampoco se duplicaría. Es idempotente, por eso se reintenta una vez.
+  let avisoPedidoWeb: string | null = null;
+  if (pedidoWebId) {
+    let errorVinculo: { message: string } | null = null;
+    for (let intento = 0; intento < 2; intento++) {
+      const { error: e } = await supabase.rpc("vincular_pedido_web_venta", {
+        p_pedido_id: pedidoWebId,
+        p_venta_id: ventaId,
+      });
+      errorVinculo = e;
+      if (!e) break;
+    }
+    if (errorVinculo) {
+      avisoPedidoWeb = `La venta se registró, pero no se pudo marcar el pedido web como cobrado (${errorVinculo.message}). No lo cargues de nuevo.`;
+    }
+  }
+
   // Facturación automática de lo que no es efectivo (decisión del usuario
   // 2026-10-19, reemplaza el "no se factura sola" del 2026-10-08): débito,
   // crédito, transferencia, QR, Mercado Pago y Cuenta DNI se facturan acá
   // mismo, como Factura B a Consumidor Final. El efectivo no.
+  //
+  // Factura A (2026-11-26): si `facturaAValidada` viene cargada -- la
+  // cajera lo completó en el POS antes de cobrar -- se emite A con esos
+  // datos en vez de la B. Nunca se emiten las dos: no hay nota de crédito
+  // todavía para corregir una B ya autorizada.
   //
   // El orden importa y es a propósito: la venta YA está grabada por
   // confirmar_venta() antes de que se hable con ARCA. Si ARCA rechaza,
@@ -127,14 +190,16 @@ export async function confirmarVenta(
   // lib/arca/wsfe.ts) porque el ticket que imprime la cajera tiene que
   // salir ya con el CAE y el QR: el cliente se lleva la factura en el
   // mismo papel, no vuelve al otro día a buscarla.
-  const facturacion = await facturarVentaAutomatica(ventaId);
+  const facturacion = await facturarVentaAutomatica(ventaId, facturaAValidada);
   const comprobante: ComprobanteResumen | null = facturacion.facturado
     ? facturacion.comprobante
     : null;
-  const avisoFacturacion = facturacion.facturado ? null : facturacion.aviso;
+  const avisoFacturacion =
+    [avisoPedidoWeb, facturacion.facturado ? null : facturacion.aviso].filter(Boolean).join(" ") || null;
 
   revalidatePath("/vender");
   revalidatePath("/envios");
+  revalidatePath("/pedidos-web");
   return { id: ventaId, comprobante, avisoFacturacion };
 }
 

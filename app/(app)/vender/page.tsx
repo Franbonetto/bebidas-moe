@@ -4,6 +4,7 @@ import { traerTodo } from "@/lib/supabase/traer-todo";
 import { operaSucursal, veCostos } from "@/lib/permisos";
 import { cargarDatosVenta } from "./_lib/cargar-datos-venta";
 import { PosClient, type ConsignacionPosOpcion } from "./_components/pos-client";
+import { cargarPedidoWebParaPos } from "../pedidos-web/_lib/cargar-para-pos";
 
 // Cobrar ahora puede incluir el pedido de CAE a ARCA (facturación
 // automática de lo que no es efectivo, 2026-10-19): la llamada tiene un
@@ -32,9 +33,13 @@ export const maxDuration = 60;
 export default async function VenderPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sucursal?: string; consignacion?: string }>;
+  searchParams: Promise<{ sucursal?: string; consignacion?: string; pedidoWeb?: string }>;
 }) {
-  const { sucursal: sucursalParam, consignacion: consignacionParam } = await searchParams;
+  const {
+    sucursal: sucursalParam,
+    consignacion: consignacionParam,
+    pedidoWeb: pedidoWebParam,
+  } = await searchParams;
   const supabase = await createClient();
 
   const { data: sucursales } = await traerTodo(
@@ -66,8 +71,15 @@ export default async function VenderPage({
   // precios. confirmar_venta() lo vuelve a chequear server-side.
   const puedeTocarPrecios = await veCostos(supabase);
 
-  const { skusPos, combos, promosCantidad, puedeFacturar, cajaHoy, cantidadTicketsHoy } =
-    await cargarDatosVenta(supabase, sucursal, { incluirCosto: puedeTocarPrecios });
+  const {
+    skusPos,
+    combos,
+    promosCantidad,
+    puedeFacturar,
+    cajaHoy,
+    cantidadTicketsHoy,
+    condicionesIvaFacturaA,
+  } = await cargarDatosVenta(supabase, sucursal, { incluirCosto: puedeTocarPrecios });
 
   // Quién abre la caja (empleados de esta sucursal), que no es lo mismo que
   // con qué cuenta se entró al sistema -- ver 20261008090000_empleado_caja.
@@ -121,8 +133,25 @@ export default async function VenderPage({
     }));
   }
 
+  // Pedido de la tienda online que mandó la bandeja para cobrar (retiro en
+  // el local). Si no se puede cargar, se explica por qué en vez de ignorarlo.
+  const { pedido: pedidoWeb, aviso: avisoPedidoWeb } = await cargarPedidoWebParaPos(
+    supabase,
+    pedidoWebParam,
+    sucursal.id,
+    "retiro",
+  );
+
   return (
     <div>
+      {avisoPedidoWeb && (
+        <div className="mb-3 rounded-card border border-warn/40 bg-warn-bg px-3 py-2 text-[13px] text-warn">
+          {avisoPedidoWeb}{" "}
+          <Link href="/pedidos-web" className="underline">
+            Volver a Pedidos web
+          </Link>
+        </div>
+      )}
       {sucursalesOperables.length > 1 && (
         <div className="mb-3 flex gap-2">
           {sucursalesOperables.map((s) => (
@@ -146,6 +175,7 @@ export default async function VenderPage({
         sucursalNombre={sucursal.nombre}
         puedeFacturar={puedeFacturar}
         puedeTocarPrecios={puedeTocarPrecios}
+        condicionesIvaFacturaA={condicionesIvaFacturaA}
         skus={skusPos}
         combos={combos}
         promosCantidad={promosCantidad}
@@ -159,6 +189,7 @@ export default async function VenderPage({
         esCentral={sucursal.es_central}
         consignacionesActivas={consignacionesActivas}
         consignacionInicialId={consignacionParam ?? null}
+        pedidoWebInicial={pedidoWeb}
       />
     </div>
   );

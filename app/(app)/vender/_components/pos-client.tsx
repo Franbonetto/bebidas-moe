@@ -23,6 +23,8 @@ import { liquidarConsignacionSinVenta } from "../consignaciones/actions";
 import { formatoMoneda } from "../_lib/formato";
 import { AbrirCajaForm, type EmpleadoOpcion } from "./abrir-caja-form";
 import { PinProvider, usePinOperaciones } from "@/app/(app)/_components/pin-gate";
+import type { PedidoWebPos } from "@/app/(app)/pedidos-web/_lib/tipos";
+import { errorDeCuit } from "@/lib/cuit";
 
 export type SkuPos = {
   id: string;
@@ -158,6 +160,17 @@ type Ticket = {
   // Consignación que se liquida con este ticket, si corresponde. Null en
   // un ticket de venta normal.
   consignacion: ConsignacionTicket | null;
+  // Pedido de la tienda online que se está cobrando en este ticket (tienda
+  // online, fase 2). Null en una venta normal.
+  pedidoWeb: PedidoWebPos | null;
+  // Factura A pedida al cobrar con un medio que no es efectivo (2026-11-26):
+  // si se completan los tres, la facturación automática emite A con estos
+  // datos en vez de la B a Consumidor Final de siempre. Vacíos = como
+  // siempre. Por ticket, igual que motomandado/dirección, para no pisarse
+  // entre tickets abiertos a la vez.
+  facturaACuit: string;
+  facturaARazonSocial: string;
+  facturaACondicionIvaId: string;
 };
 
 function ticketVacio(id: string): Ticket {
@@ -171,6 +184,10 @@ function ticketVacio(id: string): Ticket {
     direccionEnvio: "",
     envioPagado: null,
     consignacion: null,
+    pedidoWeb: null,
+    facturaACuit: "",
+    facturaARazonSocial: "",
+    facturaACondicionIvaId: "",
   };
 }
 
@@ -289,6 +306,7 @@ function PosClientInner({
   sucursalNombre,
   puedeFacturar,
   puedeTocarPrecios,
+  condicionesIvaFacturaA = [],
   skus,
   combos,
   promosCantidad,
@@ -300,10 +318,15 @@ function PosClientInner({
   esCentral = false,
   consignacionesActivas = [],
   consignacionInicialId = null,
+  pedidoWebInicial = null,
 }: {
   sucursalId: string;
   sucursalNombre: string;
   puedeFacturar: boolean;
+  // Condiciones de IVA válidas para Factura A (sin "Consumidor Final"),
+  // para el campo rápido de Factura A al cobrar con débito/crédito/etc
+  // (2026-11-26). Vacío en /envios, que nunca factura automático.
+  condicionesIvaFacturaA?: { id: string; nombre: string }[];
   // Recargo por frío y lápiz de precio: dueño y encargado de Olavarría, no
   // Laprida (decisión del usuario 2026-10-17). confirmar_venta() lo vuelve
   // a chequear, esto solo decide si los íconos se dibujan.
@@ -332,6 +355,9 @@ function PosClientInner({
   // Llegó por "Liquidar en el POS" desde /vender/consignaciones
   // (?consignacion=id): se carga sola en el primer ticket al entrar.
   consignacionInicialId?: string | null;
+  // Llegó por "Cargar en Envíos" / "Cobrar en el POS" desde la bandeja de
+  // Pedidos web (?pedidoWeb=id): se carga solo en el primer ticket al entrar.
+  pedidoWebInicial?: PedidoWebPos | null;
 }) {
   const router = useRouter();
   const pedirPin = usePinOperaciones();
@@ -461,9 +487,33 @@ function PosClientInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Mismo mecanismo para un pedido de la tienda online: se carga una sola
+  // vez y se limpia el query param para que un refresh no lo duplique.
+  const pedidoWebCargadoRef = useRef(false);
+  useEffect(() => {
+    if (pedidoWebCargadoRef.current || !pedidoWebInicial) return;
+    pedidoWebCargadoRef.current = true;
+    cargarPedidoWeb(pedidoWebInicial);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("pedidoWeb");
+    const resto = params.toString();
+    router.replace(window.location.pathname + (resto ? `?${resto}` : ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const ticketActivo = tickets.find((t) => t.id === ticketActivoId) ?? tickets[0];
-  const { lineas, particulares, envaseChecked, pagos, motomandado, direccionEnvio, envioPagado } =
-    ticketActivo;
+  const {
+    lineas,
+    particulares,
+    envaseChecked,
+    pagos,
+    motomandado,
+    direccionEnvio,
+    envioPagado,
+    facturaACuit,
+    facturaARazonSocial,
+    facturaACondicionIvaId,
+  } = ticketActivo;
 
   function actualizarTicketActivo(fn: (t: Ticket) => Ticket) {
     setTickets((prev) => prev.map((t) => (t.id === ticketActivoId ? fn(t) : t)));
@@ -785,6 +835,71 @@ function PosClientInner({
     setLineaSeleccionada(null);
     setQuery("");
     searchInputRef.current?.focus();
+  }
+
+  // Carga un pedido de la tienda online en un ticket. Las líneas son solo
+  // producto y cantidad: el precio lo calcula este POS con su motor (el de la
+  // web es de referencia). Si el pedido es con envío, la dirección viene
+  // cargada y "¿ya está pago?" arranca en NO: en la web se paga en efectivo
+  // al recibir. El motomandado lo completa la cajera.
+  function cargarPedidoWeb(pedido: PedidoWebPos) {
+    const lineasIniciales: LineaTicket[] = [];
+    let faltantes = 0;
+    for (const l of pedido.lineas) {
+      if (!skuPorId.has(l.skuId)) {
+        faltantes += 1;
+        continue;
+      }
+      lineasIniciales.push({
+        skuId: l.skuId,
+        cantidad: l.cantidad,
+        precioManual: null,
+        recargoFrio: 0,
+        consignacionItemId: null,
+      });
+    }
+
+    const datos: Partial<Ticket> = {
+      lineas: lineasIniciales,
+      pedidoWeb: pedido,
+      ...(modoEnvio ? { direccionEnvio: pedido.direccion ?? "", envioPagado: false } : {}),
+    };
+
+    const ticketLibre =
+      ticketActivo.lineas.length === 0 &&
+      ticketActivo.particulares.length === 0 &&
+      ticketActivo.consignacion === null &&
+      ticketActivo.pedidoWeb === null;
+
+    if (ticketLibre) {
+      actualizarTicketActivo((t) => ({ ...t, ...datos }));
+    } else {
+      contadorTicketRef.current += 1;
+      const id = String(contadorTicketRef.current);
+      setTickets((prev) => [...prev, { ...ticketVacio(id), ...datos }]);
+      setTicketActivoId(id);
+    }
+    if (faltantes > 0) {
+      setError(
+        `${faltantes} producto${faltantes > 1 ? "s" : ""} del pedido no está${faltantes > 1 ? "n" : ""} en el catálogo y no se cargó: agregalo a mano si hace falta.`,
+      );
+    }
+    setLineaSeleccionada(null);
+    setQuery("");
+    searchInputRef.current?.focus();
+  }
+
+  // Soltar el pedido web de este ticket: vacía el ticket y no toca el pedido
+  // (sigue esperando en la bandeja). Nada se grabó todavía.
+  function soltarPedidoWeb() {
+    actualizarTicketActivo((t) => ({
+      ...t,
+      pedidoWeb: null,
+      lineas: [],
+      particulares: [],
+      direccionEnvio: "",
+      envioPagado: null,
+    }));
   }
 
   // Se arrepintió / eligió la consignación equivocada: suelta el ticket
@@ -1153,6 +1268,25 @@ function PosClientInner({
       setError("Marcá si el pedido ya está pago antes de cobrar.");
       return;
     }
+    // Factura A pedida al cobrar (2026-11-26): si se completó algo, los
+    // tres datos son obligatorios -- a medias no se puede facturar.
+    const pideFacturaA =
+      facturaACuit.trim() !== "" || facturaARazonSocial.trim() !== "" || facturaACondicionIvaId !== "";
+    if (pideFacturaA) {
+      const problemaCuit = errorDeCuit(facturaACuit);
+      if (problemaCuit) {
+        setError(`Factura A: ${problemaCuit}`);
+        return;
+      }
+      if (!facturaARazonSocial.trim()) {
+        setError("Factura A: falta la razón social del cliente.");
+        return;
+      }
+      if (!facturaACondicionIvaId) {
+        setError("Factura A: falta la condición de IVA del cliente.");
+        return;
+      }
+    }
     setError(null);
 
     // Ya hay un cobro en vuelo: esto no es una venta nueva, es el mismo
@@ -1175,9 +1309,22 @@ function PosClientInner({
     }
 
     const ticketCobrado = ticketActivoId;
-    const claveCobro = (clavesCobroRef.current[ticketCobrado] ??= crypto.randomUUID());
+    // Un pedido web se cobra con SU id como clave: así el mismo pedido no
+    // puede terminar en dos ventas aunque se vuelva a cargar (un cobro, una
+    // venta). Cualquier otro ticket genera su clave como siempre.
+    const pedidoWebActivo = ticketActivo.pedidoWeb;
+    const claveCobro = pedidoWebActivo
+      ? pedidoWebActivo.id
+      : (clavesCobroRef.current[ticketCobrado] ??= crypto.randomUUID());
     const totalCobrado = totalACobrar;
     const pagosVenta: PagoVenta[] = pagos.map((p) => ({ medio_pago: p.medioPago, monto: p.monto }));
+    const facturaAParaCobrar = pideFacturaA
+      ? {
+          cuit: facturaACuit.trim(),
+          razonSocial: facturaARazonSocial.trim(),
+          condicionIvaReceptorId: facturaACondicionIvaId,
+        }
+      : null;
     startTransition(async () => {
       try {
         const desarme = await autoDesarmarFaltantes();
@@ -1200,6 +1347,8 @@ function PosClientInner({
           consignacionActiva && pinConsignacion
             ? { id: consignacionActiva.id, pin: pinConsignacion }
             : undefined,
+          pedidoWebActivo?.id,
+          facturaAParaCobrar,
         );
         if ("error" in resultado) {
           // La clave NO se borra: si el error fue "la caja ya está
@@ -1466,6 +1615,53 @@ function PosClientInner({
               : `Sobran ${formatoMoneda.format(-restante)}: ajustá los montos`}
           </p>
         )}
+
+        {/* Factura A al cobrar con un medio que no es efectivo (2026-11-26):
+            sin esto, la facturación automática siempre manda B a
+            Consumidor Final y, una vez autorizada, no hay nota de crédito
+            para corregirlo. Vacío = sigue como siempre. */}
+        {!modoEnvio && !esEfectivoPuro && condicionesIvaFacturaA.length > 0 && (
+          <div className="mt-[4px] rounded-[7px] border border-border bg-bg-2 p-[9px]">
+            <p className="mb-[6px] text-[12px] font-medium text-text-2">
+              Factura A (opcional) — dejalo vacío para Factura B a Consumidor Final
+            </p>
+            <div className="flex flex-col gap-[5px]">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={facturaACuit}
+                onChange={(e) =>
+                  actualizarTicketActivo((t) => ({ ...t, facturaACuit: e.target.value }))
+                }
+                placeholder="CUIT del cliente"
+                className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[5px] text-[13.5px] text-text outline-none focus:border-moe"
+              />
+              <input
+                type="text"
+                value={facturaARazonSocial}
+                onChange={(e) =>
+                  actualizarTicketActivo((t) => ({ ...t, facturaARazonSocial: e.target.value }))
+                }
+                placeholder="Razón social"
+                className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[5px] text-[13.5px] text-text outline-none focus:border-moe"
+              />
+              <select
+                value={facturaACondicionIvaId}
+                onChange={(e) =>
+                  actualizarTicketActivo((t) => ({ ...t, facturaACondicionIvaId: e.target.value }))
+                }
+                className="w-full rounded-[6px] border border-border bg-bg px-[8px] py-[5px] text-[13.5px] text-text outline-none focus:border-moe"
+              >
+                <option value="">Condición de IVA del cliente…</option>
+                {condicionesIvaFacturaA.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1641,6 +1837,36 @@ function PosClientInner({
                 </span>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cobrando un pedido de la tienda online: las líneas ya vienen
+          cargadas. El precio lo calcula este POS; el total de la web es solo
+          de referencia (lo que vio el cliente al pedir, sin envío). */}
+      {ticketActivo.pedidoWeb && (
+        <div className="mb-3 shrink-0 rounded-card border border-info/30 bg-info-bg px-[12px] py-[10px] text-[13.5px] text-info">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p>
+                Pedido web <strong>#{ticketActivo.pedidoWeb.numero}</strong> de{" "}
+                <strong>{ticketActivo.pedidoWeb.nombre}</strong> · {ticketActivo.pedidoWeb.telefono}
+              </p>
+              <p className="mt-0.5 text-[12.5px]">
+                En la web vio {formatoMoneda.format(ticketActivo.pedidoWeb.totalWeb)} en efectivo, sin envío.
+                {modoEnvio ? " Completá el motomandado para cobrar." : ""}
+              </p>
+              {ticketActivo.pedidoWeb.notas && (
+                <p className="mt-1 text-[12.5px]">Aclaró: “{ticketActivo.pedidoWeb.notas}”</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={soltarPedidoWeb}
+              className="shrink-0 whitespace-nowrap text-[12.5px] text-info underline hover:no-underline"
+            >
+              Soltar pedido
+            </button>
           </div>
         </div>
       )}

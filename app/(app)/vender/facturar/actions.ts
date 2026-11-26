@@ -323,9 +323,14 @@ export async function facturarVenta(
 //     mano desde /vender/facturar si la piden.
 //   - Pago dividido: si ALGUNO de los medios no es efectivo, se factura la
 //     venta entera -- no existe media venta facturada.
-//   - Siempre Factura B a Consumidor Final. Si ARCA la rechaza (por
-//     ejemplo por el tope de monto sin identificar al comprador), la venta
-//     queda sin facturar y se emite a mano con los datos del cliente.
+//   - Por default, Factura B a Consumidor Final. **Actualizado
+//     2026-11-26:** si la cajera cargó CUIT + razón social + condición de
+//     IVA en el POS antes de cobrar (el cliente pidió Factura A pagando
+//     con un medio no efectivo), se emite A con esos datos en su lugar --
+//     la decisión la toma quien llama, acá solo se ejecuta. Si ARCA
+//     rechaza (por ejemplo por el tope de monto sin identificar al
+//     comprador, o un CUIT que no existe), la venta queda sin facturar y
+//     se emite a mano con los datos del cliente.
 //   - Nada de esto puede voltear la venta: `confirmar_venta()` ya grabó
 //     todo antes de que se hable con ARCA, y un fallo acá deja el
 //     comprobante en `rechazado`/`error`, reintentable. Sin reintentos
@@ -339,6 +344,9 @@ export type ResultadoFacturacionAutomatica =
 
 export async function facturarVentaAutomatica(
   ventaId: string,
+  // Ver el comentario de arriba. Ya validado por quien llama (confirmarVenta
+  // en ../actions.ts) -- acá no se vuelve a validar el CUIT.
+  facturaA?: { cuit: string; razonSocial: string; condicionIvaReceptorId: string } | null,
 ): Promise<ResultadoFacturacionAutomatica> {
   const supabase = await createClient();
 
@@ -414,26 +422,41 @@ export async function facturarVentaAutomatica(
     };
   }
 
-  const { data: condicionesRaw } = await traerTodo(
-    supabase.from("condicion_iva").select("id, nombre"),
-  );
-  const consumidorFinal = ((condicionesRaw ?? []) as { id: string; nombre: string }[]).find((c) =>
-    c.nombre.toLowerCase().includes("consumidor final"),
-  );
+  // Factura A pedida en el POS (2026-11-26): ya viene con los tres datos
+  // validados por confirmarVenta(), no hace falta buscar "Consumidor
+  // Final" -- esa condición ni siquiera es válida para una A.
+  let datosFactura: FacturarVentaInput;
+  if (facturaA) {
+    datosFactura = {
+      tipoCbte: "A",
+      condicionIvaReceptorId: facturaA.condicionIvaReceptorId,
+      cuitReceptor: facturaA.cuit,
+      razonSocialReceptor: facturaA.razonSocial,
+    };
+  } else {
+    const { data: condicionesRaw } = await traerTodo(
+      supabase.from("condicion_iva").select("id, nombre"),
+    );
+    const consumidorFinal = ((condicionesRaw ?? []) as { id: string; nombre: string }[]).find((c) =>
+      c.nombre.toLowerCase().includes("consumidor final"),
+    );
 
-  if (!consumidorFinal) {
-    return {
-      facturado: false,
-      aviso: "falta sincronizar el catálogo de condiciones de IVA de ARCA (Facturar → Configuración)",
+    if (!consumidorFinal) {
+      return {
+        facturado: false,
+        aviso: "falta sincronizar el catálogo de condiciones de IVA de ARCA (Facturar → Configuración)",
+      };
+    }
+
+    datosFactura = {
+      tipoCbte: "B",
+      condicionIvaReceptorId: consumidorFinal.id,
+      cuitReceptor: null,
+      razonSocialReceptor: null,
     };
   }
 
-  const resultado = await emitirComprobante(ventaId, {
-    tipoCbte: "B",
-    condicionIvaReceptorId: consumidorFinal.id,
-    cuitReceptor: null,
-    razonSocialReceptor: null,
-  });
+  const resultado = await emitirComprobante(ventaId, datosFactura);
 
   if ("error" in resultado) return { facturado: false, aviso: resultado.error };
 

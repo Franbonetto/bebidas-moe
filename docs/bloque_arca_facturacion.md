@@ -44,6 +44,14 @@ anula con nota de crédito (que todavía no existe, ver sección 7).
     se emite **Factura B a Consumidor Final** por el total de la venta. En
     un pago dividido alcanza con que uno de los medios no sea efectivo: no
     existe media venta facturada.
+  - **Factura A al cobrar con un medio no efectivo (2026-11-26):** el
+    selector de medios de pago del POS tiene un campo opcional "Factura A"
+    (CUIT, razón social, condición de IVA del receptor). Si la cajera lo
+    completa antes de cobrar, `confirmarVenta()` lo valida (mismo validador
+    de CUIT que el formulario manual, `lib/cuit.ts`) y `facturarVentaAutomatica()`
+    emite Factura A con esos datos **en vez de** la B — nunca se emiten las
+    dos para la misma venta, así que no hace falta nota de crédito. Vacío =
+    sigue como siempre (B a Consumidor Final). No existe en `/envios`.
   - Si la venta fue **toda en efectivo**, no se factura sola: ticket
     interno, y Factura A o B a mano si el cliente la pide.
   - El POS **espera** el CAE (tope de 15s, ver el timeout de

@@ -179,6 +179,15 @@ Las promociones aplican solo pagando en efectivo.
     (fecha, hora, productos, total, dirección de la sucursal) con la leyenda
     "Documento no válido como factura". Si el cliente pide factura, se emite a mano
     desde `/vender/facturar`.
+  - **Factura A al cobrar con un medio que no es efectivo (2026-11-26).** Sin
+    esto, la automática siempre mandaba B a Consumidor Final y, una vez
+    autorizada, no hay nota de crédito (todavía no existe) para corregirla.
+    Si la cajera completa CUIT + razón social + condición de IVA en el
+    selector de medios de pago **antes de cobrar**, la automática emite A con
+    esos datos en lugar de la B — nunca se emiten las dos. Vacío = como
+    siempre. Se valida en el cliente y de nuevo en `confirmarVenta()` (CUIT
+    con `lib/cuit.ts`, razón social y condición obligatorios los tres juntos).
+    No aplica a `/envios`, que nunca factura automático.
 - **Producto particular:** una línea sin SKU, con descripción y precio escritos a
   mano (picada, canasta de regalería). No descuenta stock —no hay nada que
   descontar—, no entra en promociones y va al 21% si se factura.
