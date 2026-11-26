@@ -98,11 +98,6 @@ export async function confirmarVenta(
   // las pantallas que tocan stock fuera de una venta -- se valida acá, no
   // en confirmar_venta().
   consignacion?: ConsignacionLiquidacion,
-  // Pedido de la tienda online que se está cobrando (tienda online, fase 2).
-  // El POS usa el id del pedido como claveCobro, así que cobrar dos veces el
-  // mismo pedido devuelve la misma venta. Acá, ya grabada la venta, se marca
-  // el pedido como cobrado (en camino si es con envío, entregado si retira).
-  pedidoWebId?: string,
   // Ver el comentario de FacturaARequerida arriba. Null/undefined = como
   // siempre (Factura B a Consumidor Final si el pago no es todo efectivo).
   facturaA?: FacturaARequerida | null,
@@ -149,27 +144,6 @@ export async function confirmarVenta(
 
   const ventaId = (data as { id: string }).id;
 
-  // Vincular el pedido web va DESPUÉS de grabar la venta y ANTES de hablar
-  // con ARCA (que puede tardar). Si falla, la venta queda igual -- nunca se
-  // voltea -- y se avisa fuerte para que nadie vuelva a cargar el pedido: si
-  // lo hicieran, la clave de idempotencia devuelve esta misma venta, así que
-  // tampoco se duplicaría. Es idempotente, por eso se reintenta una vez.
-  let avisoPedidoWeb: string | null = null;
-  if (pedidoWebId) {
-    let errorVinculo: { message: string } | null = null;
-    for (let intento = 0; intento < 2; intento++) {
-      const { error: e } = await supabase.rpc("vincular_pedido_web_venta", {
-        p_pedido_id: pedidoWebId,
-        p_venta_id: ventaId,
-      });
-      errorVinculo = e;
-      if (!e) break;
-    }
-    if (errorVinculo) {
-      avisoPedidoWeb = `La venta se registró, pero no se pudo marcar el pedido web como cobrado (${errorVinculo.message}). No lo cargues de nuevo.`;
-    }
-  }
-
   // Facturación automática de lo que no es efectivo (decisión del usuario
   // 2026-10-19, reemplaza el "no se factura sola" del 2026-10-08): débito,
   // crédito, transferencia, QR, Mercado Pago y Cuenta DNI se facturan acá
@@ -194,12 +168,10 @@ export async function confirmarVenta(
   const comprobante: ComprobanteResumen | null = facturacion.facturado
     ? facturacion.comprobante
     : null;
-  const avisoFacturacion =
-    [avisoPedidoWeb, facturacion.facturado ? null : facturacion.aviso].filter(Boolean).join(" ") || null;
+  const avisoFacturacion = facturacion.facturado ? null : facturacion.aviso;
 
   revalidatePath("/vender");
   revalidatePath("/envios");
-  revalidatePath("/pedidos-web");
   return { id: ventaId, comprobante, avisoFacturacion };
 }
 
